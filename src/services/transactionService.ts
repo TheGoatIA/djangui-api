@@ -1,6 +1,7 @@
 import Transaction, { ITransactionDocument } from '../models/Transaction';
 import Budget from '../models/Budget';
 import SavingGoal from '../models/SavingGoal';
+import { CategorizationService } from './ai/categorizationService';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import mongoose from 'mongoose';
@@ -11,6 +12,19 @@ export class TransactionService {
         session.startTransaction();
 
         try {
+            // AI Categorization if category is missing OR explicitly requested
+            if (data.type === 'expense' && (!data.category || data.category === 'Autres')) {
+                const aiResult = await CategorizationService.categorize(
+                    data.description,
+                    data.amount,
+                    data.merchant
+                );
+                data.category = aiResult.category;
+                data.subcategory = aiResult.subcategory;
+                data.isAutoCategorized = true;
+                data.categorizationConfidence = aiResult.confidence;
+            }
+
             const transaction = new Transaction({
                 ...data,
                 userId,
