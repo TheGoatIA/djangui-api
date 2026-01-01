@@ -5,6 +5,7 @@ import compression from 'compression';
 import dotenv from 'dotenv';
 import errorHandler from './middleware/errorHandler';
 import requestLogger from './middleware/requestLogger';
+import routes from './routes';
 
 dotenv.config();
 
@@ -18,7 +19,9 @@ app.use(compression());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Routes (placeholder)
+// Routes
+app.use('/api/v1', routes);
+
 app.get('/api/health', (req, res) => {
     res.status(200).json({
         status: 'success',
