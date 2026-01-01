@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import User, { IUserDocument } from '../models/User';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
+import admin from '../config/firebase';
 
 const signToken = (id: string, secret: string, expiresIn: any) => {
     return jwt.sign({ id }, secret, {
@@ -40,6 +41,55 @@ export class AuthService {
         await (newUser as any).save({ validateBeforeSave: false });
 
         return { user: newUser, tokens };
+    }
+
+    static async googleAuth(idToken: string) {
+        try {
+            // 1) Verify Firebase ID Token
+            const decodedToken = await admin.auth().verifyIdToken(idToken);
+            const { email, name, picture, uid } = decodedToken;
+
+            if (!email) {
+                throw new AppError('Google account must have an email', 400);
+            }
+
+            // 2) Check if user exists
+            let user = await User.findOne({ email });
+
+            if (!user) {
+                // 3) Create user if not exists
+                const nameParts = (name || '').split(' ');
+                user = await User.create({
+                    email,
+                    firstName: nameParts[0] || 'User',
+                    lastName: nameParts.slice(1).join(' ') || 'Google',
+                    avatar: picture,
+                    firebaseUid: uid,
+                    isActive: true,
+                });
+                logger.info(`New user created via Google Auth: ${email}`);
+            } else {
+                // Update Firebase UID if missing
+                if (!user.firebaseUid) {
+                    user.firebaseUid = uid;
+                    await (user as any).save({ validateBeforeSave: false });
+                }
+                logger.info(`Existing user logged in via Google Auth: ${email}`);
+            }
+
+            // 4) Generate backend tokens
+            const tokens = createSendToken(user);
+
+            // Update refresh token and last login
+            user.refreshToken = tokens.refreshToken;
+            user.lastLogin = new Date();
+            await (user as any).save({ validateBeforeSave: false });
+
+            return { user, tokens };
+        } catch (error: any) {
+            logger.error(`Error in Google Auth: ${error.message}`);
+            throw new AppError('Invalid or expired Google token', 401);
+        }
     }
 
     static async login(email: string, password: string) {

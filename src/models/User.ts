@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import { IUser } from '../types/models';
 
 export interface IUserDocument extends IUser, Document {
+    firebaseUid?: string;
     comparePassword(password: string): Promise<boolean>;
 }
 
@@ -17,7 +18,6 @@ const userSchema = new Schema<IUserDocument>(
         },
         password: {
             type: String,
-            required: [true, 'Password is required'],
             minlength: 8,
             select: false,
         },
@@ -44,6 +44,10 @@ const userSchema = new Schema<IUserDocument>(
         language: {
             type: String,
             default: 'fr',
+        },
+        firebaseUid: {
+            type: String,
+            index: true,
         },
         preferences: {
             coachTone: {

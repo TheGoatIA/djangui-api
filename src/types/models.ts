@@ -10,6 +10,7 @@ export interface IUser {
     monthlyIncome: number;
     currency: string;
     language: string;
+    firebaseUid?: string;
     preferences: {
         coachTone: 'encouraging' | 'firm' | 'balanced';
         notificationFrequency: 'high' | 'medium' | 'low';

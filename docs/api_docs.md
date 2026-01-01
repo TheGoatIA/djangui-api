@@ -31,6 +31,11 @@ Authorization: Bearer <your_access_token>
 - **Body**: `refreshToken`
 - **Response**: `200 OK` with new tokens.
 
+### Google Login
+`POST /auth/google`
+- **Body**: `idToken` (from Firebase)
+- **Response**: `200 OK` with user and tokens.
+
 ### Logout
 `POST /auth/logout` (Protected)
 - **Response**: `200 OK`.

@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthService } from '../services/authService';
 import { AuthRequest } from '../middleware/auth';
+import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 
 export class AuthController {
@@ -9,6 +10,27 @@ export class AuthController {
             const { user, tokens } = await AuthService.register(req.body);
 
             res.status(201).json({
+                success: true,
+                data: {
+                    user,
+                    tokens,
+                },
+            });
+        } catch (err) {
+            next(err);
+        }
+    }
+
+    static async googleAuth(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { idToken } = req.body;
+            if (!idToken) {
+                throw new AppError('idToken is required', 400);
+            }
+
+            const { user, tokens } = await AuthService.googleAuth(idToken);
+
+            res.status(200).json({
                 success: true,
                 data: {
                     user,
