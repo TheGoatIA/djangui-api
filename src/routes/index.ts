@@ -8,6 +8,7 @@ import insightRoutes from './insight.routes';
 import challengeRoutes from './challenge.routes';
 import paymentRoutes from './payment.routes';
 import reportRoutes from './report.routes';
+import uploadRoutes from './upload.routes';
 import { WebhookController } from '../controllers/webhookController';
 
 const router = Router();
@@ -21,6 +22,7 @@ router.use('/insights', insightRoutes);
 router.use('/challenges', challengeRoutes);
 router.use('/payments', paymentRoutes);
 router.use('/reports', reportRoutes);
+router.use('/upload', uploadRoutes);
 
 // Webhooks
 router.post('/webhooks/stripe', WebhookController.stripeWebhook);

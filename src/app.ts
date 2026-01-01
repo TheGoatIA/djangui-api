@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import dotenv from 'dotenv';
+import path from 'path';
 import errorHandler from './middleware/errorHandler';
 import requestLogger from './middleware/requestLogger';
 import routes from './routes';
@@ -24,6 +25,9 @@ app.use(express.json({
     }
 }));
 app.use(express.urlencoded({ extended: true }));
+
+// Static files
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Routes
 app.use('/api/v1', routes);
