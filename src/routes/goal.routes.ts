@@ -8,14 +8,16 @@ const router = Router();
 
 router.use(protect);
 
-router.route('/')
-    .get(GoalController.getAll)
-    .post(validate(createGoalSchema), GoalController.create);
+router
+  .route('/')
+  .get(GoalController.getAll)
+  .post(validate(createGoalSchema), GoalController.create);
 
-router.route('/:id')
-    .get(GoalController.getOne)
-    .put(validate(updateGoalSchema), GoalController.update)
-    .delete(GoalController.delete);
+router
+  .route('/:id')
+  .get(GoalController.getOne)
+  .put(validate(updateGoalSchema), GoalController.update)
+  .delete(GoalController.delete);
 
 router.post('/:id/contribute', GoalController.addContribution);
 

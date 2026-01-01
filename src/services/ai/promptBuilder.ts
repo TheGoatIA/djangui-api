@@ -1,8 +1,8 @@
 import { IUser } from '../../types/models';
 
 export class PromptBuilder {
-    static buildCategorizationPrompt(description: string, amount: number, merchant?: string): string {
-        return `
+  static buildCategorizationPrompt(description: string, amount: number, merchant?: string): string {
+    return `
       Catégorise cette transaction financière pour un coach d'épargne.
       Description: "${description}"
       Montant: ${amount}
@@ -16,11 +16,11 @@ export class PromptBuilder {
         "reasoning": "Brève explication"
       }
     `;
-    }
+  }
 
-    static buildCoachSystemPrompt(user: IUser, context: any): string {
-        const { firstName, monthlyIncome, currency, language, preferences } = user;
-        return `
+  static buildCoachSystemPrompt(user: IUser, context: any): string {
+    const { firstName, monthlyIncome, currency, language, preferences } = user;
+    return `
       Tu es un coach d'épargne expert et bienveillant nommé Djangui.
       Tu parles à ${firstName}. Son revenu mensuel est de ${monthlyIncome} ${currency}.
       Ton ton doit être ${preferences.coachTone}.
@@ -35,10 +35,10 @@ export class PromptBuilder {
       3. Propose des actions concrètes (ex: "Tu pourrais réduire ton budget Loisirs de 10%").
       4. Si l'utilisateur a dépassé son budget, propose un plan de redressement.
     `;
-    }
+  }
 
-    static buildInsightPrompt(user: IUser, transactions: any[]): string {
-        return `
+  static buildInsightPrompt(user: IUser, transactions: any[]): string {
+    return `
       Analyse ces transactions récentes pour ${user.firstName} et identifie des habitudes de dépenses ou des anomalies.
       Transactions: ${JSON.stringify(transactions)}
       
@@ -50,5 +50,5 @@ export class PromptBuilder {
         "advice": "Conseil global"
       }
     `;
-    }
+  }
 }

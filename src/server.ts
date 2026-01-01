@@ -9,22 +9,22 @@ import './config/redis'; // Initialize Redis connection
 const PORT = process.env.PORT || 3000;
 
 const startServer = async () => {
-    try {
-        await connectDB();
+  try {
+    await connectDB();
 
-        // Seed initial challenges
-        await ChallengeService.seedChallenges();
+    // Seed initial challenges
+    await ChallengeService.seedChallenges();
 
-        // Initialize Cron Jobs
-        CronService.init();
+    // Initialize Cron Jobs
+    CronService.init();
 
-        app.listen(PORT, () => {
-            logger.info(`Server is running on port ${PORT} in ${process.env.NODE_ENV} mode`);
-        });
-    } catch (error) {
-        logger.error('Failed to start server:', error);
-        process.exit(1);
-    }
+    app.listen(PORT, () => {
+      logger.info(`Server is running on port ${PORT} in ${process.env.NODE_ENV} mode`);
+    });
+  } catch (error) {
+    logger.error('Failed to start server:', error);
+    process.exit(1);
+  }
 };
 
 startServer();

@@ -8,13 +8,13 @@ const router = Router();
 
 router.use(protect);
 
-router.route('/')
-    .get(BudgetController.getAll)
-    .post(validate(createBudgetSchema), BudgetController.create);
+router
+  .route('/')
+  .get(BudgetController.getAll)
+  .post(validate(createBudgetSchema), BudgetController.create);
 
 router.get('/current', BudgetController.getCurrent);
 
-router.route('/:id')
-    .put(validate(updateBudgetSchema), BudgetController.update);
+router.route('/:id').put(validate(updateBudgetSchema), BudgetController.update);
 
 export default router;

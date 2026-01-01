@@ -3,24 +3,24 @@ import fs from 'fs';
 import logger from '../../utils/logger';
 
 export interface OCRResult {
-    merchant?: string;
-    amount: number;
-    date: Date;
-    category: string;
-    description: string;
-    confidence: number;
+  merchant?: string;
+  amount: number;
+  date: Date;
+  category: string;
+  description: string;
+  confidence: number;
 }
 
 export class OCRService {
-    /**
-     * Scan a receipt image using Gemini AI
-     */
-    static async scanReceipt(filePath: string): Promise<OCRResult> {
-        try {
-            const fileData = fs.readFileSync(filePath);
-            const base64Data = fileData.toString('base64');
+  /**
+   * Scan a receipt image using Gemini AI
+   */
+  static async scanReceipt(filePath: string): Promise<OCRResult> {
+    try {
+      const fileData = fs.readFileSync(filePath);
+      const base64Data = fileData.toString('base64');
 
-            const prompt = `
+      const prompt = `
         Analyze this receipt image and extract the following information in JSON format:
         - merchant: name of the store or service provider
         - amount: total transaction amount as a number
@@ -32,32 +32,32 @@ export class OCRService {
         Return ONLY the JSON.
       `;
 
-            const result = await model.generateContent([
-                prompt,
-                {
-                    inlineData: {
-                        data: base64Data,
-                        mimeType: 'image/jpeg', // Multer filter ensures it's an image or pdf
-                    },
-                },
-            ]);
+      const result = await model.generateContent([
+        prompt,
+        {
+          inlineData: {
+            data: base64Data,
+            mimeType: 'image/jpeg', // Multer filter ensures it's an image or pdf
+          },
+        },
+      ]);
 
-            const responseText = result.response.text();
-            // Clean up potential markdown formatting in response
-            const jsonStr = responseText.replace(/```json|```/g, '').trim();
-            const parsed = JSON.parse(jsonStr);
+      const responseText = result.response.text();
+      // Clean up potential markdown formatting in response
+      const jsonStr = responseText.replace(/```json|```/g, '').trim();
+      const parsed = JSON.parse(jsonStr);
 
-            return {
-                merchant: parsed.merchant || 'Inconnu',
-                amount: Number(parsed.amount) || 0,
-                date: parsed.date ? new Date(parsed.date) : new Date(),
-                category: parsed.category || 'Autres',
-                description: parsed.description || `Achat chez ${parsed.merchant || 'Inconnu'}`,
-                confidence: 0.9, // Placeholder for Gemini's internal scoring if accessible
-            };
-        } catch (error: any) {
-            logger.error(`OCR scan failed: ${error.message}`);
-            throw new Error('Erreur lors de l\'analyse du reçu par l\'IA.');
-        }
+      return {
+        merchant: parsed.merchant || 'Inconnu',
+        amount: Number(parsed.amount) || 0,
+        date: parsed.date ? new Date(parsed.date) : new Date(),
+        category: parsed.category || 'Autres',
+        description: parsed.description || `Achat chez ${parsed.merchant || 'Inconnu'}`,
+        confidence: 0.9, // Placeholder for Gemini's internal scoring if accessible
+      };
+    } catch (error: any) {
+      logger.error(`OCR scan failed: ${error.message}`);
+      throw new Error("Erreur lors de l'analyse du reçu par l'IA.");
     }
+  }
 }

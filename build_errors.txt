@@ -1,1 +1,0 @@
-﻿src/services/cronService.ts(1,18): error TS2307: Cannot find module 'node-cron' or its corresponding type declarations.
