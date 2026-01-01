@@ -1,7 +1,9 @@
 import Transaction, { ITransactionDocument } from '../models/Transaction';
 import Budget from '../models/Budget';
 import SavingGoal from '../models/SavingGoal';
+import UserChallenge from '../models/UserChallenge';
 import { CategorizationService } from './ai/categorizationService';
+import { ChallengeService } from './challengeService';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import mongoose from 'mongoose';
@@ -76,6 +78,12 @@ export class TransactionService {
             }
 
             await session.commitTransaction();
+
+            // Background task: Update active challenges progress
+            TransactionService.updateRelatedChallenges(userId, transaction.amount, transaction.type, transaction.category).catch((err: any) => {
+                logger.error(`Error updating challenges progress: ${err.message}`);
+            });
+
             return transaction;
         } catch (error) {
             await session.abortTransaction();
@@ -148,5 +156,33 @@ export class TransactionService {
         }
         // TODO: Update budget/goal if necessary
         return true;
+    }
+
+    private static async updateRelatedChallenges(userId: string, amount: number, type: 'income' | 'expense', category: string) {
+        const activeChallenges = await UserChallenge.find({ userId, status: 'active' }).populate('challengeId');
+
+        for (const userChallenge of activeChallenges) {
+            const challenge = userChallenge.challengeId as any;
+            let contribution = 0;
+
+            if (challenge.type === 'saving' && type === 'income') {
+                // For now, any income could be seen as potential saving if not spent? 
+                // Or maybe only specific 'saving' transactions. 
+                // Let's say saving challenges track absolute saving amount.
+            } else if (challenge.type === 'spending_cut') {
+                // If it's a spending cut in a specific category
+                if (challenge.category && challenge.category.toLowerCase() === category.toLowerCase()) {
+                    // Logic for spending cut is usually: target is a limit. 
+                    // This is more complex to track mid-transaction.
+                }
+            } else if (challenge.type === 'saving') {
+                // Let's assume income counts as progress for saving goals/challenges for now
+                if (type === 'income') contribution = amount;
+            }
+
+            if (contribution > 0) {
+                await ChallengeService.updateProgress(userChallenge._id.toString(), contribution);
+            }
+        }
     }
 }
