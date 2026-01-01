@@ -1,4 +1,5 @@
-import SavingGoal, { ISavingGoalDocument } from '../models/SavingGoal';
+import SavingGoal from '../models/SavingGoal';
+import { NotificationService } from './notificationService';
 import { AppError } from '../middleware/errorHandler';
 
 export class GoalService {
@@ -32,7 +33,17 @@ export class GoalService {
         goal.contributions.push({ amount, date: new Date(), note });
         goal.currentAmount += amount;
 
+        const wasAlreadyCompleted = goal.progress >= 100;
         await (goal as any).save();
+
+        if (!wasAlreadyCompleted && goal.progress >= 100) {
+            NotificationService.sendToUser(userId, {
+                title: 'Félicitations ! 🎯',
+                body: `Tu as atteint ton objectif d'épargne : ${goal.name} !`,
+                data: { type: 'goal_completed', goalId: goal._id.toString() }
+            });
+        }
+
         return goal;
     }
 

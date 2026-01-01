@@ -87,6 +87,11 @@ const userSchema = new Schema<IUserDocument>(
             type: Boolean,
             default: true,
         },
+        walletBalance: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
         fcmTokens: [String],
         lastLogin: Date,
         refreshToken: String,
@@ -94,6 +99,7 @@ const userSchema = new Schema<IUserDocument>(
     {
         timestamps: true,
         toJSON: {
+            virtuals: true,
             transform: function (doc, ret) {
                 const userRet = ret as any;
                 delete userRet.password;
@@ -101,8 +107,14 @@ const userSchema = new Schema<IUserDocument>(
                 return userRet;
             },
         },
+        toObject: { virtuals: true },
     },
 );
+
+// Virtual for isPremium
+userSchema.virtual('isPremium').get(function () {
+    return this.subscription?.plan === 'premium' && this.subscription?.status === 'active';
+});
 
 // Pre-save hook for password hashing
 userSchema.pre('save', async function () {

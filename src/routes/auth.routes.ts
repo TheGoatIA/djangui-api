@@ -13,5 +13,6 @@ router.post('/refresh', validate(refreshTokenSchema), AuthController.refresh);
 // Protected routes
 router.use(protect);
 router.post('/logout', AuthController.logout);
+router.post('/fcm-token', AuthController.updateFCMToken);
 
 export default router;

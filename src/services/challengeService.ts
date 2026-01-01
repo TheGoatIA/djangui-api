@@ -1,5 +1,6 @@
 import Challenge, { IChallenge } from '../models/Challenge';
 import UserChallenge from '../models/UserChallenge';
+import { NotificationService } from './notificationService';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 
@@ -46,6 +47,13 @@ export class ChallengeService {
             if (userChallenge.progress >= 100) {
                 userChallenge.status = 'completed';
                 userChallenge.completedAt = new Date();
+
+                // Send notification
+                NotificationService.sendToUser(userChallenge.userId.toString(), {
+                    title: 'Challenge Réussi ! 🏆',
+                    body: `Bravo ! Tu as terminé le challenge : ${userChallenge.challengeId.title}`,
+                    data: { type: 'challenge_completed', userChallengeId: userChallenge._id.toString() }
+                });
             }
         }
 

@@ -24,9 +24,44 @@ export interface IUser {
     };
     isEmailVerified: boolean;
     isActive: boolean;
+    isPremium: boolean;
+    walletBalance: number;
     fcmTokens: string[];
     lastLogin?: Date;
     refreshToken?: string;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+export interface IPayment {
+    userId: mongoose.Types.ObjectId;
+    amount: number;
+    currency: string;
+    method: 'stripe' | 'notchpay' | 'wallet';
+    type: 'deposit' | 'subscription' | 'withdrawal';
+    status: 'pending' | 'completed' | 'failed' | 'refunded';
+    reference: string; // Internal reference
+    externalReference?: string; // Stripe/NotchPay reference
+    metadata?: any;
+    completedAt?: Date;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+export interface IInvestment {
+    userId: mongoose.Types.ObjectId;
+    title: string;
+    type: 'crypto' | 'stock' | 'real_estate' | 'other';
+    initialAmount: number;
+    currentValue: number;
+    currency: string;
+    startDate: Date;
+    lastUpdated: Date;
+    history: {
+        value: number;
+        date: Date;
+    }[];
+    status: 'active' | 'closed';
     createdAt: Date;
     updatedAt: Date;
 }

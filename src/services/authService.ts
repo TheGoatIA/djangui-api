@@ -104,4 +104,15 @@ export class AuthService {
         }
         return true;
     }
+
+    static async addFCMToken(userId: string, fcmToken: string) {
+        const user = await User.findById(userId);
+        if (!user) throw new AppError('User not found', 404);
+
+        if (!user.fcmTokens.includes(fcmToken)) {
+            user.fcmTokens.push(fcmToken);
+            await (user as any).save({ validateBeforeSave: false });
+        }
+        return true;
+    }
 }

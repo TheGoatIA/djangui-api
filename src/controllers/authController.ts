@@ -53,6 +53,24 @@ export class AuthController {
         }
     }
 
+    static async updateFCMToken(req: AuthRequest, res: Response, next: NextFunction) {
+        try {
+            const { fcmToken } = req.body;
+            if (!fcmToken) {
+                return res.status(400).json({ success: false, message: 'FCM token is required' });
+            }
+
+            await AuthService.addFCMToken(req.user._id, fcmToken);
+
+            res.status(200).json({
+                success: true,
+                message: 'FCM token updated successfully',
+            });
+        } catch (err) {
+            next(err);
+        }
+    }
+
     static async logout(req: AuthRequest, res: Response, next: NextFunction) {
         try {
             await AuthService.logout(req.user._id);

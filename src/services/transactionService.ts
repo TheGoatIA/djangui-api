@@ -4,6 +4,7 @@ import SavingGoal from '../models/SavingGoal';
 import UserChallenge from '../models/UserChallenge';
 import { CategorizationService } from './ai/categorizationService';
 import { ChallengeService } from './challengeService';
+import { NotificationService } from './notificationService';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import mongoose from 'mongoose';
@@ -57,7 +58,13 @@ export class TransactionService {
 
                         if (budget.categories[categoryIndex].spent > budget.categories[categoryIndex].allocated) {
                             budget.status = 'exceeded';
-                            // TODO: Trigger notification
+
+                            // Send notification
+                            NotificationService.sendToUser(userId, {
+                                title: 'Budget Dépassé ! ⚠️',
+                                body: `Tu as dépassé ton budget pour la catégorie ${budget.categories[categoryIndex].name}.`,
+                                data: { type: 'budget_exceeded', category: budget.categories[categoryIndex].name }
+                            }).catch(err => logger.error(`Notification error: ${err.message}`));
                         }
                         await (budget as any).save({ session });
                     }
