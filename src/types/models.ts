@@ -1,3 +1,5 @@
+import mongoose from 'mongoose';
+
 export interface IUser {
     email: string;
     password?: string;
@@ -25,6 +27,79 @@ export interface IUser {
     fcmTokens: string[];
     lastLogin?: Date;
     refreshToken?: string;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+export interface ITransaction {
+    userId: mongoose.Types.ObjectId;
+    amount: number;
+    type: 'income' | 'expense';
+    category: string;
+    subcategory?: string;
+    description: string;
+    merchant?: string;
+    location?: string;
+    date: Date;
+    tags: string[];
+    isRecurring: boolean;
+    recurringFrequency?: 'daily' | 'weekly' | 'monthly' | 'yearly';
+    isAutoCategorized: boolean;
+    categorizationConfidence?: number;
+    receipt?: string;
+    linkedGoalId?: mongoose.Types.ObjectId;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+export interface IBudget {
+    userId: mongoose.Types.ObjectId;
+    period: {
+        type: 'monthly' | 'yearly';
+        month?: number;
+        year: number;
+    };
+    categories: {
+        name: string;
+        allocated: number;
+        spent: number;
+        percentage: number;
+    }[];
+    totalAllocated: number;
+    totalSpent: number;
+    status: 'active' | 'completed' | 'exceeded';
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+export interface ISavingGoal {
+    userId: mongoose.Types.ObjectId;
+    name: string;
+    description?: string;
+    emoji?: string;
+    type: 'emergency' | 'project' | 'regular' | 'challenge';
+    targetAmount: number;
+    currentAmount: number;
+    startDate: Date;
+    deadline?: Date;
+    priority: 'high' | 'medium' | 'low';
+    strategy: {
+        type: '50-30-20' | 'progressive' | 'roundup' | 'pay-yourself-first' | 'envelope' | 'custom';
+        details?: any;
+    };
+    autoSaveRules: {
+        enableSurplus: boolean;
+        enableRoundup: boolean;
+        percentageIncome: number;
+        dayOfMonth: number;
+    };
+    progress: number;
+    status: 'active' | 'completed' | 'cancelled' | 'paused';
+    contributions: {
+        amount: number;
+        date: Date;
+        note?: string;
+    }[];
     createdAt: Date;
     updatedAt: Date;
 }
