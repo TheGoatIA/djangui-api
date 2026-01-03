@@ -74,10 +74,18 @@ export class PaymentService {
     const reference = `NTP-${uuidv4().split('-')[0].toUpperCase()}`;
 
     try {
-      const response = await notchpayApi.post('/payments/initialize', {
-        amount,
-        currency: 'XAF',
-        email: user.email,
+      // Handle amount based on currency (XAF has no decimals, others usually have 2)
+      const isXAF = user.currency === 'XAF';
+      const cleanAmount = isXAF ? Math.round(amount) : Math.round(amount * 100);
+
+      const response = await notchpayApi.post('/payments', {
+        amount: cleanAmount,
+        currency: user.currency || 'XAF',
+        customer: {
+          name: `${user.firstName} ${user.lastName}`,
+          email: user.email,
+          phone: user.phone,
+        },
         description:
           type === 'subscription' ? 'Abonnement Djangui Premium' : 'Recharge Portefeuille',
         reference,
@@ -87,12 +95,12 @@ export class PaymentService {
       await Payment.create({
         userId,
         amount,
-        currency: 'XAF',
+        currency: user.currency || 'XAF',
         method: 'notchpay',
         type,
         reference,
         status: 'pending',
-        externalReference: response.data.payment.reference,
+        externalReference: response.data.transaction.reference,
       });
 
       return {

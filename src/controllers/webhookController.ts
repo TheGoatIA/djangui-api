@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import stripe from '../config/stripe';
 import { PaymentService } from '../services/paymentService';
+import { notchpayConfig } from '../config/notchpay';
+import { verifyNotchPaySignature } from '../utils/cryptoUtils';
 import logger from '../utils/logger';
 
 export class WebhookController {
@@ -34,7 +36,15 @@ export class WebhookController {
   }
 
   static async notchpayWebhook(req: Request, res: Response, next: NextFunction) {
-    // NotchPay webhook verification usually involves a signature check or fixed source IP
+    const signature = req.headers['x-notchpay-signature'] as string;
+
+    if (
+      !verifyNotchPaySignature(req.body, signature, notchpayConfig.webhookSecret || '')
+    ) {
+      logger.warn('Invalid NotchPay webhook signature received');
+      return res.status(401).json({ message: 'Invalid signature' });
+    }
+
     const data = req.body;
 
     if (data.event === 'payment.complete') {
