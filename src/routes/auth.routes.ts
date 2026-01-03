@@ -13,6 +13,7 @@ router.post('/google', AuthController.googleAuth);
 
 // Protected routes
 router.use(protect);
+router.get('/me', AuthController.getMe);
 router.post('/logout', AuthController.logout);
 router.post('/fcm-token', AuthController.updateFCMToken);
 

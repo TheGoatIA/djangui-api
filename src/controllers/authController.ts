@@ -93,6 +93,19 @@ export class AuthController {
     }
   }
 
+  static async getMe(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      res.status(200).json({
+        success: true,
+        data: {
+          user: req.user,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
   static async logout(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       await AuthService.logout(req.user._id);

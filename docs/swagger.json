@@ -186,6 +186,19 @@
                 }
             }
         },
+        "/v1/auth/me": {
+            "get": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Get Profile (XP, Level, Badges)",
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
         "/v1/auth/logout": {
             "post": {
                 "tags": [
