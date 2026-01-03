@@ -35,6 +35,11 @@ export class TransactionService {
 
       await transaction.save({ session });
 
+      // Apply automated saving strategies (e.g., Roundup)
+      if (transaction.type === 'expense') {
+        await TransactionService.applyAutomatedStrategies(userId, transaction, session);
+      }
+
       // If expense, update budget
       if (transaction.type === 'expense') {
         const date = new Date(transaction.date);
@@ -193,6 +198,47 @@ export class TransactionService {
     }
 
     return results;
+  }
+
+  /**
+   * Apply automated saving strategies like Roundup
+   */
+  private static async applyAutomatedStrategies(
+    userId: string,
+    transaction: any,
+    session?: any,
+  ) {
+    if (transaction.type !== 'expense') return;
+
+    // Find goals with Roundup enabled
+    const roundupGoal = await SavingGoal.findOne({
+      userId,
+      status: 'active',
+      'autoSaveRules.enableRoundup': true,
+    }).session(session);
+
+    if (roundupGoal) {
+      // Logic: Round up to the next 100 or 1000? 
+      // XAF context: next 100 is most common for small/medium expenses.
+      const amount = transaction.amount;
+      const threshold = amount > 1000 ? 1000 : 100;
+      const remainder = threshold - (amount % threshold);
+      const roundupAmount = remainder === threshold ? 0 : remainder;
+
+      if (roundupAmount > 0) {
+        roundupGoal.currentAmount += roundupAmount;
+        roundupGoal.contributions.push({
+          amount: roundupAmount,
+          date: new Date(),
+          note: `Arrondi automatique (Roundup) - Transaction: ${transaction.description}`,
+        });
+        await (roundupGoal as any).save({ session });
+
+        logger.info(
+          `Roundup strategy applied for user ${userId}: ${roundupAmount} added to goal ${roundupGoal.name}`,
+        );
+      }
+    }
   }
 
   private static async updateRelatedChallenges(
