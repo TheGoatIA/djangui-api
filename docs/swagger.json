@@ -18,6 +18,162 @@
                 "scheme": "bearer",
                 "bearerFormat": "JWT"
             }
+        },
+        "schemas": {
+            "User": {
+                "type": "object",
+                "properties": {
+                    "_id": {
+                        "type": "string"
+                    },
+                    "email": {
+                        "type": "string"
+                    },
+                    "firstName": {
+                        "type": "string"
+                    },
+                    "lastName": {
+                        "type": "string"
+                    },
+                    "monthlyIncome": {
+                        "type": "number"
+                    },
+                    "currency": {
+                        "type": "string"
+                    },
+                    "walletBalance": {
+                        "type": "number"
+                    },
+                    "xp": {
+                        "type": "number"
+                    },
+                    "level": {
+                        "type": "number"
+                    },
+                    "badges": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {
+                                    "type": "string"
+                                },
+                                "icon": {
+                                    "type": "string"
+                                },
+                                "awardedAt": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Transaction": {
+                "type": "object",
+                "required": [
+                    "amount",
+                    "type",
+                    "category",
+                    "description"
+                ],
+                "properties": {
+                    "amount": {
+                        "type": "number",
+                        "minimum": 0
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "income",
+                            "expense"
+                        ]
+                    },
+                    "category": {
+                        "type": "string"
+                    },
+                    "subcategory": {
+                        "type": "string"
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "merchant": {
+                        "type": "string"
+                    },
+                    "date": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "isRecurring": {
+                        "type": "boolean"
+                    },
+                    "linkedGoalId": {
+                        "type": "string"
+                    }
+                }
+            },
+            "Budget": {
+                "type": "object",
+                "properties": {
+                    "period": {
+                        "type": "object",
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "monthly",
+                                    "yearly"
+                                ]
+                            },
+                            "month": {
+                                "type": "integer"
+                            },
+                            "year": {
+                                "type": "integer"
+                            }
+                        }
+                    },
+                    "categories": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {
+                                    "type": "string"
+                                },
+                                "allocated": {
+                                    "type": "number"
+                                },
+                                "spent": {
+                                    "type": "number"
+                                }
+                            }
+                        }
+                    },
+                    "totalAllocated": {
+                        "type": "number"
+                    },
+                    "totalSpent": {
+                        "type": "number"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "active",
+                            "completed",
+                            "exceeded"
+                        ]
+                    }
+                }
+            }
         }
     },
     "security": [
@@ -244,7 +400,7 @@
                 "tags": [
                     "Transactions"
                 ],
-                "summary": "List",
+                "summary": "List Transactions",
                 "parameters": [
                     {
                         "name": "type",
@@ -306,7 +462,25 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK"
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "transactions": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/Transaction"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             },
@@ -314,10 +488,34 @@
                 "tags": [
                     "Transactions"
                 ],
-                "summary": "Create",
+                "summary": "Create Transaction",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Transaction"
+                            }
+                        }
+                    }
+                },
                 "responses": {
                     "201": {
-                        "description": "Created"
+                        "description": "Created",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/Transaction"
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -392,10 +590,20 @@
                 "tags": [
                     "Budgets"
                 ],
-                "summary": "List",
+                "summary": "List Budgets",
                 "responses": {
                     "200": {
-                        "description": "OK"
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Budget"
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             },
@@ -403,7 +611,16 @@
                 "tags": [
                     "Budgets"
                 ],
-                "summary": "Create",
+                "summary": "Create Budget",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Budget"
+                            }
+                        }
+                    }
+                },
                 "responses": {
                     "201": {
                         "description": "Created"
@@ -429,10 +646,20 @@
                 "tags": [
                     "Goals"
                 ],
-                "summary": "List",
+                "summary": "List Goals",
                 "responses": {
                     "200": {
-                        "description": "OK"
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Goal"
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             },
@@ -440,7 +667,16 @@
                 "tags": [
                     "Goals"
                 ],
-                "summary": "Create",
+                "summary": "Create Goal",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Goal"
+                            }
+                        }
+                    }
+                },
                 "responses": {
                     "201": {
                         "description": "Created"
@@ -593,12 +829,30 @@
         "/v1/insights/spending": {
             "get": {
                 "tags": [
-                    "Insights"
+                    "AI Tools"
                 ],
-                "summary": "Spending",
+                "summary": "Get Spending Insights",
                 "responses": {
                     "200": {
-                        "description": "OK"
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "analysis": {
+                                            "type": "string"
+                                        },
+                                        "recommendations": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -608,7 +862,7 @@
                 "tags": [
                     "Challenges"
                 ],
-                "summary": "All",
+                "summary": "List Available Challenges",
                 "responses": {
                     "200": {
                         "description": "OK"
@@ -621,7 +875,7 @@
                 "tags": [
                     "Challenges"
                 ],
-                "summary": "Mine",
+                "summary": "List User Challenges",
                 "responses": {
                     "200": {
                         "description": "OK"
@@ -634,10 +888,27 @@
                 "tags": [
                     "Challenges"
                 ],
-                "summary": "Join",
+                "summary": "Join a Challenge",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "challengeId"
+                                ],
+                                "properties": {
+                                    "challengeId": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
                 "responses": {
-                    "200": {
-                        "description": "OK"
+                    "201": {
+                        "description": "Joined"
                     }
                 }
             }
@@ -709,27 +980,22 @@
                 "tags": [
                     "Payments"
                 ],
-                "summary": "NotchPay Initialization",
+                "summary": "Initialize NotchPay Transaction",
                 "requestBody": {
                     "content": {
                         "application/json": {
                             "schema": {
                                 "type": "object",
                                 "required": [
-                                    "amount",
-                                    "type"
+                                    "amount"
                                 ],
                                 "properties": {
                                     "amount": {
-                                        "type": "number",
-                                        "description": "Amount in local currency (e.g. XAF)"
+                                        "type": "number"
                                     },
-                                    "type": {
+                                    "currency": {
                                         "type": "string",
-                                        "enum": [
-                                            "deposit",
-                                            "subscription"
-                                        ]
+                                        "default": "XAF"
                                     }
                                 }
                             }
@@ -857,9 +1123,9 @@
         "/v1/upload/receipt": {
             "post": {
                 "tags": [
-                    "Upload"
+                    "AI Tools"
                 ],
-                "summary": "Receipt",
+                "summary": "Scan Receipt (Upload)",
                 "requestBody": {
                     "content": {
                         "multipart/form-data": {
@@ -877,7 +1143,14 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "OK"
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Transaction"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -885,9 +1158,9 @@
         "/v1/upload/avatar": {
             "post": {
                 "tags": [
-                    "Upload"
+                    "User"
                 ],
-                "summary": "Avatar",
+                "summary": "Update Avatar",
                 "requestBody": {
                     "content": {
                         "multipart/form-data": {
@@ -915,7 +1188,7 @@
                 "tags": [
                     "AI Tools"
                 ],
-                "summary": "Scan Receipt (OCR)",
+                "summary": "Scan Receipt (Direct OCR)",
                 "requestBody": {
                     "content": {
                         "multipart/form-data": {
@@ -933,7 +1206,14 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "Extracted data from receipt"
+                        "description": "OCR results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Transaction"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -943,26 +1223,26 @@
                 "tags": [
                     "Challenges"
                 ],
-                "summary": "Validate Week (52-Week Challenge)",
+                "summary": "Validate Challenge Week",
                 "requestBody": {
                     "content": {
                         "application/json": {
                             "schema": {
                                 "type": "object",
                                 "required": [
-                                    "userChallengeId",
-                                    "weekNumber",
-                                    "amount"
+                                    "weekNumber"
                                 ],
                                 "properties": {
-                                    "userChallengeId": {
-                                        "type": "string"
-                                    },
                                     "weekNumber": {
-                                        "type": "integer"
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 52
                                     },
                                     "amount": {
                                         "type": "number"
+                                    },
+                                    "userChallengeId": {
+                                        "type": "string"
                                     }
                                 }
                             }
@@ -981,7 +1261,7 @@
                 "tags": [
                     "Transactions"
                 ],
-                "summary": "Bulk Import (CSV/JSON)",
+                "summary": "Bulk Upload Transactions",
                 "requestBody": {
                     "content": {
                         "multipart/form-data": {
@@ -999,7 +1279,7 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "Bulk import statistics"
+                        "description": "Bulk import summary"
                     }
                 }
             }
@@ -1009,7 +1289,7 @@
                 "tags": [
                     "Reports"
                 ],
-                "summary": "AI Narrative Report",
+                "summary": "AI narrative report",
                 "parameters": [
                     {
                         "name": "month",
@@ -1028,7 +1308,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "AI Report Data"
+                        "description": "Narrative Report Data"
                     }
                 }
             }
@@ -1038,7 +1318,7 @@
                 "tags": [
                     "AI Tools"
                 ],
-                "summary": "Parse Bank SMS",
+                "summary": "Parse Single Bank SMS",
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -1058,7 +1338,40 @@
                 },
                 "responses": {
                     "201": {
-                        "description": "Transaction created from SMS"
+                        "description": "Transaction created"
+                    }
+                }
+            }
+        },
+        "/v1/sms/bulk-parse": {
+            "post": {
+                "tags": [
+                    "AI Tools"
+                ],
+                "summary": "Parse Multiple Bank SMS",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "messages"
+                                ],
+                                "properties": {
+                                    "messages": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Transactions created"
                     }
                 }
             }
