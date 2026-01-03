@@ -87,6 +87,10 @@ const userSchema = new Schema<IUserDocument>(
       type: Boolean,
       default: false,
     },
+    emailVerificationToken: String,
+    emailVerificationExpires: Date,
+    passwordResetToken: String,
+    passwordResetExpires: Date,
     isActive: {
       type: Boolean,
       default: true,

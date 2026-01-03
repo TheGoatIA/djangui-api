@@ -13,6 +13,7 @@ import reportRoutes from './report.routes';
 import uploadRoutes from './upload.routes';
 import { WebhookController } from '../controllers/webhookController';
 import investmentRoutes from './investment.routes';
+import emailRoutes from './email.routes';
 
 const router = Router();
 
@@ -29,6 +30,7 @@ router.use('/payments', paymentRoutes);
 router.use('/reports', reportRoutes);
 router.use('/upload', uploadRoutes);
 router.use('/investments', investmentRoutes);
+router.use('/emails', emailRoutes);
 
 // Webhooks
 router.post('/webhooks/stripe', WebhookController.stripeWebhook);

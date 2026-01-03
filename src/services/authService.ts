@@ -3,6 +3,8 @@ import User, { IUserDocument } from '../models/User';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import admin from '../config/firebase';
+import crypto from 'crypto';
+import { EmailService } from './emailService';
 
 const signToken = (id: string, secret: string, expiresIn: any) => {
   return jwt.sign({ id }, secret, {
@@ -34,6 +36,22 @@ export class AuthService {
     }
 
     const newUser = await User.create(userData);
+
+    // Generate verification token
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto.createHash('sha256').update(verificationToken).digest('hex');
+
+    newUser.emailVerificationToken = hashedToken;
+    newUser.emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    await (newUser as any).save({ validateBeforeSave: false });
+
+    // Send verification email
+    try {
+      await EmailService.sendVerificationEmail(newUser.email, verificationToken);
+    } catch (err) {
+      logger.error('Failed to send verification email');
+    }
+
     const tokens = createSendToken(newUser);
 
     // Store refresh token in user
@@ -164,5 +182,74 @@ export class AuthService {
       await (user as any).save({ validateBeforeSave: false });
     }
     return true;
+  }
+
+  static async forgotPassword(email: string) {
+    const user = await User.findOne({ email });
+    if (!user) {
+      throw new AppError('There is no user with this email address.', 404);
+    }
+
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+
+    user.passwordResetToken = hashedToken;
+    user.passwordResetExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    await (user as any).save({ validateBeforeSave: false });
+
+    try {
+      await EmailService.sendPasswordResetEmail(user.email, resetToken);
+    } catch (err) {
+      user.passwordResetToken = undefined;
+      user.passwordResetExpires = undefined;
+      await (user as any).save({ validateBeforeSave: false });
+      throw new AppError('There was an error sending the email. Try again later!', 500);
+    }
+  }
+
+  static async resetPassword(token: string, password: string) {
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    const user = await User.findOne({
+      passwordResetToken: hashedToken,
+      passwordResetExpires: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      throw new AppError('Token is invalid or has expired', 400);
+    }
+
+    user.password = password;
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
+    await user.save();
+
+    const tokens = createSendToken(user);
+    user.refreshToken = tokens.refreshToken;
+    await (user as any).save({ validateBeforeSave: false });
+
+    return { user, tokens };
+  }
+
+  static async verifyEmail(token: string) {
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    const user = await User.findOne({
+      emailVerificationToken: hashedToken,
+      emailVerificationExpires: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      throw new AppError('Token is invalid or has expired', 400);
+    }
+
+    user.isEmailVerified = true;
+    user.emailVerificationToken = undefined;
+    user.emailVerificationExpires = undefined;
+    await (user as any).save({ validateBeforeSave: false });
+
+    const tokens = createSendToken(user);
+    return { user, tokens };
   }
 }

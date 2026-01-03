@@ -118,4 +118,58 @@ export class AuthController {
       next(err);
     }
   }
+
+  static async forgotPassword(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.body.email) {
+        throw new AppError('Email is required', 400);
+      }
+      await AuthService.forgotPassword(req.body.email);
+
+      res.status(200).json({
+        success: true,
+        message: 'Token sent to email!',
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async resetPassword(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { password } = req.body;
+      const { token } = req.params;
+      const { user, tokens } = await AuthService.resetPassword(token, password);
+
+      res.status(200).json({
+        success: true,
+        data: {
+          user,
+          tokens,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async verifyEmail(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { token } = req.query;
+      if (!token || typeof token !== 'string') {
+        throw new AppError('Token is invalid', 400);
+      }
+      const { user, tokens } = await AuthService.verifyEmail(token);
+
+      res.status(200).json({
+        success: true,
+        data: {
+          user,
+          tokens,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
 }

@@ -11,6 +11,10 @@ router.post('/login', validate(loginSchema), AuthController.login);
 router.post('/refresh', validate(refreshTokenSchema), AuthController.refresh);
 router.post('/google', AuthController.googleAuth);
 
+router.post('/forgot-password', AuthController.forgotPassword);
+router.patch('/reset-password/:token', AuthController.resetPassword);
+router.get('/verify-email', AuthController.verifyEmail);
+
 // Protected routes
 router.use(protect);
 router.get('/me', AuthController.getMe);

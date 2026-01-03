@@ -25,6 +25,10 @@ export interface IUser {
   };
   isEmailVerified: boolean;
   isActive: boolean;
+  emailVerificationToken?: string;
+  emailVerificationExpires?: Date;
+  passwordResetToken?: string;
+  passwordResetExpires?: Date;
   isPremium: boolean;
   walletBalance: number;
   xp: number;
