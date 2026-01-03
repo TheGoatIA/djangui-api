@@ -897,6 +897,159 @@
                 }
             }
         },
+        "/v1/ocr/scan": {
+            "post": {
+                "tags": [
+                    "AI Tools"
+                ],
+                "summary": "Scan Receipt (OCR)",
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "receipt": {
+                                        "type": "string",
+                                        "format": "binary"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Extracted data from receipt"
+                    }
+                }
+            }
+        },
+        "/v1/challenges/validate-week": {
+            "post": {
+                "tags": [
+                    "Challenges"
+                ],
+                "summary": "Validate Week (52-Week Challenge)",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "userChallengeId",
+                                    "weekNumber",
+                                    "amount"
+                                ],
+                                "properties": {
+                                    "userChallengeId": {
+                                        "type": "string"
+                                    },
+                                    "weekNumber": {
+                                        "type": "integer"
+                                    },
+                                    "amount": {
+                                        "type": "number"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Week validated"
+                    }
+                }
+            }
+        },
+        "/v1/transactions/bulk": {
+            "post": {
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "Bulk Import (CSV/JSON)",
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "file": {
+                                        "type": "string",
+                                        "format": "binary"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Bulk import statistics"
+                    }
+                }
+            }
+        },
+        "/v1/reports/narrative": {
+            "get": {
+                "tags": [
+                    "Reports"
+                ],
+                "summary": "AI Narrative Report",
+                "parameters": [
+                    {
+                        "name": "month",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "year",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "AI Report Data"
+                    }
+                }
+            }
+        },
+        "/v1/sms/parse": {
+            "post": {
+                "tags": [
+                    "AI Tools"
+                ],
+                "summary": "Parse Bank SMS",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "content"
+                                ],
+                                "properties": {
+                                    "content": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Transaction created from SMS"
+                    }
+                }
+            }
+        },
         "/v1/webhooks/stripe": {
             "post": {
                 "tags": [

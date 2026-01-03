@@ -2,10 +2,15 @@ import User from '../../models/User';
 import Transaction from '../../models/Transaction';
 import { GeminiService } from './geminiService';
 import { PromptBuilder } from './promptBuilder';
+import { RedisService } from '../redisService';
 import { AppError } from '../../middleware/errorHandler';
 
 export class InsightService {
   static async getSpendingAnalysis(userId: string) {
+    const cacheKey = RedisService.generateKey('insights', userId);
+    const cached = await RedisService.get(cacheKey);
+    if (cached) return cached;
+
     const user = await User.findById(userId);
     if (!user) throw new AppError('User not found', 404);
 
@@ -21,7 +26,13 @@ export class InsightService {
       };
     }
 
-    const prompt = PromptBuilder.buildInsightPrompt(user, transactions);
-    return GeminiService.generateJSON(prompt);
+    const prompt = PromptBuilder.buildInsightPrompt(user as any, transactions);
+    const result = await GeminiService.generateJSON(prompt);
+
+    if (result) {
+      await RedisService.set(cacheKey, result, 3600); // 1 hour
+    }
+
+    return result;
   }
 }

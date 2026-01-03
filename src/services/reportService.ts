@@ -5,6 +5,7 @@ import mongoose from 'mongoose';
 import logger from '../utils/logger';
 import { GeminiService } from './ai/geminiService';
 import { PromptBuilder } from './ai/promptBuilder';
+import { RedisService } from './redisService';
 import { AppError } from '../middleware/errorHandler';
 
 export class ReportService {
@@ -146,6 +147,10 @@ export class ReportService {
    * Generate a narrative AI report for the month
    */
   static async getNarrativeReport(userId: string, month: number, year: number) {
+    const cacheKey = RedisService.generateKey('narrative_report', userId, month.toString(), year.toString());
+    const cached = await RedisService.get(cacheKey);
+    if (cached) return cached;
+
     const user = await User.findById(userId);
     if (!user) throw new AppError('User not found', 404);
 
@@ -163,6 +168,10 @@ export class ReportService {
 
     const prompt = PromptBuilder.buildNarrativeReportPrompt(user as any, reportData);
     const aiReport = await GeminiService.generateJSON(prompt);
+
+    if (aiReport) {
+      await RedisService.set(cacheKey, aiReport, 3600 * 6); // 6 hours
+    }
 
     return aiReport;
   }
