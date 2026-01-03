@@ -1,17 +1,8 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
-export interface IUserChallenge extends Document {
-  userId: mongoose.Types.ObjectId;
-  challengeId: mongoose.Types.ObjectId;
-  status: 'active' | 'completed' | 'failed' | 'abandoned';
-  progress: number;
-  currentValue: number;
-  startDate: Date;
-  endDate: Date;
-  completedAt?: Date;
-  createdAt: Date;
-  updatedAt: Date;
-}
+import { IUserChallenge } from '../types/models';
+
+export interface IUserChallengeDocument extends IUserChallenge, Document { }
 
 const userChallengeSchema = new Schema<IUserChallenge>(
   {
@@ -27,6 +18,25 @@ const userChallengeSchema = new Schema<IUserChallenge>(
     startDate: { type: Date, default: Date.now },
     endDate: { type: Date, required: true },
     completedAt: { type: Date },
+    weeks: [
+      {
+        weekNumber: { type: Number, required: true },
+        targetAmount: { type: Number, required: true },
+        savedAmount: { type: Number, default: 0 },
+        status: {
+          type: String,
+          enum: ['pending', 'completed', 'late', 'skipped', 'postponed'],
+          default: 'pending',
+        },
+        validatedAt: Date,
+      },
+    ],
+    flexibility: {
+      skipsUsed: { type: Number, default: 0 },
+      skipsMax: { type: Number, default: 3 },
+      postponementsUsed: { type: Number, default: 0 },
+      postponementsMax: { type: Number, default: 2 },
+    },
   },
   {
     timestamps: true,

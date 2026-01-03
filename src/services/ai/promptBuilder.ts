@@ -51,4 +51,25 @@ export class PromptBuilder {
       }
     `;
   }
+  static buildNarrativeReportPrompt(user: IUser, reportData: any): string {
+    return `
+      En tant que coach financier Djangui, rédige un rapport mensuel narratif et motivant pour ${user.firstName}.
+      Données du mois: ${JSON.stringify(reportData)}
+      
+      Le rapport doit inclure:
+      1. Un résumé amical du mois.
+      2. Une analyse des plus grosses dépenses.
+      3. Une félicitation pour l'épargne réalisée ou un encouragement si elle est faible.
+      4. Trois conseils personnalisés pour le mois prochain.
+      
+      Réponds en format JSON:
+      {
+        "title": "Titre du rapport",
+        "summary": "Texte narratif du résumé",
+        "topInsights": ["insight 1", "insight 2"],
+        "recommendations": ["conseil 1", "conseil 2", "conseil 3"],
+        "tone": "Le ton utilisé"
+      }
+    `;
+  }
 }

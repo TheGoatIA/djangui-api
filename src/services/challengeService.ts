@@ -1,6 +1,8 @@
-import Challenge, { IChallenge } from '../models/Challenge';
+import Challenge from '../models/Challenge';
+import { IChallenge } from '../types/models';
 import UserChallenge from '../models/UserChallenge';
 import { NotificationService } from './notificationService';
+import { GamificationService } from './gamificationService';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 
@@ -24,13 +26,40 @@ export class ChallengeService {
     const endDate = new Date();
     endDate.setDate(startDate.getDate() + challenge.durationDays);
 
-    const userChallenge = await UserChallenge.create({
+    const userChallenge = new UserChallenge({
       userId,
       challengeId,
       startDate,
       endDate,
     });
 
+    // If it's a 52-week style challenge (detected by duration or custom flag)
+    if (challenge.durationDays >= 364) {
+      // Determine level (100, 200, 500, 1000) from title or metadata
+      let increment = 100;
+      if (challenge.title.includes('200')) increment = 200;
+      if (challenge.title.includes('500')) increment = 500;
+      if (challenge.title.includes('1000')) increment = 1000;
+
+      const weeks = [];
+      for (let i = 1; i <= 52; i++) {
+        weeks.push({
+          weekNumber: i,
+          targetAmount: i * increment,
+          savedAmount: 0,
+          status: 'pending',
+        });
+      }
+      userChallenge.weeks = weeks as any;
+      userChallenge.flexibility = {
+        skipsUsed: 0,
+        skipsMax: 3,
+        postponementsUsed: 0,
+        postponementsMax: 2,
+      };
+    }
+
+    await userChallenge.save();
     return userChallenge;
   }
 
@@ -60,8 +89,65 @@ export class ChallengeService {
     }
 
     await userChallenge.save();
+
+    // Add XP for progress
+    if (value > 0) {
+      const xpAmount = Math.floor(value / 100); // 1 XP per 100 XAF saved
+      if (xpAmount > 0) {
+        await GamificationService.addXP(userChallenge.userId.toString(), xpAmount);
+      }
+    }
+
     return userChallenge;
   }
+
+  static async validateWeek(userChallengeId: string, weekNumber: number, amount: number) {
+    const userChallenge = await UserChallenge.findById(userChallengeId).populate<{
+      challengeId: IChallenge;
+    }>('challengeId');
+    if (!userChallenge) throw new AppError('Participation non trouvée', 404);
+
+    const week = userChallenge.weeks.find((w) => w.weekNumber === weekNumber);
+    if (!week) throw new AppError('Semaine non trouvée', 404);
+
+    if (week.status === 'completed') throw new AppError('Semaine déjà validée', 400);
+
+    week.savedAmount = amount;
+    week.status = 'completed';
+    week.validatedAt = new Date();
+
+    userChallenge.currentValue += amount;
+    const target = userChallenge.challengeId.targetAmount || 0;
+    if (target > 0) {
+      userChallenge.progress = Math.min(100, (userChallenge.currentValue / target) * 100);
+    }
+
+    // Award bonus XP for weekly validation
+    await GamificationService.addXP(userChallenge.userId.toString(), 50);
+
+    if (userChallenge.progress >= 100) {
+      userChallenge.status = 'completed';
+      userChallenge.completedAt = new Date();
+
+      // Award big XP and Badge
+      await GamificationService.addXP(userChallenge.userId.toString(), userChallenge.challengeId.rewardPoints || 500);
+      await GamificationService.awardBadge(
+        userChallenge.userId.toString(),
+        `Champion: ${userChallenge.challengeId.title}`,
+        userChallenge.challengeId.icon || '🏆'
+      );
+
+      NotificationService.sendToUser(userChallenge.userId.toString(), {
+        title: 'Challenge Réussi ! 🏆',
+        body: `Bravo ! Tu as terminé le challenge : ${userChallenge.challengeId.title}`,
+        data: { type: 'challenge_completed', userChallengeId: userChallenge._id.toString() },
+      });
+    }
+
+    await userChallenge.save();
+    return userChallenge;
+  }
+
 
   // Helper to create seed challenges if none exist
   static async seedChallenges() {

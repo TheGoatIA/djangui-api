@@ -1,20 +1,8 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
-export interface IChallenge extends Document {
-  title: string;
-  description: string;
-  type: 'saving' | 'spending_cut' | 'habit';
-  difficulty: 'easy' | 'medium' | 'hard';
-  targetAmount?: number;
-  durationDays: number;
-  category?: string;
-  icon?: string;
-  rewardPoints: number;
-  isCustom: boolean;
-  createdBy?: mongoose.Types.ObjectId;
-  createdAt: Date;
-  updatedAt: Date;
-}
+import { IChallenge } from '../types/models';
+
+export interface IChallengeDocument extends IChallenge, Document { }
 
 const challengeSchema = new Schema<IChallenge>(
   {

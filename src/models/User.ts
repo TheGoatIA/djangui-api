@@ -96,6 +96,21 @@ const userSchema = new Schema<IUserDocument>(
       default: 0,
       min: 0,
     },
+    xp: {
+      type: Number,
+      default: 0,
+    },
+    level: {
+      type: Number,
+      default: 1,
+    },
+    badges: [
+      {
+        name: String,
+        icon: String,
+        awardedAt: { type: Date, default: Date.now },
+      },
+    ],
     fcmTokens: [String],
     lastLogin: Date,
     refreshToken: String,

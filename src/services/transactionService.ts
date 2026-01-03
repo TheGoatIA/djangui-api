@@ -172,6 +172,29 @@ export class TransactionService {
     return true;
   }
 
+  static async bulkCreateTransactions(userId: string, transactionsData: any[]) {
+    const results = {
+      success: 0,
+      failed: 0,
+      errors: [] as any[],
+    };
+
+    for (const data of transactionsData) {
+      try {
+        await this.createTransaction(userId, data);
+        results.success++;
+      } catch (err: any) {
+        results.failed++;
+        results.errors.push({
+          data,
+          error: err.message,
+        });
+      }
+    }
+
+    return results;
+  }
+
   private static async updateRelatedChallenges(
     userId: string,
     amount: number,

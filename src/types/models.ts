@@ -27,9 +27,58 @@ export interface IUser {
   isActive: boolean;
   isPremium: boolean;
   walletBalance: number;
+  xp: number;
+  level: number;
+  badges: {
+    name: string;
+    icon: string;
+    awardedAt: Date;
+  }[];
   fcmTokens: string[];
   lastLogin?: Date;
   refreshToken?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface IChallenge {
+  title: string;
+  description: string;
+  type: 'saving' | 'spending_cut' | 'habit';
+  difficulty: 'easy' | 'medium' | 'hard';
+  targetAmount?: number;
+  durationDays: number;
+  category?: string;
+  icon?: string;
+  rewardPoints: number;
+  isCustom: boolean;
+  createdBy?: mongoose.Types.ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface IUserChallenge {
+  userId: mongoose.Types.ObjectId;
+  challengeId: mongoose.Types.ObjectId;
+  status: 'active' | 'completed' | 'failed' | 'abandoned';
+  progress: number;
+  currentValue: number;
+  startDate: Date;
+  endDate: Date;
+  completedAt?: Date;
+  weeks: {
+    weekNumber: number;
+    targetAmount: number;
+    savedAmount: number;
+    status: 'pending' | 'completed' | 'late' | 'skipped' | 'postponed';
+    validatedAt?: Date;
+  }[];
+  flexibility: {
+    skipsUsed: number;
+    skipsMax: number;
+    postponementsUsed: number;
+    postponementsMax: number;
+  };
   createdAt: Date;
   updatedAt: Date;
 }

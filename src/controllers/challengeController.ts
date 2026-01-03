@@ -39,4 +39,21 @@ export class ChallengeController {
       next(err);
     }
   }
+
+  static async validateWeek(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const { userChallengeId, weekNumber, amount } = req.body;
+      const userChallenge = await ChallengeService.validateWeek(
+        userChallengeId,
+        weekNumber,
+        amount,
+      );
+      res.status(200).json({
+        success: true,
+        data: userChallenge,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
 }

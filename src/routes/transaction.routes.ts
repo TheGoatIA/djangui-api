@@ -6,6 +6,9 @@ import {
   createTransactionSchema,
   updateTransactionSchema,
 } from '../validators/transactionValidator';
+import multer from 'multer';
+
+const upload = multer({ dest: 'uploads/' });
 
 const router = Router();
 
@@ -21,5 +24,7 @@ router
   .get(TransactionController.getOne)
   .put(validate(updateTransactionSchema), TransactionController.update)
   .delete(TransactionController.delete);
+
+router.post('/bulk', upload.single('file'), TransactionController.bulkUpload);
 
 export default router;

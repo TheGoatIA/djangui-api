@@ -3,6 +3,9 @@ import Budget from '../models/Budget';
 import User from '../models/User';
 import mongoose from 'mongoose';
 import logger from '../utils/logger';
+import { GeminiService } from './ai/geminiService';
+import { PromptBuilder } from './ai/promptBuilder';
+import { AppError } from '../middleware/errorHandler';
 
 export class ReportService {
   /**
@@ -50,11 +53,11 @@ export class ReportService {
       savingsRate: Math.max(0, savingsRate),
       budgetHealth: budget
         ? {
-            totalAllocated: budget.totalAllocated,
-            totalSpent: budget.totalSpent,
-            status: budget.status,
-            percentageUsed: (budget.totalSpent / budget.totalAllocated) * 100,
-          }
+          totalAllocated: budget.totalAllocated,
+          totalSpent: budget.totalSpent,
+          status: budget.status,
+          percentageUsed: (budget.totalSpent / budget.totalAllocated) * 100,
+        }
         : null,
       currency: user?.currency || 'XAF',
     };
@@ -137,5 +140,30 @@ export class ReportService {
     );
 
     return trend;
+  }
+
+  /**
+   * Generate a narrative AI report for the month
+   */
+  static async getNarrativeReport(userId: string, month: number, year: number) {
+    const user = await User.findById(userId);
+    if (!user) throw new AppError('User not found', 404);
+
+    const [summary, categoryAnalysis] = await Promise.all([
+      this.getDashboardSummary(userId),
+      this.getSpendingAnalysis(userId, month, year),
+    ]);
+
+    const reportData = {
+      month,
+      year,
+      summary,
+      categoryAnalysis,
+    };
+
+    const prompt = PromptBuilder.buildNarrativeReportPrompt(user as any, reportData);
+    const aiReport = await GeminiService.generateJSON(prompt);
+
+    return aiReport;
   }
 }

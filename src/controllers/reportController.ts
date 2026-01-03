@@ -46,7 +46,10 @@ export class ReportController {
   static async exportCSV(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const { startDate, endDate } = req.query;
-      const csv = await ExportService.exportTransactionsToCSV(req.user._id, { startDate, endDate });
+      const csv = await ExportService.exportTransactionsToCSV(req.user._id, {
+        startDate: startDate as string,
+        endDate: endDate as string,
+      });
 
       if (!csv) {
         return res
@@ -57,6 +60,21 @@ export class ReportController {
       res.header('Content-Type', 'text/csv');
       res.attachment(`transactions-${new Date().toISOString().split('T')[0]}.csv`);
       res.send(csv);
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async getNarrativeReport(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const month = parseInt(req.query.month as string) || new Date().getMonth() + 1;
+      const year = parseInt(req.query.year as string) || new Date().getFullYear();
+
+      const report = await ReportService.getNarrativeReport(req.user._id, month, year);
+      res.status(200).json({
+        success: true,
+        data: report,
+      });
     } catch (err) {
       next(err);
     }
