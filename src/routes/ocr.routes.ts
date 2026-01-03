@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { OCRController } from '../controllers/ocrController';
-import protect from '../middleware/auth';
+import { protect, premiumOnly } from '../middleware/auth';
 import multer from 'multer';
 import { AppError } from '../middleware/errorHandler';
 
@@ -21,6 +21,6 @@ const upload = multer({
 
 router.use(protect);
 
-router.post('/scan', upload.single('receipt'), OCRController.scanReceipt);
+router.post('/scan', premiumOnly, upload.single('receipt'), OCRController.scanReceipt);
 
 export default router;

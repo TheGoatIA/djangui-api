@@ -6,6 +6,7 @@ import logger from '../utils/logger';
 import { GeminiService } from './ai/geminiService';
 import { PromptBuilder } from './ai/promptBuilder';
 import { RedisService } from './redisService';
+import Investment from '../models/Investment';
 import { AppError } from '../middleware/errorHandler';
 
 export class ReportService {
@@ -154,16 +155,25 @@ export class ReportService {
     const user = await User.findById(userId);
     if (!user) throw new AppError('User not found', 404);
 
-    const [summary, categoryAnalysis] = await Promise.all([
+    const [summary, categoryAnalysis, investments] = await Promise.all([
       this.getDashboardSummary(userId),
       this.getSpendingAnalysis(userId, month, year),
+      Investment.find({ userId, status: 'active' }),
     ]);
+
+    const investmentSummary = investments.map(inv => ({
+      title: inv.title,
+      type: inv.type,
+      performance: ((inv.currentValue - inv.initialAmount) / inv.initialAmount) * 100,
+      currentValue: inv.currentValue,
+    }));
 
     const reportData = {
       month,
       year,
       summary,
       categoryAnalysis,
+      investmentSummary,
     };
 
     const prompt = PromptBuilder.buildNarrativeReportPrompt(user as any, reportData);

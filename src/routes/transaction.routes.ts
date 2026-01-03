@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { TransactionController } from '../controllers/transactionController';
-import protect from '../middleware/auth';
+import { protect, premiumOnly } from '../middleware/auth';
 import validate from '../middleware/validation';
 import {
   createTransactionSchema,
@@ -25,6 +25,6 @@ router
   .put(validate(updateTransactionSchema), TransactionController.update)
   .delete(TransactionController.delete);
 
-router.post('/bulk', upload.single('file'), TransactionController.bulkUpload);
+router.post('/bulk', premiumOnly, upload.single('file'), TransactionController.bulkUpload);
 
 export default router;

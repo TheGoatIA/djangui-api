@@ -12,6 +12,7 @@ import paymentRoutes from './payment.routes';
 import reportRoutes from './report.routes';
 import uploadRoutes from './upload.routes';
 import { WebhookController } from '../controllers/webhookController';
+import investmentRoutes from './investment.routes';
 
 const router = Router();
 
@@ -27,6 +28,7 @@ router.use('/sms', smsRoutes);
 router.use('/payments', paymentRoutes);
 router.use('/reports', reportRoutes);
 router.use('/upload', uploadRoutes);
+router.use('/investments', investmentRoutes);
 
 // Webhooks
 router.post('/webhooks/stripe', WebhookController.stripeWebhook);

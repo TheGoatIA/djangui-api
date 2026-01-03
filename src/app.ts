@@ -3,6 +3,8 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
+import { RedisStore } from 'rate-limit-redis';
+import redis from './config/redis';
 import dotenv from 'dotenv';
 import path from 'path';
 import errorHandler from './middleware/errorHandler';
@@ -15,13 +17,17 @@ dotenv.config();
 
 const app = express();
 
-// Rate limiting
+// Rate limiting using Redis
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // Limit each IP to 100 requests per windowMs
   message: 'Too many requests from this IP, please try again after 15 minutes',
   standardHeaders: true,
   legacyHeaders: false,
+  store: new RedisStore({
+    // @ts-expect-error - Known issue with type definitions
+    sendCommand: (...args: string[]) => redis.call(...args),
+  }),
 });
 
 // Middlewares

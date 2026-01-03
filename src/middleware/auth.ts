@@ -42,4 +42,17 @@ const protect = async (req: AuthRequest, res: Response, next: NextFunction) => {
   }
 };
 
+const premiumOnly = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  if (!req.user) {
+    return next(new AppError('Authentication required.', 401));
+  }
+
+  if (req.user.subscription?.plan !== 'premium' || req.user.subscription?.status !== 'active') {
+    return next(new AppError('This is a premium feature. Please upgrade your plan to access it.', 403));
+  }
+
+  next();
+};
+
+export { protect, premiumOnly };
 export default protect;
