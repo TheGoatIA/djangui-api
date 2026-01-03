@@ -470,6 +470,67 @@
                 }
             }
         },
+        "/v1/auth/firebase": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Firebase Auth (Google, Phone, etc.)",
+                "security": [],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "idToken"
+                                ],
+                                "properties": {
+                                    "idToken": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/auth/link-phone": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Link Phone Number",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "idToken"
+                                ],
+                                "properties": {
+                                    "idToken": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Linked"
+                    }
+                }
+            }
+        },
         "/v1/auth/login": {
             "post": {
                 "tags": [

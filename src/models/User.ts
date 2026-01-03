@@ -95,6 +95,10 @@ const userSchema = new Schema<IUserDocument>(
       type: Boolean,
       default: true,
     },
+    isPhoneVerified: {
+      type: Boolean,
+      default: false,
+    },
     walletBalance: {
       type: Number,
       default: 0,
@@ -135,12 +139,12 @@ const userSchema = new Schema<IUserDocument>(
 );
 
 // Virtual for isPremium
-userSchema.virtual('isPremium').get(function () {
+userSchema.virtual('isPremium').get(function (this: IUserDocument) {
   return this.subscription?.plan === 'premium' && this.subscription?.status === 'active';
 });
 
 // Pre-save hook for password hashing
-userSchema.pre('save', async function () {
+userSchema.pre('save', async function (this: IUserDocument) {
   if (!this.isModified('password') || !this.password) return;
 
   try {

@@ -21,24 +21,33 @@ export class AuthController {
     }
   }
 
-  static async googleAuth(req: Request, res: Response, next: NextFunction) {
+  static async firebaseAuth(req: Request, res: Response, next: NextFunction) {
     try {
       const { idToken } = req.body;
-      if (!idToken) {
-        throw new AppError('idToken is required', 400);
-      }
+      if (!idToken) throw new AppError('Firebase ID token is required', 400);
 
-      const { user, tokens } = await AuthService.googleAuth(idToken);
-
+      const result = await AuthService.firebaseAuth(idToken);
       res.status(200).json({
-        success: true,
-        data: {
-          user,
-          tokens,
-        },
+        status: 'success',
+        ...result,
       });
-    } catch (err) {
-      next(err);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async linkPhoneNumber(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { idToken } = req.body;
+      if (!idToken) throw new AppError('Firebase ID token is required', 400);
+
+      const user = await AuthService.linkPhoneNumber((req as any).user.id, idToken);
+      res.status(200).json({
+        status: 'success',
+        user,
+      });
+    } catch (error) {
+      next(error);
     }
   }
 

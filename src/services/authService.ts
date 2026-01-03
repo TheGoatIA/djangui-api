@@ -61,38 +61,51 @@ export class AuthService {
     return { user: newUser, tokens };
   }
 
-  static async googleAuth(idToken: string) {
+  static async firebaseAuth(idToken: string) {
     try {
       // 1) Verify Firebase ID Token
       const decodedToken = await admin.auth().verifyIdToken(idToken);
-      const { email, name, picture, uid } = decodedToken;
+      const { email, name, picture, uid, phone_number } = decodedToken;
 
-      if (!email) {
-        throw new AppError('Google account must have an email', 400);
+      // 2) Check if user exists by firebaseUid first
+      let user = await User.findOne({ firebaseUid: uid });
+
+      if (!user && email) {
+        // Try to find by email if UID fails (maybe first login with Google/Email for existing account)
+        user = await User.findOne({ email });
+      } else if (!user && phone_number) {
+        // Try to find by phone if UID fails
+        user = await User.findOne({ phone: phone_number });
       }
-
-      // 2) Check if user exists
-      let user = await User.findOne({ email });
 
       if (!user) {
         // 3) Create user if not exists
         const nameParts = (name || '').split(' ');
         user = await User.create({
-          email,
+          email: email || `${uid}@phone.djangui.com`, // Placeholder for phone-only users
+          phone: phone_number,
           firstName: nameParts[0] || 'User',
-          lastName: nameParts.slice(1).join(' ') || 'Google',
+          lastName: nameParts.slice(1).join(' ') || 'Firebase',
           avatar: picture,
           firebaseUid: uid,
           isActive: true,
+          isEmailVerified: !!email,
+          isPhoneVerified: !!phone_number,
         });
-        logger.info(`New user created via Google Auth: ${email}`);
+        logger.info(`New user created via Firebase Auth: ${user.email || phone_number}`);
       } else {
-        // Update Firebase UID if missing
-        if (!user.firebaseUid) {
-          user.firebaseUid = uid;
-          await (user as any).save({ validateBeforeSave: false });
+        // Update user info
+        user.firebaseUid = uid;
+        if (phone_number && !user.phone) {
+          user.phone = phone_number;
+          user.isPhoneVerified = true;
         }
-        logger.info(`Existing user logged in via Google Auth: ${email}`);
+        if (email && !user.email) {
+          user.email = email;
+          user.isEmailVerified = true;
+        }
+        await (user as any).save({ validateBeforeSave: false });
+        logger.info(`User logged in via Firebase Auth: ${user.email || user.phone}`);
       }
 
       // 4) Generate backend tokens
@@ -105,9 +118,35 @@ export class AuthService {
 
       return { user, tokens };
     } catch (error: any) {
-      logger.error(`Error in Google Auth: ${error.message}`);
-      throw new AppError('Invalid or expired Google token', 401);
+      logger.error(`Error in Firebase Auth: ${error.message}`);
+      throw new AppError('Invalid or expired Firebase token', 401);
     }
+  }
+
+  static async linkPhoneNumber(userId: string, idToken: string) {
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const { phone_number, uid } = decodedToken;
+
+    if (!phone_number) {
+      throw new AppError('Token does not contain a phone number', 400);
+    }
+
+    const user = await User.findById(userId);
+    if (!user) throw new AppError('User not found', 404);
+
+    // Check if phone number is already used by another user
+    const existingUserWithPhone = await User.findOne({ phone: phone_number, _id: { $ne: userId } });
+    if (existingUserWithPhone) {
+      throw new AppError('This phone number is already associated with another account', 409);
+    }
+
+    user.phone = phone_number;
+    user.isPhoneVerified = true;
+    // Optionally update firebaseUid if it was missing or different
+    if (!user.firebaseUid) user.firebaseUid = uid;
+
+    await (user as any).save({ validateBeforeSave: false });
+    return user;
   }
 
   static async login(email: string, password: string) {

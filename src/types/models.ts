@@ -24,6 +24,7 @@ export interface IUser {
     autoRenew: boolean;
   };
   isEmailVerified: boolean;
+  isPhoneVerified: boolean;
   isActive: boolean;
   emailVerificationToken?: string;
   emailVerificationExpires?: Date;
