@@ -3,7 +3,7 @@
     "info": {
         "title": "Djangui API",
         "version": "1.0.0",
-        "description": "API for Djangui - Smart Financial Management."
+        "description": "API for Djangui - Smart Financial Management. This documentation reflects real-world responses aligned with the database models."
     },
     "servers": [
         {
@@ -30,46 +30,94 @@
                 ],
                 "properties": {
                     "_id": {
+                        "type": "string",
+                        "example": "60d5ec1860641029c4257850"
+                    },
+                    "userId": {
                         "type": "string"
                     },
                     "amount": {
                         "type": "number",
-                        "minimum": 0
+                        "minimum": 0,
+                        "example": 1500
                     },
                     "type": {
                         "type": "string",
                         "enum": [
                             "income",
                             "expense"
-                        ]
+                        ],
+                        "example": "expense"
                     },
                     "category": {
-                        "type": "string"
+                        "type": "string",
+                        "example": "Alimentation"
                     },
                     "subcategory": {
-                        "type": "string"
+                        "type": "string",
+                        "example": "Restaurant"
                     },
                     "description": {
-                        "type": "string"
+                        "type": "string",
+                        "example": "Déjeuner au restaurant"
                     },
                     "merchant": {
-                        "type": "string"
+                        "type": "string",
+                        "example": "Casino"
+                    },
+                    "location": {
+                        "type": "string",
+                        "example": "Douala, Cameroun"
                     },
                     "date": {
                         "type": "string",
-                        "format": "date-time"
+                        "format": "date-time",
+                        "example": "2026-01-04T10:00:00Z"
                     },
                     "tags": {
                         "type": "array",
                         "items": {
                             "type": "string"
-                        }
+                        },
+                        "example": [
+                            "business",
+                            "lunch"
+                        ]
                     },
                     "isRecurring": {
-                        "type": "boolean"
+                        "type": "boolean",
+                        "example": false
+                    },
+                    "recurringFrequency": {
+                        "type": "string",
+                        "enum": [
+                            "daily",
+                            "weekly",
+                            "monthly",
+                            "yearly"
+                        ]
+                    },
+                    "isAutoCategorized": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "categorizationConfidence": {
+                        "type": "number",
+                        "example": 0.95
+                    },
+                    "receipt": {
+                        "type": "string"
                     },
                     "linkedGoalId": {
                         "type": "string"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
                     }
                 }
             },
@@ -109,6 +157,9 @@
                                     "type": "number"
                                 },
                                 "spent": {
+                                    "type": "number"
+                                },
+                                "percentage": {
                                     "type": "number"
                                 }
                             }
@@ -168,13 +219,7 @@
                         "type": "number"
                     },
                     "status": {
-                        "type": "string",
-                        "enum": [
-                            "active",
-                            "completed",
-                            "cancelled",
-                            "paused"
-                        ]
+                        "type": "string"
                     },
                     "priority": {
                         "type": "string",
@@ -183,17 +228,54 @@
                             "medium",
                             "low"
                         ]
+                    },
+                    "strategy": {
+                        "type": "object",
+                        "properties": {
+                            "type": {
+                                "type": "string"
+                            },
+                            "details": {
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "autoSaveRules": {
+                        "type": "object",
+                        "properties": {
+                            "enableSurplus": {
+                                "type": "boolean"
+                            },
+                            "enableRoundup": {
+                                "type": "boolean"
+                            },
+                            "percentageIncome": {
+                                "type": "number"
+                            }
+                        }
+                    },
+                    "contributions": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "amount": {
+                                    "type": "number"
+                                },
+                                "date": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                "note": {
+                                    "type": "string"
+                                }
+                            }
+                        }
                     }
                 }
             },
             "Investment": {
                 "type": "object",
-                "required": [
-                    "title",
-                    "type",
-                    "initialAmount",
-                    "currentValue"
-                ],
                 "properties": {
                     "_id": {
                         "type": "string"
@@ -243,24 +325,8 @@
                     }
                 }
             },
-            "SMS": {
-                "type": "object",
-                "required": [
-                    "content"
-                ],
-                "properties": {
-                    "content": {
-                        "type": "string"
-                    }
-                }
-            },
             "Challenge": {
                 "type": "object",
-                "required": [
-                    "title",
-                    "description",
-                    "durationDays"
-                ],
                 "properties": {
                     "_id": {
                         "type": "string"
@@ -307,56 +373,35 @@
                     "_id": {
                         "type": "string"
                     },
-                    "userId": {
-                        "type": "string"
-                    },
-                    "challengeId": {
-                        "type": "string"
-                    },
                     "status": {
-                        "type": "string",
-                        "enum": [
-                            "active",
-                            "completed",
-                            "failed",
-                            "abandoned"
-                        ]
+                        "type": "string"
                     },
                     "progress": {
                         "type": "number"
                     },
-                    "startDate": {
-                        "type": "string",
-                        "format": "date-time"
-                    },
-                    "endDate": {
-                        "type": "string",
-                        "format": "date-time"
+                    "currentValue": {
+                        "type": "number"
                     },
                     "weeks": {
                         "type": "array",
                         "items": {
-                            "type": "object",
-                            "properties": {
-                                "weekNumber": {
-                                    "type": "integer"
-                                },
-                                "targetAmount": {
-                                    "type": "number"
-                                },
-                                "savedAmount": {
-                                    "type": "number"
-                                },
-                                "status": {
-                                    "type": "string",
-                                    "enum": [
-                                        "pending",
-                                        "completed",
-                                        "late",
-                                        "skipped",
-                                        "postponed"
-                                    ]
-                                }
+                            "type": "object"
+                        }
+                    },
+                    "flexibility": {
+                        "type": "object",
+                        "properties": {
+                            "skipsUsed": {
+                                "type": "integer"
+                            },
+                            "skipsMax": {
+                                "type": "integer"
+                            },
+                            "postponementsUsed": {
+                                "type": "integer"
+                            },
+                            "postponementsMax": {
+                                "type": "integer"
                             }
                         }
                     }
@@ -378,8 +423,7 @@
                         "type": "string"
                     },
                     "country": {
-                        "type": "string",
-                        "description": "2-letter ISO country code (e.g., CM, FR, US)"
+                        "type": "string"
                     },
                     "monthlyIncome": {
                         "type": "number"
@@ -396,47 +440,17 @@
                     "level": {
                         "type": "number"
                     },
-                    "badges": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "name": {
-                                    "type": "string"
-                                },
-                                "icon": {
-                                    "type": "string"
-                                },
-                                "awardedAt": {
-                                    "type": "string",
-                                    "format": "date-time"
-                                }
-                            }
-                        }
-                    },
-                    "phone": {
-                        "type": "string"
-                    },
-                    "isEmailVerified": {
+                    "isActive": {
                         "type": "boolean"
                     },
-                    "isPhoneVerified": {
+                    "isPremium": {
                         "type": "boolean"
                     },
-                    "role": {
-                        "type": "string",
-                        "enum": [
-                            "user",
-                            "admin"
-                        ]
+                    "preferences": {
+                        "type": "object"
                     },
-                    "status": {
-                        "type": "string",
-                        "enum": [
-                            "active",
-                            "inactive",
-                            "suspended"
-                        ]
+                    "subscription": {
+                        "type": "object"
                     },
                     "createdAt": {
                         "type": "string",
@@ -445,6 +459,30 @@
                     "updatedAt": {
                         "type": "string",
                         "format": "date-time"
+                    }
+                }
+            },
+            "ErrorResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean",
+                        "example": false
+                    },
+                    "message": {
+                        "type": "string"
+                    }
+                }
+            },
+            "GenericResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "message": {
+                        "type": "string"
                     }
                 }
             }
@@ -464,7 +502,15 @@
                 "summary": "Health Check",
                 "responses": {
                     "200": {
-                        "description": "OK"
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "UP",
+                                    "database": "connected"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -495,8 +541,7 @@
                                         "type": "string"
                                     },
                                     "country": {
-                                        "type": "string",
-                                        "description": "2-letter ISO country code (e.g., CM, FR, US)"
+                                        "type": "string"
                                     }
                                 }
                             }
@@ -505,7 +550,30 @@
                 },
                 "responses": {
                     "201": {
-                        "description": "Created"
+                        "description": "Created",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "user": {
+                                            "_id": "695a3...",
+                                            "email": "new@user.com",
+                                            "firstName": "John",
+                                            "lastName": "Doe",
+                                            "country": "CM",
+                                            "isActive": true,
+                                            "xp": 0,
+                                            "level": 1
+                                        },
+                                        "tokens": {
+                                            "accessToken": "...",
+                                            "refreshToken": "..."
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -515,7 +583,7 @@
                 "tags": [
                     "Auth"
                 ],
-                "summary": "Firebase Auth (Google, Phone, etc.)",
+                "summary": "Firebase Auth",
                 "security": [],
                 "requestBody": {
                     "content": {
@@ -530,8 +598,7 @@
                                         "type": "string"
                                     },
                                     "country": {
-                                        "type": "string",
-                                        "description": "Optional, 2-letter ISO code"
+                                        "type": "string"
                                     }
                                 }
                             }
@@ -540,17 +607,38 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "OK"
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "user": {
+                                            "_id": "695a3...",
+                                            "email": "fire@auth.com",
+                                            "firstName": "Google",
+                                            "lastName": "User",
+                                            "isPremium": false
+                                        },
+                                        "tokens": {
+                                            "accessToken": "...",
+                                            "refreshToken": "..."
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
         },
-        "/v1/auth/link-phone": {
+        "/v1/auth/google": {
             "post": {
                 "tags": [
                     "Auth"
                 ],
-                "summary": "Link Phone Number",
+                "summary": "Google Auth (Alias)",
+                "security": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -570,7 +658,162 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "Linked"
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "user": {
+                                            "_id": "695a3...",
+                                            "email": "google@gmail.com"
+                                        },
+                                        "tokens": {
+                                            "accessToken": "..."
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/refresh": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Refresh Token",
+                "security": [],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "refreshToken"
+                                ],
+                                "properties": {
+                                    "refreshToken": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "accessToken": "new_token...",
+                                        "refreshToken": "new_refresh..."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/logout": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Logout",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "message": "Logged out successfully"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/fcm-token": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Update FCM Token",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "fcmToken"
+                                ],
+                                "properties": {
+                                    "fcmToken": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "message": "FCM token updated"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/link-phone": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Link Phone",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "idToken"
+                                ],
+                                "properties": {
+                                    "idToken": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "message": "Phone number successfully linked."
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -601,7 +844,131 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "OK"
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "user": {
+                                            "preferences": {
+                                                "coachTone": "balanced",
+                                                "notificationFrequency": "medium",
+                                                "budgetAlertThreshold": 80
+                                            },
+                                            "subscription": {
+                                                "plan": "free",
+                                                "status": "active",
+                                                "autoRenew": false
+                                            },
+                                            "_id": "695a3563079780f7fdb2d041",
+                                            "email": "me@borisgauty.com",
+                                            "firstName": "Gautier",
+                                            "lastName": "Boris",
+                                            "monthlyIncome": 0,
+                                            "currency": "XAF",
+                                            "language": "fr",
+                                            "isEmailVerified": true,
+                                            "isActive": true,
+                                            "walletBalance": 0,
+                                            "xp": 0,
+                                            "level": 1,
+                                            "createdAt": "2026-01-04T09:39:47.818Z",
+                                            "updatedAt": "2026-01-04T10:49:13.904Z",
+                                            "lastLogin": "2026-01-04T10:49:13.901Z",
+                                            "country": "CM",
+                                            "isPremium": false
+                                        },
+                                        "tokens": {
+                                            "accessToken": "...",
+                                            "refreshToken": "..."
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/me": {
+            "get": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Get Profile",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "_id": "695a3563079780f7fdb2d041",
+                                        "email": "me@borisgauty.com",
+                                        "firstName": "Gautier",
+                                        "lastName": "Boris",
+                                        "isPremium": true,
+                                        "xp": 1200,
+                                        "level": 10,
+                                        "walletBalance": 125000,
+                                        "preferences": {
+                                            "coachTone": "friendly"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Update Profile",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "firstName": {
+                                        "type": "string"
+                                    },
+                                    "lastName": {
+                                        "type": "string"
+                                    },
+                                    "country": {
+                                        "type": "string"
+                                    },
+                                    "monthlyIncome": {
+                                        "type": "number"
+                                    },
+                                    "preferences": {
+                                        "type": "object"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "_id": "695a3563079780f7fdb2d041",
+                                        "firstName": "Gautier",
+                                        "lastName": "Boris"
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -628,7 +995,15 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "Token sent"
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "message": "Password reset token sent to email."
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -665,7 +1040,15 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "Password reset successful"
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "message": "Password reset successful."
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -688,105 +1071,15 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "Email verified"
-                    }
-                }
-            }
-        },
-        "/v1/emails/send": {
-            "post": {
-                "tags": [
-                    "Emails"
-                ],
-                "summary": "Send Generic Email (Backoffice)",
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ],
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "required": [
-                                    "to",
-                                    "subject",
-                                    "text"
-                                ],
-                                "properties": {
-                                    "to": {
-                                        "type": "string"
-                                    },
-                                    "subject": {
-                                        "type": "string"
-                                    },
-                                    "text": {
-                                        "type": "string"
-                                    },
-                                    "html": {
-                                        "type": "string"
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "Email sent"
-                    }
-                }
-            }
-        },
-        "/v1/auth/me": {
-            "get": {
-                "tags": [
-                    "Auth"
-                ],
-                "summary": "Get Profile",
-                "responses": {
-                    "200": {
                         "description": "OK",
                         "content": {
                             "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/User"
+                                "example": {
+                                    "success": true,
+                                    "message": "Email verified."
                                 }
                             }
                         }
-                    }
-                }
-            },
-            "patch": {
-                "tags": [
-                    "Auth"
-                ],
-                "summary": "Update Profile",
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "firstName": {
-                                        "type": "string"
-                                    },
-                                    "lastName": {
-                                        "type": "string"
-                                    },
-                                    "country": {
-                                        "type": "string",
-                                        "description": "2-letter ISO country code (e.g., CM, FR, US)"
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "Profile updated"
                     }
                 }
             }
@@ -811,10 +1104,7 @@
                     },
                     {
                         "name": "category",
-                        "in": "query",
-                        "schema": {
-                            "type": "string"
-                        }
+                        "in": "query"
                     },
                     {
                         "name": "page",
@@ -830,10 +1120,24 @@
                         "description": "OK",
                         "content": {
                             "application/json": {
-                                "schema": {
-                                    "type": "array",
-                                    "items": {
-                                        "$ref": "#/components/schemas/Transaction"
+                                "example": {
+                                    "success": true,
+                                    "data": [
+                                        {
+                                            "_id": "60d5ec...",
+                                            "amount": 1500,
+                                            "type": "expense",
+                                            "category": "Food",
+                                            "description": "Lunch at Casino",
+                                            "merchant": "Casino",
+                                            "date": "2026-01-04T12:30:00Z",
+                                            "isAutoCategorized": true
+                                        }
+                                    ],
+                                    "pagination": {
+                                        "page": 1,
+                                        "total": 120,
+                                        "pages": 6
                                     }
                                 }
                             }
@@ -857,7 +1161,132 @@
                 },
                 "responses": {
                     "201": {
-                        "description": "Created"
+                        "description": "Created",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "_id": "60d5ec...",
+                                        "amount": 1500,
+                                        "type": "expense",
+                                        "category": "Food",
+                                        "description": "Lunch"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/transactions/{id}": {
+            "get": {
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "Get Transaction",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "_id": "60d5ec...",
+                                        "amount": 1500,
+                                        "type": "expense",
+                                        "category": "Food",
+                                        "description": "Lunch",
+                                        "merchant": "Casino",
+                                        "tags": [
+                                            "food",
+                                            "daily"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "Update Transaction",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "amount": {
+                                        "type": "number"
+                                    },
+                                    "description": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "_id": "60d5ec...",
+                                        "amount": 1800
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "Delete Transaction",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "message": "Deleted successfully."
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -867,7 +1296,7 @@
                 "tags": [
                     "Transactions"
                 ],
-                "summary": "Bulk Upload (Premium only)",
+                "summary": "Bulk Upload",
                 "requestBody": {
                     "content": {
                         "multipart/form-data": {
@@ -885,7 +1314,24 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "Summary"
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "imported": 45,
+                                        "failed": 2,
+                                        "errors": [
+                                            {
+                                                "row": 12,
+                                                "error": "Invalid"
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -901,11 +1347,20 @@
                         "description": "OK",
                         "content": {
                             "application/json": {
-                                "schema": {
-                                    "type": "array",
-                                    "items": {
-                                        "$ref": "#/components/schemas/Goal"
-                                    }
+                                "example": {
+                                    "success": true,
+                                    "data": [
+                                        {
+                                            "_id": "60d5ec...",
+                                            "name": "Emergency Fund",
+                                            "targetAmount": 1000000,
+                                            "currentAmount": 250000,
+                                            "progress": 25,
+                                            "status": "active",
+                                            "priority": "high",
+                                            "emoji": "🛡️"
+                                        }
+                                    ]
                                 }
                             }
                         }
@@ -928,7 +1383,327 @@
                 },
                 "responses": {
                     "201": {
-                        "description": "Created"
+                        "description": "Created",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "_id": "60d5ec...",
+                                        "name": "Voyage",
+                                        "targetAmount": 500000
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/goals/{id}": {
+            "get": {
+                "tags": [
+                    "Goals"
+                ],
+                "summary": "Get Goal",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "_id": "60d5ec...",
+                                        "name": "Emergency Fund",
+                                        "targetAmount": 1000000,
+                                        "currentAmount": 250000,
+                                        "contributions": [
+                                            {
+                                                "amount": 10000,
+                                                "date": "2026-01-01T10:00:00Z"
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "put": {
+                    "tags": [
+                        "Goals"
+                    ],
+                    "summary": "Update Goal",
+                    "parameters": [
+                        {
+                            "name": "id",
+                            "in": "path",
+                            "required": true
+                        }
+                    ],
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "OK",
+                            "content": {
+                                "application/json": {
+                                    "example": {
+                                        "success": true,
+                                        "data": {
+                                            "_id": "60d5ec...",
+                                            "name": "New Name"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "delete": {
+                    "tags": [
+                        "Goals"
+                    ],
+                    "summary": "Delete Goal",
+                    "parameters": [
+                        {
+                            "name": "id",
+                            "in": "path",
+                            "required": true
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "OK",
+                            "content": {
+                                "application/json": {
+                                    "example": {
+                                        "success": true,
+                                        "message": "Deleted"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/goals/{id}/contribute": {
+            "post": {
+                "tags": [
+                    "Goals"
+                ],
+                "summary": "Contribute",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "amount": {
+                                        "type": "number"
+                                    },
+                                    "note": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "_id": "60d5ec...",
+                                        "currentAmount": 260000,
+                                        "progress": 26
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/budgets/current": {
+            "get": {
+                "tags": [
+                    "Budgets"
+                ],
+                "summary": "Get Current Budget",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "_id": "60d5ec...",
+                                        "totalAllocated": 200000,
+                                        "totalSpent": 145000,
+                                        "categories": [
+                                            {
+                                                "name": "Food",
+                                                "allocated": 80000,
+                                                "spent": 62000,
+                                                "percentage": 77.5
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/budgets": {
+            "get": {
+                "tags": [
+                    "Budgets"
+                ],
+                "summary": "List Budgets",
+                "parameters": [
+                    {
+                        "name": "year",
+                        "in": "query"
+                    },
+                    {
+                        "name": "month",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": [
+                                        {
+                                            "_id": "60d5ec...",
+                                            "period": {
+                                                "month": 1,
+                                                "year": 2026
+                                            },
+                                            "totalAllocated": 200000
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Budgets"
+                ],
+                "summary": "Create Budget",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Budget"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "_id": "60d5ec...",
+                                        "period": {
+                                            "month": 2,
+                                            "year": 2026
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/budgets/{id}": {
+            "put": {
+                "tags": [
+                    "Budgets"
+                ],
+                "summary": "Update Budget",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "totalAllocated": {
+                                        "type": "number"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "totalAllocated": 250000
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -938,7 +1713,7 @@
                 "tags": [
                     "AI Tools"
                 ],
-                "summary": "OCR Scan Receipt (Premium only)",
+                "summary": "OCR Scan",
                 "requestBody": {
                     "content": {
                         "multipart/form-data": {
@@ -956,87 +1731,24 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "OCR results"
-                    }
-                }
-            }
-        },
-        "/v1/challenges/validate-week": {
-            "post": {
-                "tags": [
-                    "Challenges"
-                ],
-                "summary": "Validate Week",
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "required": [
-                                    "weekNumber",
-                                    "userChallengeId"
-                                ],
-                                "properties": {
-                                    "weekNumber": {
-                                        "type": "integer"
-                                    },
-                                    "amount": {
-                                        "type": "number"
-                                    },
-                                    "userChallengeId": {
-                                        "type": "string"
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "merchant": "Casino",
+                                        "total": 12500,
+                                        "items": [
+                                            {
+                                                "name": "Milk",
+                                                "price": 1200
+                                            }
+                                        ]
                                     }
                                 }
                             }
                         }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "OK"
-                    }
-                }
-            }
-        },
-        "/v1/coach/ask": {
-            "post": {
-                "tags": [
-                    "Coach"
-                ],
-                "summary": "Ask Coach",
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "required": [
-                                    "message"
-                                ],
-                                "properties": {
-                                    "message": {
-                                        "type": "string"
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "Coach response"
-                    }
-                }
-            }
-        },
-        "/v1/coach/history": {
-            "get": {
-                "tags": [
-                    "Coach"
-                ],
-                "summary": "Get Conversation History",
-                "responses": {
-                    "200": {
-                        "description": "Conversation history"
                     }
                 }
             }
@@ -1051,55 +1763,11 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "$ref": "#/components/schemas/SMS"
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "201": {
-                        "description": "Created"
-                    }
-                }
-            }
-        },
-        "/v1/budgets/current": {
-            "get": {
-                "tags": [
-                    "Budgets"
-                ],
-                "summary": "Get Current Budget",
-                "responses": {
-                    "200": {
-                        "description": "OK"
-                    }
-                }
-            }
-        },
-        "/v1/goals/{id}/contribute": {
-            "post": {
-                "tags": [
-                    "Goals"
-                ],
-                "summary": "Contribute to Goal",
-                "parameters": [
-                    {
-                        "name": "id",
-                        "in": "path",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                ],
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
                                 "type": "object",
                                 "properties": {
-                                    "amount": {
-                                        "type": "number"
+                                    "content": {
+                                        "type": "string",
+                                        "example": "Transfert de 15000 XAF réussi."
                                     }
                                 }
                             }
@@ -1107,50 +1775,20 @@
                     }
                 },
                 "responses": {
-                    "200": {
-                        "description": "OK"
-                    }
-                }
-            }
-        },
-        "/v1/reports/dashboard": {
-            "get": {
-                "tags": [
-                    "Reports"
-                ],
-                "summary": "Dashboard Summary",
-                "responses": {
-                    "200": {
-                        "description": "OK"
-                    }
-                }
-            }
-        },
-        "/v1/reports/analysis": {
-            "get": {
-                "tags": [
-                    "Reports"
-                ],
-                "summary": "Spending Analysis",
-                "parameters": [
-                    {
-                        "name": "month",
-                        "in": "query",
-                        "schema": {
-                            "type": "integer"
+                    "201": {
+                        "description": "Created",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "amount": 15000,
+                                        "merchant": "Orange Money",
+                                        "category": "Services"
+                                    }
+                                }
+                            }
                         }
-                    },
-                    {
-                        "name": "year",
-                        "in": "query",
-                        "schema": {
-                            "type": "integer"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK"
                     }
                 }
             }
@@ -1176,11 +1814,247 @@
                                 }
                             }
                         }
+                    },
+                    "responses": {
+                        "201": {
+                            "description": "Created",
+                            "content": {
+                                "application/json": {
+                                    "example": {
+                                        "success": true,
+                                        "data": {
+                                            "processed": 10,
+                                            "imported": 8,
+                                            "failed": 2
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/coach/ask": {
+            "post": {
+                "tags": [
+                    "Coach"
+                ],
+                "summary": "Ask Coach",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "message": {
+                                        "type": "string",
+                                        "example": "Comment économiser ?"
+                                    }
+                                }
+                            }
+                        }
                     }
                 },
                 "responses": {
-                    "201": {
-                        "description": "Created"
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "response": "Réduisez vos loisirs de 10%.",
+                                        "suggestions": [
+                                            "Voir budget"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/coach/history": {
+            "get": {
+                "tags": [
+                    "Coach"
+                ],
+                "summary": "Coach History",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": [
+                                        {
+                                            "role": "user",
+                                            "message": "Hi"
+                                        },
+                                        {
+                                            "role": "coach",
+                                            "message": "Hello"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/insights/spending": {
+            "get": {
+                "tags": [
+                    "Coach"
+                ],
+                "summary": "Spending Insights",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "topCategory": "Food",
+                                        "biggestExpense": 50000,
+                                        "anomaly": false
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/reports/dashboard": {
+            "get": {
+                "tags": [
+                    "Reports"
+                ],
+                "summary": "Dashboard Summary",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "walletBalance": 125000,
+                                        "monthlyIncome": 450000,
+                                        "totalSpent": 145000,
+                                        "savingsRate": 67.7,
+                                        "budgetHealth": {
+                                            "status": "active",
+                                            "percentageUsed": 72.5
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/reports/analysis": {
+            "get": {
+                "tags": [
+                    "Reports"
+                ],
+                "summary": "Spending Analysis",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": [
+                                        {
+                                            "category": "Food",
+                                            "amount": 62000,
+                                            "count": 12
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/reports/trends": {
+            "get": {
+                "tags": [
+                    "Reports"
+                ],
+                "summary": "Savings Trend",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": [
+                                        {
+                                            "period": "1/2026",
+                                            "income": 450000,
+                                            "expense": 320000,
+                                            "savings": 130000
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/reports/narrative": {
+            "get": {
+                "tags": [
+                    "Reports"
+                ],
+                "summary": "Narrative Report",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "title": "Analyse Janvier",
+                                        "summary": "Bien joué.",
+                                        "health_score": 85
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/reports/export/csv": {
+            "get": {
+                "tags": [
+                    "Reports"
+                ],
+                "summary": "Export CSV",
+                "responses": {
+                    "200": {
+                        "description": "CSV Export",
+                        "content": {
+                            "text/csv": {
+                                "example": "Date,Amount,Category\n2026-01-01,1500,Food"
+                            }
+                        }
                     }
                 }
             }
@@ -1190,30 +2064,22 @@
                 "tags": [
                     "Investments"
                 ],
-                "summary": "List Investments (Premium only)",
-                "parameters": [
-                    {
-                        "name": "status",
-                        "in": "query",
-                        "schema": {
-                            "type": "string",
-                            "enum": [
-                                "active",
-                                "closed"
-                            ]
-                        }
-                    }
-                ],
+                "summary": "List Investments",
                 "responses": {
                     "200": {
                         "description": "OK",
                         "content": {
                             "application/json": {
-                                "schema": {
-                                    "type": "array",
-                                    "items": {
-                                        "$ref": "#/components/schemas/Investment"
-                                    }
+                                "example": {
+                                    "success": true,
+                                    "data": [
+                                        {
+                                            "_id": "60d5ec...",
+                                            "title": "Bitcoin",
+                                            "currentValue": 650000,
+                                            "performance": 30
+                                        }
+                                    ]
                                 }
                             }
                         }
@@ -1224,7 +2090,7 @@
                 "tags": [
                     "Investments"
                 ],
-                "summary": "Create Investment (Premium only)",
+                "summary": "Create Investment",
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -1236,7 +2102,19 @@
                 },
                 "responses": {
                     "201": {
-                        "description": "Created"
+                        "description": "Created",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "_id": "60d5ec...",
+                                        "title": "Crypto",
+                                        "initialAmount": 100000
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1246,15 +2124,12 @@
                 "tags": [
                     "Investments"
                 ],
-                "summary": "Update Value (Premium only)",
+                "summary": "Update Value",
                 "parameters": [
                     {
                         "name": "id",
                         "in": "path",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
+                        "required": true
                     }
                 ],
                 "requestBody": {
@@ -1273,140 +2148,17 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "OK"
-                    }
-                }
-            }
-        },
-        "/v1/webhooks/stripe": {
-            "post": {
-                "tags": [
-                    "Webhooks"
-                ],
-                "summary": "Stripe Webhook",
-                "security": [],
-                "parameters": [
-                    {
-                        "name": "stripe-signature",
-                        "in": "header",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK"
-                    }
-                }
-            }
-        },
-        "/v1/webhooks/notchpay": {
-            "post": {
-                "tags": [
-                    "Webhooks"
-                ],
-                "summary": "NotchPay Webhook",
-                "security": [],
-                "parameters": [
-                    {
-                        "name": "x-notchpay-signature",
-                        "in": "header",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK"
-                    }
-                }
-            }
-        },
-        "/v1/reports/narrative": {
-            "get": {
-                "tags": [
-                    "Reports"
-                ],
-                "summary": "AI Narrative Report (Premium only)",
-                "parameters": [
-                    {
-                        "name": "month",
-                        "in": "query",
-                        "schema": {
-                            "type": "integer"
-                        }
-                    },
-                    {
-                        "name": "year",
-                        "in": "query",
-                        "schema": {
-                            "type": "integer"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK"
-                    }
-                }
-            }
-        },
-        "/v1/upload/receipt": {
-            "post": {
-                "tags": [
-                    "Upload"
-                ],
-                "summary": "Upload Receipt",
-                "requestBody": {
-                    "content": {
-                        "multipart/form-data": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "receipt": {
-                                        "type": "string",
-                                        "format": "binary"
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "newValue": 670000
                                     }
                                 }
                             }
                         }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "Uploaded"
-                    }
-                }
-            }
-        },
-        "/v1/upload/avatar": {
-            "post": {
-                "tags": [
-                    "Upload"
-                ],
-                "summary": "Upload Avatar",
-                "requestBody": {
-                    "content": {
-                        "multipart/form-data": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "avatar": {
-                                        "type": "string",
-                                        "format": "binary"
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "Uploaded"
                     }
                 }
             }
@@ -1416,20 +2168,25 @@
                 "tags": [
                     "Investments"
                 ],
-                "summary": "Close Investment (Premium only)",
+                "summary": "Close",
                 "parameters": [
                     {
                         "name": "id",
                         "in": "path",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
+                        "required": true
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Closed"
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "message": "Closed"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1439,10 +2196,24 @@
                 "tags": [
                     "Challenges"
                 ],
-                "summary": "List All Challenges",
+                "summary": "All Challenges",
                 "responses": {
                     "200": {
-                        "description": "List of challenges"
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": [
+                                        {
+                                            "_id": "60d5ec...",
+                                            "title": "52 Weeks Challenge",
+                                            "difficulty": "medium"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1452,10 +2223,27 @@
                 "tags": [
                     "Challenges"
                 ],
-                "summary": "Get User Challenges",
+                "summary": "My Challenges",
                 "responses": {
                     "200": {
-                        "description": "User challenges"
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": [
+                                        {
+                                            "_id": "60d5ec...",
+                                            "status": "active",
+                                            "progress": 25,
+                                            "challengeId": {
+                                                "title": "52 Weeks"
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1471,9 +2259,6 @@
                         "application/json": {
                             "schema": {
                                 "type": "object",
-                                "required": [
-                                    "challengeId"
-                                ],
                                 "properties": {
                                     "challengeId": {
                                         "type": "string"
@@ -1484,35 +2269,40 @@
                     }
                 },
                 "responses": {
-                    "description": "Joined"
+                    "201": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "message": "Joined"
+                                }
+                            }
+                        }
+                    }
                 }
             }
         },
-        "/v1/payments/checkout/stripe": {
+        "/v1/challenges/validate-week": {
             "post": {
                 "tags": [
-                    "Payments"
+                    "Challenges"
                 ],
-                "summary": "Create Stripe Checkout Session",
+                "summary": "Validate Week",
                 "requestBody": {
                     "content": {
                         "application/json": {
                             "schema": {
                                 "type": "object",
-                                "required": [
-                                    "amount",
-                                    "type"
-                                ],
                                 "properties": {
+                                    "userChallengeId": {
+                                        "type": "string"
+                                    },
+                                    "weekNumber": {
+                                        "type": "integer"
+                                    },
                                     "amount": {
                                         "type": "number"
-                                    },
-                                    "type": {
-                                        "type": "string",
-                                        "enum": [
-                                            "deposit",
-                                            "subscription"
-                                        ]
                                     }
                                 }
                             }
@@ -1521,7 +2311,59 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "Stripe Session URL"
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "xpGained": 50,
+                                        "newBalance": 12500
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/payments/checkout/stripe": {
+            "post": {
+                "tags": [
+                    "Payments"
+                ],
+                "summary": "Stripe",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "amount": {
+                                        "type": "number"
+                                    },
+                                    "type": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "url": "https://checkout.stripe.com/...",
+                                        "reference": "STP-123"
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1531,27 +2373,18 @@
                 "tags": [
                     "Payments"
                 ],
-                "summary": "Initialize NotchPay (Cameroon Only)",
-                "description": "Strictly restricted to users with country='CM'",
+                "summary": "NotchPay",
                 "requestBody": {
                     "content": {
                         "application/json": {
                             "schema": {
                                 "type": "object",
-                                "required": [
-                                    "amount",
-                                    "type"
-                                ],
                                 "properties": {
                                     "amount": {
                                         "type": "number"
                                     },
                                     "type": {
-                                        "type": "string",
-                                        "enum": [
-                                            "deposit",
-                                            "subscription"
-                                        ]
+                                        "type": "string"
                                     }
                                 }
                             }
@@ -1560,10 +2393,120 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "NotchPay Payment URL"
-                    },
-                    "400": {
-                        "description": "Geographical restriction"
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "url": "https://api.notchpay.co/...",
+                                        "reference": "NTP-456"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/webhooks/stripe": {
+            "post": {
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "Stripe",
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/webhooks/notchpay": {
+            "post": {
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "NotchPay",
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/upload/receipt": {
+            "post": {
+                "tags": [
+                    "Upload"
+                ],
+                "summary": "Receipt",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "url": "https://storage..."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/upload/avatar": {
+            "post": {
+                "tags": [
+                    "Upload"
+                ],
+                "summary": "Avatar",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "url": "https://storage..."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/emails/send": {
+            "post": {
+                "tags": [
+                    "Emails"
+                ],
+                "summary": "Send Email",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "message": "Sent"
+                                }
+                            }
+                        }
                     }
                 }
             }
