@@ -7,10 +7,10 @@ import crypto from 'crypto';
  * @param secret The webhook secret from dashboard
  */
 export function verifyNotchPaySignature(payload: any, signature: string, secret: string): boolean {
-    if (!signature || !secret) return false;
+  if (!signature || !secret) return false;
 
-    const hmac = crypto.createHmac('sha256', secret);
-    const calculatedSignature = hmac.update(JSON.stringify(payload)).digest('hex');
+  const hmac = crypto.createHmac('sha256', secret);
+  const calculatedSignature = hmac.update(JSON.stringify(payload)).digest('hex');
 
-    return calculatedSignature === signature;
+  return calculatedSignature === signature;
 }

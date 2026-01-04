@@ -38,9 +38,7 @@ export class WebhookController {
   static async notchpayWebhook(req: Request, res: Response, next: NextFunction) {
     const signature = req.headers['x-notchpay-signature'] as string;
 
-    if (
-      !verifyNotchPaySignature(req.body, signature, notchpayConfig.webhookSecret || '')
-    ) {
+    if (!verifyNotchPaySignature(req.body, signature, notchpayConfig.webhookSecret || '')) {
       logger.warn('Invalid NotchPay webhook signature received');
       return res.status(401).json({ message: 'Invalid signature' });
     }

@@ -11,11 +11,11 @@ const API_KEY = process.env.MAILGUN_API_KEY || 'dummy_key';
 const client = mailgun.client({ username: 'api', key: API_KEY });
 
 export class EmailService {
-    /**
-     * Helper to wrap content in a beautiful template
-     */
-    private static getBaseTemplate(title: string, bodyContent: string): string {
-        return `
+  /**
+   * Helper to wrap content in a beautiful template
+   */
+  private static getBaseTemplate(title: string, bodyContent: string): string {
+    return `
       <!DOCTYPE html>
       <html>
       <head>
@@ -51,39 +51,39 @@ export class EmailService {
       </body>
       </html>
     `;
+  }
+
+  /**
+   * Send a generic email
+   */
+  static async sendEmail(to: string, subject: string, text: string, html?: string) {
+    if (!process.env.MAILGUN_API_KEY) {
+      logger.warn(`Mock sending email to ${to}: ${subject}`);
+      return;
     }
 
-    /**
-     * Send a generic email
-     */
-    static async sendEmail(to: string, subject: string, text: string, html?: string) {
-        if (!process.env.MAILGUN_API_KEY) {
-            logger.warn(`Mock sending email to ${to}: ${subject}`);
-            return;
-        }
-
-        try {
-            await client.messages.create(DOMAIN, {
-                from: `Djangui Team <no-reply@${DOMAIN}>`,
-                to,
-                subject,
-                text,
-                html: html || this.getBaseTemplate(subject, `<p>${text}</p>`),
-            });
-            logger.info(`Email sent to ${to}: ${subject}`);
-        } catch (error: any) {
-            logger.error(`Failed to send email to ${to}: ${error.message}`);
-        }
+    try {
+      await client.messages.create(DOMAIN, {
+        from: `Djangui Team <no-reply@${DOMAIN}>`,
+        to,
+        subject,
+        text,
+        html: html || this.getBaseTemplate(subject, `<p>${text}</p>`),
+      });
+      logger.info(`Email sent to ${to}: ${subject}`);
+    } catch (error: any) {
+      logger.error(`Failed to send email to ${to}: ${error.message}`);
     }
+  }
 
-    /**
-     * Send Verification Email
-     */
-    static async sendVerificationEmail(to: string, token: string) {
-        const verificationUrl = `${process.env.FRONTEND_URL}/verify-email?token=${token}`;
-        const subject = 'Verifiez votre compte';
+  /**
+   * Send Verification Email
+   */
+  static async sendVerificationEmail(to: string, token: string) {
+    const verificationUrl = `${process.env.FRONTEND_URL}/verify-email?token=${token}`;
+    const subject = 'Verifiez votre compte';
 
-        const body = `
+    const body = `
       <p>Bonjour,</p>
       <p>Bienvenue sur <strong>Djangui</strong> ! Nous sommes ravis de vous compter parmi nous.</p>
       <p>Pour activer votre compte et commencer à gérer vos finances, veuillez confirmer votre adresse email en cliquant sur le bouton ci-dessous :</p>
@@ -97,20 +97,20 @@ export class EmailService {
       </div>
     `;
 
-        const html = this.getBaseTemplate('Bienvenue !', body);
-        const text = `Bienvenue sur Djangui ! Confirmez votre email ici: ${verificationUrl}`;
+    const html = this.getBaseTemplate('Bienvenue !', body);
+    const text = `Bienvenue sur Djangui ! Confirmez votre email ici: ${verificationUrl}`;
 
-        await this.sendEmail(to, subject, text, html);
-    }
+    await this.sendEmail(to, subject, text, html);
+  }
 
-    /**
-     * Send Password Reset Email
-     */
-    static async sendPasswordResetEmail(to: string, token: string) {
-        const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
-        const subject = 'Réinitialisation de mot de passe';
+  /**
+   * Send Password Reset Email
+   */
+  static async sendPasswordResetEmail(to: string, token: string) {
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
+    const subject = 'Réinitialisation de mot de passe';
 
-        const body = `
+    const body = `
       <p>Bonjour,</p>
       <p>Nous avons reçu une demande de réinitialisation de mot de passe pour votre compte Djangui.</p>
       <p>Si vous êtes à l'origine de cette demande, cliquez sur le bouton ci-dessous pour choisir un nouveau mot de passe :</p>
@@ -125,9 +125,9 @@ export class EmailService {
       </div>
     `;
 
-        const html = this.getBaseTemplate('Mot de passe oublié ?', body);
-        const text = `Réinitialisez votre mot de passe ici: ${resetUrl}`;
+    const html = this.getBaseTemplate('Mot de passe oublié ?', body);
+    const text = `Réinitialisez votre mot de passe ici: ${resetUrl}`;
 
-        await this.sendEmail(to, subject, text, html);
-    }
+    await this.sendEmail(to, subject, text, html);
+  }
 }

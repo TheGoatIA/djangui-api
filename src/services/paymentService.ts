@@ -10,7 +10,15 @@ export class PaymentService {
   /**
    * List of currencies without decimals (e.g., XAF, JPY)
    */
-  private static readonly ZERO_DECIMAL_CURRENCIES = ['XAF', 'JPY', 'CLP', 'GNF', 'KRW', 'PYG', 'VND'];
+  private static readonly ZERO_DECIMAL_CURRENCIES = [
+    'XAF',
+    'JPY',
+    'CLP',
+    'GNF',
+    'KRW',
+    'PYG',
+    'VND',
+  ];
 
   /**
    * Format amount for Stripe/NotchPay based on currency
@@ -23,11 +31,7 @@ export class PaymentService {
   /**
    * Create a Stripe Checkout Session for subscription or deposit
    */
-  static async createStripeSession(
-    userId: any,
-    amount: number,
-    type: 'deposit' | 'subscription',
-  ) {
+  static async createStripeSession(userId: any, amount: number, type: 'deposit' | 'subscription') {
     const userIdStr = userId.toString();
     const user = await User.findById(userIdStr);
     if (!user) throw new AppError('User not found', 404);
@@ -78,11 +82,7 @@ export class PaymentService {
   /**
    * Initialize a NotchPay payment (Restricted to Cameroon)
    */
-  static async initializeNotchPay(
-    userId: any,
-    amount: number,
-    type: 'deposit' | 'subscription',
-  ) {
+  static async initializeNotchPay(userId: any, amount: number, type: 'deposit' | 'subscription') {
     const userIdStr = userId.toString();
     const user = await User.findById(userIdStr);
     if (!user) throw new AppError('User not found', 404);

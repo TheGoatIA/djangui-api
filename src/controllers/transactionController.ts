@@ -109,7 +109,10 @@ export class TransactionController {
         category: t.category || t.Category || 'Autres',
       }));
 
-      const results = await TransactionService.bulkCreateTransactions(req.user._id, cleanedTransactions);
+      const results = await TransactionService.bulkCreateTransactions(
+        req.user._id,
+        cleanedTransactions,
+      );
 
       // Clean up uploaded file
       fs.unlinkSync(filePath);

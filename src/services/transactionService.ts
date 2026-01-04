@@ -203,11 +203,7 @@ export class TransactionService {
   /**
    * Apply automated saving strategies like Roundup
    */
-  private static async applyAutomatedStrategies(
-    userId: string,
-    transaction: any,
-    session?: any,
-  ) {
+  private static async applyAutomatedStrategies(userId: string, transaction: any, session?: any) {
     if (transaction.type !== 'expense') return;
 
     // Find goals with Roundup enabled
@@ -218,7 +214,7 @@ export class TransactionService {
     }).session(session);
 
     if (roundupGoal) {
-      // Logic: Round up to the next 100 or 1000? 
+      // Logic: Round up to the next 100 or 1000?
       // XAF context: next 100 is most common for small/medium expenses.
       const amount = transaction.amount;
       const threshold = amount > 1000 ? 1000 : 100;

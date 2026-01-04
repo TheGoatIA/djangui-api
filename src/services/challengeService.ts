@@ -130,11 +130,14 @@ export class ChallengeService {
       userChallenge.completedAt = new Date();
 
       // Award big XP and Badge
-      await GamificationService.addXP(userChallenge.userId.toString(), userChallenge.challengeId.rewardPoints || 500);
+      await GamificationService.addXP(
+        userChallenge.userId.toString(),
+        userChallenge.challengeId.rewardPoints || 500,
+      );
       await GamificationService.awardBadge(
         userChallenge.userId.toString(),
         `Champion: ${userChallenge.challengeId.title}`,
-        userChallenge.challengeId.icon || '🏆'
+        userChallenge.challengeId.icon || '🏆',
       );
 
       NotificationService.sendToUser(userChallenge.userId.toString(), {
@@ -147,7 +150,6 @@ export class ChallengeService {
     await userChallenge.save();
     return userChallenge;
   }
-
 
   // Helper to create seed challenges if none exist
   static async seedChallenges() {

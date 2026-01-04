@@ -7,7 +7,9 @@ const stripe = new Stripe(stripeKey, {
 });
 
 if (!process.env.STRIPE_SECRET_KEY) {
-  logger.warn('STRIPE_SECRET_KEY is missing. Stripe payments will NOT work. Using placeholder key to prevent crash.');
+  logger.warn(
+    'STRIPE_SECRET_KEY is missing. Stripe payments will NOT work. Using placeholder key to prevent crash.',
+  );
 }
 
 export default stripe;

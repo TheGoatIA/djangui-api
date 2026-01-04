@@ -55,11 +55,11 @@ export class ReportService {
       savingsRate: Math.max(0, savingsRate),
       budgetHealth: budget
         ? {
-          totalAllocated: budget.totalAllocated,
-          totalSpent: budget.totalSpent,
-          status: budget.status,
-          percentageUsed: (budget.totalSpent / budget.totalAllocated) * 100,
-        }
+            totalAllocated: budget.totalAllocated,
+            totalSpent: budget.totalSpent,
+            status: budget.status,
+            percentageUsed: (budget.totalSpent / budget.totalAllocated) * 100,
+          }
         : null,
       currency: user?.currency || 'XAF',
     };
@@ -148,7 +148,12 @@ export class ReportService {
    * Generate a narrative AI report for the month
    */
   static async getNarrativeReport(userId: string, month: number, year: number) {
-    const cacheKey = RedisService.generateKey('narrative_report', userId, month.toString(), year.toString());
+    const cacheKey = RedisService.generateKey(
+      'narrative_report',
+      userId,
+      month.toString(),
+      year.toString(),
+    );
     const cached = await RedisService.get(cacheKey);
     if (cached) return cached;
 
@@ -161,7 +166,7 @@ export class ReportService {
       Investment.find({ userId, status: 'active' }),
     ]);
 
-    const investmentSummary = investments.map(inv => ({
+    const investmentSummary = investments.map((inv) => ({
       title: inv.title,
       type: inv.type,
       performance: ((inv.currentValue - inv.initialAmount) / inv.initialAmount) * 100,

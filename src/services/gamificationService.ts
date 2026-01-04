@@ -3,71 +3,71 @@ import logger from '../utils/logger';
 import { NotificationService } from './notificationService';
 
 export class GamificationService {
-    /**
-     * Add XP to a user and handle leveling up
-     */
-    static async addXP(userId: string, amount: number) {
-        try {
-            const user = await User.findById(userId);
-            if (!user) return;
+  /**
+   * Add XP to a user and handle leveling up
+   */
+  static async addXP(userId: string, amount: number) {
+    try {
+      const user = await User.findById(userId);
+      if (!user) return;
 
-            user.xp += amount;
+      user.xp += amount;
 
-            // Simple leveling logic: level = floor(sqrt(xp / 100)) + 1
-            // Level 1: 0-99 XP
-            // Level 2: 100-399 XP
-            // Level 3: 400-899 XP
-            const newLevel = Math.floor(Math.sqrt(user.xp / 100)) + 1;
+      // Simple leveling logic: level = floor(sqrt(xp / 100)) + 1
+      // Level 1: 0-99 XP
+      // Level 2: 100-399 XP
+      // Level 3: 400-899 XP
+      const newLevel = Math.floor(Math.sqrt(user.xp / 100)) + 1;
 
-            if (newLevel > user.level) {
-                const oldLevel = user.level;
-                user.level = newLevel;
+      if (newLevel > user.level) {
+        const oldLevel = user.level;
+        user.level = newLevel;
 
-                // Notify user of level up
-                NotificationService.sendToUser(userId, {
-                    title: 'Niveau Supérieur ! 🚀',
-                    body: `Félicitations ! Tu es passé du niveau ${oldLevel} au niveau ${newLevel}.`,
-                    data: { type: 'level_up', level: String(newLevel) },
-                }).catch(err => logger.error(`Level up notification error: ${err.message}`));
-            }
+        // Notify user of level up
+        NotificationService.sendToUser(userId, {
+          title: 'Niveau Supérieur ! 🚀',
+          body: `Félicitations ! Tu es passé du niveau ${oldLevel} au niveau ${newLevel}.`,
+          data: { type: 'level_up', level: String(newLevel) },
+        }).catch((err) => logger.error(`Level up notification error: ${err.message}`));
+      }
 
-            await user.save();
-            return { xp: user.xp, level: user.level };
-        } catch (error: any) {
-            logger.error(`Error adding XP: ${error.message}`);
-            throw error;
-        }
+      await user.save();
+      return { xp: user.xp, level: user.level };
+    } catch (error: any) {
+      logger.error(`Error adding XP: ${error.message}`);
+      throw error;
     }
+  }
 
-    /**
-     * Award a badge to a user
-     */
-    static async awardBadge(userId: string, badgeName: string, icon: string) {
-        try {
-            const user = await User.findById(userId);
-            if (!user) return;
+  /**
+   * Award a badge to a user
+   */
+  static async awardBadge(userId: string, badgeName: string, icon: string) {
+    try {
+      const user = await User.findById(userId);
+      if (!user) return;
 
-            // Check if user already has this badge
-            const hasBadge = user.badges.some(b => b.name === badgeName);
-            if (hasBadge) return;
+      // Check if user already has this badge
+      const hasBadge = user.badges.some((b) => b.name === badgeName);
+      if (hasBadge) return;
 
-            user.badges.push({
-                name: badgeName,
-                icon,
-                awardedAt: new Date(),
-            });
+      user.badges.push({
+        name: badgeName,
+        icon,
+        awardedAt: new Date(),
+      });
 
-            NotificationService.sendToUser(userId, {
-                title: 'Nouveau Badge Obtenu ! 🏅',
-                body: `Tu as gagné le badge : ${badgeName} ${icon}`,
-                data: { type: 'badge_awarded', badgeName },
-            }).catch(err => logger.error(`Badge notification error: ${err.message}`));
+      NotificationService.sendToUser(userId, {
+        title: 'Nouveau Badge Obtenu ! 🏅',
+        body: `Tu as gagné le badge : ${badgeName} ${icon}`,
+        data: { type: 'badge_awarded', badgeName },
+      }).catch((err) => logger.error(`Badge notification error: ${err.message}`));
 
-            await user.save();
-            return user.badges;
-        } catch (error: any) {
-            logger.error(`Error awarding badge: ${error.message}`);
-            throw error;
-        }
+      await user.save();
+      return user.badges;
+    } catch (error: any) {
+      logger.error(`Error awarding badge: ${error.message}`);
+      throw error;
     }
+  }
 }
