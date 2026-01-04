@@ -102,6 +102,20 @@ export class AuthController {
     }
   }
 
+  static async updateMe(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const user = await AuthService.updateMe(req.user._id, req.body);
+      res.status(200).json({
+        success: true,
+        data: {
+          user,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
   static async getMe(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       res.status(200).json({

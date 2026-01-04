@@ -19,6 +19,7 @@ router.get('/verify-email', AuthController.verifyEmail);
 // Protected routes
 router.use(protect);
 router.get('/me', AuthController.getMe);
+router.patch('/me', AuthController.updateMe);
 router.post('/logout', AuthController.logout);
 router.post('/fcm-token', AuthController.updateFCMToken);
 router.post('/link-phone', AuthController.linkPhoneNumber);

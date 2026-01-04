@@ -291,4 +291,31 @@ export class AuthService {
     const tokens = createSendToken(user);
     return { user, tokens };
   }
+
+  static async updateMe(userId: string, updateData: any) {
+    const allowedFields = [
+      'firstName',
+      'lastName',
+      'country',
+      'currency',
+      'language',
+      'preferences',
+      'phone',
+    ];
+
+    const filteredUpdate: any = {};
+    Object.keys(updateData).forEach((key) => {
+      if (allowedFields.includes(key)) {
+        filteredUpdate[key] = updateData[key];
+      }
+    });
+
+    const user = await User.findByIdAndUpdate(userId, filteredUpdate, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (!user) throw new AppError('User not found', 404);
+    return user;
+  }
 }

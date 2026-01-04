@@ -8,28 +8,43 @@ import logger from '../utils/logger';
 
 export class PaymentService {
   /**
+   * List of currencies without decimals (e.g., XAF, JPY)
+   */
+  private static readonly ZERO_DECIMAL_CURRENCIES = ['XAF', 'JPY', 'CLP', 'GNF', 'KRW', 'PYG', 'VND'];
+
+  /**
+   * Format amount for Stripe/NotchPay based on currency
+   */
+  private static formatAmount(amount: number, currency: string): number {
+    const isZeroDecimal = this.ZERO_DECIMAL_CURRENCIES.includes(currency.toUpperCase());
+    return isZeroDecimal ? Math.round(amount) : Math.round(amount * 100);
+  }
+
+  /**
    * Create a Stripe Checkout Session for subscription or deposit
    */
   static async createStripeSession(
-    userId: string,
+    userId: any,
     amount: number,
     type: 'deposit' | 'subscription',
   ) {
-    const user = await User.findById(userId);
+    const userIdStr = userId.toString();
+    const user = await User.findById(userIdStr);
     if (!user) throw new AppError('User not found', 404);
 
     const reference = `STP-${uuidv4().split('-')[0].toUpperCase()}`;
+    const currency = user.currency || 'USD';
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [
         {
           price_data: {
-            currency: 'eur', // Or user preference
+            currency: currency.toLowerCase(),
             product_data: {
               name: type === 'subscription' ? 'Djangui Premium' : 'Wallet Deposit',
             },
-            unit_amount: amount * 100,
+            unit_amount: this.formatAmount(amount, currency),
           },
           quantity: 1,
         },
@@ -38,18 +53,18 @@ export class PaymentService {
       success_url: `${process.env.FRONTEND_URL}/payment/success?ref=${reference}`,
       cancel_url: `${process.env.FRONTEND_URL}/payment/cancel`,
       customer_email: user.email,
-      client_reference_id: userId,
+      client_reference_id: userIdStr,
       metadata: {
-        userId,
+        userId: userIdStr,
         type,
         reference,
       },
     });
 
     await Payment.create({
-      userId,
+      userId: userIdStr,
       amount,
-      currency: 'EUR',
+      currency,
       method: 'stripe',
       type,
       reference,
@@ -61,26 +76,29 @@ export class PaymentService {
   }
 
   /**
-   * Initialize a NotchPay payment
+   * Initialize a NotchPay payment (Restricted to Cameroon)
    */
   static async initializeNotchPay(
-    userId: string,
+    userId: any,
     amount: number,
     type: 'deposit' | 'subscription',
   ) {
-    const user = await User.findById(userId);
+    const userIdStr = userId.toString();
+    const user = await User.findById(userIdStr);
     if (!user) throw new AppError('User not found', 404);
 
+    // Geo-fencing: NotchPay only for Cameroon
+    if (user.country !== 'CM') {
+      throw new AppError('NotchPay is only available for users in Cameroon.', 400);
+    }
+
     const reference = `NTP-${uuidv4().split('-')[0].toUpperCase()}`;
+    const currency = user.currency || 'XAF';
 
     try {
-      // Handle amount based on currency (XAF has no decimals, others usually have 2)
-      const isXAF = user.currency === 'XAF';
-      const cleanAmount = isXAF ? Math.round(amount) : Math.round(amount * 100);
-
       const response = await notchpayApi.post('/payments', {
-        amount: cleanAmount,
-        currency: user.currency || 'XAF',
+        amount: this.formatAmount(amount, currency),
+        currency: currency,
         customer: {
           name: `${user.firstName} ${user.lastName}`,
           email: user.email,
@@ -93,9 +111,9 @@ export class PaymentService {
       });
 
       await Payment.create({
-        userId,
+        userId: userIdStr,
         amount,
-        currency: user.currency || 'XAF',
+        currency,
         method: 'notchpay',
         type,
         reference,

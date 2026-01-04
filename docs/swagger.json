@@ -20,56 +20,6 @@
             }
         },
         "schemas": {
-            "User": {
-                "type": "object",
-                "properties": {
-                    "_id": {
-                        "type": "string"
-                    },
-                    "email": {
-                        "type": "string"
-                    },
-                    "firstName": {
-                        "type": "string"
-                    },
-                    "lastName": {
-                        "type": "string"
-                    },
-                    "monthlyIncome": {
-                        "type": "number"
-                    },
-                    "currency": {
-                        "type": "string"
-                    },
-                    "walletBalance": {
-                        "type": "number"
-                    },
-                    "xp": {
-                        "type": "number"
-                    },
-                    "level": {
-                        "type": "number"
-                    },
-                    "badges": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "name": {
-                                    "type": "string"
-                                },
-                                "icon": {
-                                    "type": "string"
-                                },
-                                "awardedAt": {
-                                    "type": "string",
-                                    "format": "date-time"
-                                }
-                            }
-                        }
-                    }
-                }
-            },
             "Transaction": {
                 "type": "object",
                 "required": [
@@ -411,6 +361,92 @@
                         }
                     }
                 }
+            },
+            "User": {
+                "type": "object",
+                "properties": {
+                    "_id": {
+                        "type": "string"
+                    },
+                    "email": {
+                        "type": "string"
+                    },
+                    "firstName": {
+                        "type": "string"
+                    },
+                    "lastName": {
+                        "type": "string"
+                    },
+                    "country": {
+                        "type": "string",
+                        "description": "2-letter ISO country code (e.g., CM, FR, US)"
+                    },
+                    "monthlyIncome": {
+                        "type": "number"
+                    },
+                    "currency": {
+                        "type": "string"
+                    },
+                    "walletBalance": {
+                        "type": "number"
+                    },
+                    "xp": {
+                        "type": "number"
+                    },
+                    "level": {
+                        "type": "number"
+                    },
+                    "badges": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {
+                                    "type": "string"
+                                },
+                                "icon": {
+                                    "type": "string"
+                                },
+                                "awardedAt": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                }
+                            }
+                        }
+                    },
+                    "phone": {
+                        "type": "string"
+                    },
+                    "isEmailVerified": {
+                        "type": "boolean"
+                    },
+                    "isPhoneVerified": {
+                        "type": "boolean"
+                    },
+                    "role": {
+                        "type": "string",
+                        "enum": [
+                            "user",
+                            "admin"
+                        ]
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "active",
+                            "inactive",
+                            "suspended"
+                        ]
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
             }
         }
     },
@@ -457,6 +493,10 @@
                                     },
                                     "lastName": {
                                         "type": "string"
+                                    },
+                                    "country": {
+                                        "type": "string",
+                                        "description": "2-letter ISO country code (e.g., CM, FR, US)"
                                     }
                                 }
                             }
@@ -488,6 +528,10 @@
                                 "properties": {
                                     "idToken": {
                                         "type": "string"
+                                    },
+                                    "country": {
+                                        "type": "string",
+                                        "description": "Optional, 2-letter ISO code"
                                     }
                                 }
                             }
@@ -711,6 +755,38 @@
                                 }
                             }
                         }
+                    }
+                }
+            },
+            "patch": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Update Profile",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "firstName": {
+                                        "type": "string"
+                                    },
+                                    "lastName": {
+                                        "type": "string"
+                                    },
+                                    "country": {
+                                        "type": "string",
+                                        "description": "2-letter ISO country code (e.g., CM, FR, US)"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Profile updated"
                     }
                 }
             }
@@ -1202,6 +1278,30 @@
                 }
             }
         },
+        "/v1/webhooks/stripe": {
+            "post": {
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "Stripe Webhook",
+                "security": [],
+                "parameters": [
+                    {
+                        "name": "stripe-signature",
+                        "in": "header",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
         "/v1/webhooks/notchpay": {
             "post": {
                 "tags": [
@@ -1384,8 +1484,86 @@
                     }
                 },
                 "responses": {
+                    "description": "Joined"
+                }
+            }
+        },
+        "/v1/payments/checkout/stripe": {
+            "post": {
+                "tags": [
+                    "Payments"
+                ],
+                "summary": "Create Stripe Checkout Session",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "amount",
+                                    "type"
+                                ],
+                                "properties": {
+                                    "amount": {
+                                        "type": "number"
+                                    },
+                                    "type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "deposit",
+                                            "subscription"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
                     "200": {
-                        "description": "Joined"
+                        "description": "Stripe Session URL"
+                    }
+                }
+            }
+        },
+        "/v1/payments/init/notchpay": {
+            "post": {
+                "tags": [
+                    "Payments"
+                ],
+                "summary": "Initialize NotchPay (Cameroon Only)",
+                "description": "Strictly restricted to users with country='CM'",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "amount",
+                                    "type"
+                                ],
+                                "properties": {
+                                    "amount": {
+                                        "type": "number"
+                                    },
+                                    "type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "deposit",
+                                            "subscription"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "NotchPay Payment URL"
+                    },
+                    "400": {
+                        "description": "Geographical restriction"
                     }
                 }
             }

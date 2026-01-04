@@ -9,6 +9,7 @@ export interface IUser {
   avatar?: string;
   monthlyIncome: number;
   currency: string;
+  country: string;
   language: string;
   firebaseUid?: string;
   preferences: {

@@ -41,6 +41,10 @@ const userSchema = new Schema<IUserDocument>(
       type: String,
       default: 'XAF',
     },
+    country: {
+      type: String,
+      default: 'CM', // Default to Cameroon as requested
+    },
     language: {
       type: String,
       default: 'fr',
