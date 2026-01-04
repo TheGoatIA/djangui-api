@@ -5,15 +5,12 @@ import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import { RedisStore } from 'rate-limit-redis';
 import redis from './config/redis';
-import dotenv from 'dotenv';
 import path from 'path';
 import errorHandler from './middleware/errorHandler';
 import requestLogger from './middleware/requestLogger';
 import routes from './routes';
 import swaggerUi from 'swagger-ui-express';
 import swaggerDocument from '../docs/swagger.json';
-
-dotenv.config();
 
 const app = express();
 

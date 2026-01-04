@@ -1,3 +1,6 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import connectDB from './config/database';
 import redis from './config/redis';
 import { ChallengeService } from './services/challengeService';

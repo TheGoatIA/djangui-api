@@ -161,8 +161,7 @@ userSchema.methods.comparePassword = async function (candidatePassword: string):
   return bcrypt.compare(candidatePassword, this.password);
 };
 
-// Index for email
-userSchema.index({ email: 1 });
+// Index for email is already defined in the field with unique: true
 
 const User = mongoose.model<IUserDocument>('User', userSchema);
 
