@@ -1,8 +1,10 @@
+version: '3.8'
+
 services:
-  app:
+  api:
     build: .
     ports:
-      - "3000:3000"
+      - "5000:5000"
     environment:
       - NODE_ENV=production
       - MONGODB_URI=mongodb://mongodb:27017/djangui
@@ -10,24 +12,30 @@ services:
     depends_on:
       - mongodb
       - redis
+    networks:
+      - djangui-network
     volumes:
       - ./uploads:/app/uploads
-      - ./logs:/app/logs
 
   mongodb:
-    image: mongo:7
+    image: mongo:latest
     ports:
       - "27017:27017"
     volumes:
       - mongodb_data:/data/db
+    networks:
+      - djangui-network
 
   redis:
-    image: redis:7-alpine
+    image: redis:alpine
     ports:
       - "6379:6379"
-    volumes:
-      - redis_data:/data
+    networks:
+      - djangui-network
+
+networks:
+  djangui-network:
+    driver: bridge
 
 volumes:
   mongodb_data:
-  redis_data:

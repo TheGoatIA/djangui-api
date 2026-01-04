@@ -3,20 +3,20 @@ import { Schema } from 'joi';
 import { AppError } from './errorHandler';
 
 const validate = (schema: Schema) => {
-    return (req: Request, res: Response, next: NextFunction) => {
-        const { error } = schema.validate(req.body, {
-            abortEarly: false,
-            allowUnknown: true,
-            stripUnknown: true,
-        });
+  return (req: Request, res: Response, next: NextFunction) => {
+    const { error } = schema.validate(req.body, {
+      abortEarly: false,
+      allowUnknown: true,
+      stripUnknown: true,
+    });
 
-        if (error) {
-            const errorMessage = error.details.map((details) => details.message).join(', ');
-            return next(new AppError(errorMessage, 400));
-        }
+    if (error) {
+      const errorMessage = error.details.map((details) => details.message).join(', ');
+      return next(new AppError(errorMessage, 400));
+    }
 
-        next();
-    };
+    next();
+  };
 };
 
 export default validate;
