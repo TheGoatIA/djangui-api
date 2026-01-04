@@ -1,0 +1,2515 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "title": "Djangui API",
+        "version": "1.0.0",
+        "description": "API for Djangui - Smart Financial Management. This documentation reflects real-world responses aligned with the database models."
+    },
+    "servers": [
+        {
+            "url": "http://localhost:3000/api",
+            "description": "Local server"
+        }
+    ],
+    "components": {
+        "securitySchemes": {
+            "bearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT"
+            }
+        },
+        "schemas": {
+            "Transaction": {
+                "type": "object",
+                "required": [
+                    "amount",
+                    "type",
+                    "category",
+                    "description"
+                ],
+                "properties": {
+                    "_id": {
+                        "type": "string",
+                        "example": "60d5ec1860641029c4257850"
+                    },
+                    "userId": {
+                        "type": "string"
+                    },
+                    "amount": {
+                        "type": "number",
+                        "minimum": 0,
+                        "example": 1500
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "income",
+                            "expense"
+                        ],
+                        "example": "expense"
+                    },
+                    "category": {
+                        "type": "string",
+                        "example": "Alimentation"
+                    },
+                    "subcategory": {
+                        "type": "string",
+                        "example": "Restaurant"
+                    },
+                    "description": {
+                        "type": "string",
+                        "example": "Déjeuner au restaurant"
+                    },
+                    "merchant": {
+                        "type": "string",
+                        "example": "Casino"
+                    },
+                    "location": {
+                        "type": "string",
+                        "example": "Douala, Cameroun"
+                    },
+                    "date": {
+                        "type": "string",
+                        "format": "date-time",
+                        "example": "2026-01-04T10:00:00Z"
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "example": [
+                            "business",
+                            "lunch"
+                        ]
+                    },
+                    "isRecurring": {
+                        "type": "boolean",
+                        "example": false
+                    },
+                    "recurringFrequency": {
+                        "type": "string",
+                        "enum": [
+                            "daily",
+                            "weekly",
+                            "monthly",
+                            "yearly"
+                        ]
+                    },
+                    "isAutoCategorized": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "categorizationConfidence": {
+                        "type": "number",
+                        "example": 0.95
+                    },
+                    "receipt": {
+                        "type": "string"
+                    },
+                    "linkedGoalId": {
+                        "type": "string"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "Budget": {
+                "type": "object",
+                "properties": {
+                    "_id": {
+                        "type": "string"
+                    },
+                    "period": {
+                        "type": "object",
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "monthly",
+                                    "yearly"
+                                ]
+                            },
+                            "month": {
+                                "type": "integer"
+                            },
+                            "year": {
+                                "type": "integer"
+                            }
+                        }
+                    },
+                    "categories": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {
+                                    "type": "string"
+                                },
+                                "allocated": {
+                                    "type": "number"
+                                },
+                                "spent": {
+                                    "type": "number"
+                                },
+                                "percentage": {
+                                    "type": "number"
+                                }
+                            }
+                        }
+                    },
+                    "totalAllocated": {
+                        "type": "number"
+                    },
+                    "totalSpent": {
+                        "type": "number"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "active",
+                            "completed",
+                            "exceeded"
+                        ]
+                    }
+                }
+            },
+            "Goal": {
+                "type": "object",
+                "required": [
+                    "name",
+                    "targetAmount"
+                ],
+                "properties": {
+                    "_id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "emoji": {
+                        "type": "string"
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "emergency",
+                            "project",
+                            "regular",
+                            "challenge"
+                        ]
+                    },
+                    "targetAmount": {
+                        "type": "number"
+                    },
+                    "currentAmount": {
+                        "type": "number"
+                    },
+                    "progress": {
+                        "type": "number"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "priority": {
+                        "type": "string",
+                        "enum": [
+                            "high",
+                            "medium",
+                            "low"
+                        ]
+                    },
+                    "strategy": {
+                        "type": "object",
+                        "properties": {
+                            "type": {
+                                "type": "string"
+                            },
+                            "details": {
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "autoSaveRules": {
+                        "type": "object",
+                        "properties": {
+                            "enableSurplus": {
+                                "type": "boolean"
+                            },
+                            "enableRoundup": {
+                                "type": "boolean"
+                            },
+                            "percentageIncome": {
+                                "type": "number"
+                            }
+                        }
+                    },
+                    "contributions": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "amount": {
+                                    "type": "number"
+                                },
+                                "date": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                "note": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Investment": {
+                "type": "object",
+                "properties": {
+                    "_id": {
+                        "type": "string"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "crypto",
+                            "stock",
+                            "real_estate",
+                            "other"
+                        ]
+                    },
+                    "initialAmount": {
+                        "type": "number"
+                    },
+                    "currentValue": {
+                        "type": "number"
+                    },
+                    "currency": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "active",
+                            "closed"
+                        ]
+                    },
+                    "history": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "value": {
+                                    "type": "number"
+                                },
+                                "date": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Challenge": {
+                "type": "object",
+                "properties": {
+                    "_id": {
+                        "type": "string"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "saving",
+                            "spending_cut",
+                            "habit"
+                        ]
+                    },
+                    "difficulty": {
+                        "type": "string",
+                        "enum": [
+                            "easy",
+                            "medium",
+                            "hard"
+                        ]
+                    },
+                    "targetAmount": {
+                        "type": "number"
+                    },
+                    "durationDays": {
+                        "type": "integer"
+                    },
+                    "rewardPoints": {
+                        "type": "integer"
+                    },
+                    "icon": {
+                        "type": "string"
+                    }
+                }
+            },
+            "UserChallenge": {
+                "type": "object",
+                "properties": {
+                    "_id": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "progress": {
+                        "type": "number"
+                    },
+                    "currentValue": {
+                        "type": "number"
+                    },
+                    "weeks": {
+                        "type": "array",
+                        "items": {
+                            "type": "object"
+                        }
+                    },
+                    "flexibility": {
+                        "type": "object",
+                        "properties": {
+                            "skipsUsed": {
+                                "type": "integer"
+                            },
+                            "skipsMax": {
+                                "type": "integer"
+                            },
+                            "postponementsUsed": {
+                                "type": "integer"
+                            },
+                            "postponementsMax": {
+                                "type": "integer"
+                            }
+                        }
+                    }
+                }
+            },
+            "User": {
+                "type": "object",
+                "properties": {
+                    "_id": {
+                        "type": "string"
+                    },
+                    "email": {
+                        "type": "string"
+                    },
+                    "firstName": {
+                        "type": "string"
+                    },
+                    "lastName": {
+                        "type": "string"
+                    },
+                    "country": {
+                        "type": "string"
+                    },
+                    "monthlyIncome": {
+                        "type": "number"
+                    },
+                    "currency": {
+                        "type": "string"
+                    },
+                    "walletBalance": {
+                        "type": "number"
+                    },
+                    "xp": {
+                        "type": "number"
+                    },
+                    "level": {
+                        "type": "number"
+                    },
+                    "isActive": {
+                        "type": "boolean"
+                    },
+                    "isPremium": {
+                        "type": "boolean"
+                    },
+                    "preferences": {
+                        "type": "object"
+                    },
+                    "subscription": {
+                        "type": "object"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "ErrorResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean",
+                        "example": false
+                    },
+                    "message": {
+                        "type": "string"
+                    }
+                }
+            },
+            "GenericResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "message": {
+                        "type": "string"
+                    }
+                }
+            }
+        }
+    },
+    "security": [
+        {
+            "bearerAuth": []
+        }
+    ],
+    "paths": {
+        "/health": {
+            "get": {
+                "tags": [
+                    "System"
+                ],
+                "summary": "Health Check",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "UP",
+                                    "database": "connected"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/register": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Register",
+                "security": [],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "email": {
+                                        "type": "string"
+                                    },
+                                    "password": {
+                                        "type": "string"
+                                    },
+                                    "firstName": {
+                                        "type": "string"
+                                    },
+                                    "lastName": {
+                                        "type": "string"
+                                    },
+                                    "country": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "user": {
+                                            "_id": "695a3...",
+                                            "email": "new@user.com",
+                                            "firstName": "John",
+                                            "lastName": "Doe",
+                                            "country": "CM",
+                                            "isActive": true,
+                                            "xp": 0,
+                                            "level": 1
+                                        },
+                                        "tokens": {
+                                            "accessToken": "...",
+                                            "refreshToken": "..."
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/firebase": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Firebase Auth",
+                "security": [],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "idToken"
+                                ],
+                                "properties": {
+                                    "idToken": {
+                                        "type": "string"
+                                    },
+                                    "country": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "user": {
+                                            "_id": "695a3...",
+                                            "email": "fire@auth.com",
+                                            "firstName": "Google",
+                                            "lastName": "User",
+                                            "isPremium": false
+                                        },
+                                        "tokens": {
+                                            "accessToken": "...",
+                                            "refreshToken": "..."
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/google": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Google Auth (Alias)",
+                "security": [],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "idToken"
+                                ],
+                                "properties": {
+                                    "idToken": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "user": {
+                                            "_id": "695a3...",
+                                            "email": "google@gmail.com"
+                                        },
+                                        "tokens": {
+                                            "accessToken": "..."
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/refresh": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Refresh Token",
+                "security": [],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "refreshToken"
+                                ],
+                                "properties": {
+                                    "refreshToken": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "accessToken": "new_token...",
+                                        "refreshToken": "new_refresh..."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/logout": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Logout",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "message": "Logged out successfully"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/fcm-token": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Update FCM Token",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "fcmToken"
+                                ],
+                                "properties": {
+                                    "fcmToken": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "message": "FCM token updated"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/link-phone": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Link Phone",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "idToken"
+                                ],
+                                "properties": {
+                                    "idToken": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "message": "Phone number successfully linked."
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/login": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Login",
+                "security": [],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "email": {
+                                        "type": "string"
+                                    },
+                                    "password": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "user": {
+                                            "preferences": {
+                                                "coachTone": "balanced",
+                                                "notificationFrequency": "medium",
+                                                "budgetAlertThreshold": 80
+                                            },
+                                            "subscription": {
+                                                "plan": "free",
+                                                "status": "active",
+                                                "autoRenew": false
+                                            },
+                                            "_id": "695a3563079780f7fdb2d041",
+                                            "email": "me@borisgauty.com",
+                                            "firstName": "Gautier",
+                                            "lastName": "Boris",
+                                            "monthlyIncome": 0,
+                                            "currency": "XAF",
+                                            "language": "fr",
+                                            "isEmailVerified": true,
+                                            "isActive": true,
+                                            "walletBalance": 0,
+                                            "xp": 0,
+                                            "level": 1,
+                                            "createdAt": "2026-01-04T09:39:47.818Z",
+                                            "updatedAt": "2026-01-04T10:49:13.904Z",
+                                            "lastLogin": "2026-01-04T10:49:13.901Z",
+                                            "country": "CM",
+                                            "isPremium": false
+                                        },
+                                        "tokens": {
+                                            "accessToken": "...",
+                                            "refreshToken": "..."
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/me": {
+            "get": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Get Profile",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "_id": "695a3563079780f7fdb2d041",
+                                        "email": "me@borisgauty.com",
+                                        "firstName": "Gautier",
+                                        "lastName": "Boris",
+                                        "isPremium": true,
+                                        "xp": 1200,
+                                        "level": 10,
+                                        "walletBalance": 125000,
+                                        "preferences": {
+                                            "coachTone": "friendly"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Update Profile",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "firstName": {
+                                        "type": "string"
+                                    },
+                                    "lastName": {
+                                        "type": "string"
+                                    },
+                                    "country": {
+                                        "type": "string"
+                                    },
+                                    "monthlyIncome": {
+                                        "type": "number"
+                                    },
+                                    "preferences": {
+                                        "type": "object"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "_id": "695a3563079780f7fdb2d041",
+                                        "firstName": "Gautier",
+                                        "lastName": "Boris"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/forgot-password": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Forgot Password",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "email": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "message": "Password reset token sent to email."
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/reset-password/{token}": {
+            "patch": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Reset Password",
+                "parameters": [
+                    {
+                        "name": "token",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "password": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "message": "Password reset successful."
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/verify-email": {
+            "get": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Verify Email",
+                "parameters": [
+                    {
+                        "name": "token",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "message": "Email verified."
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/transactions": {
+            "get": {
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "List Transactions",
+                "parameters": [
+                    {
+                        "name": "type",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "income",
+                                "expense"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "category",
+                        "in": "query"
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "default": 1
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": [
+                                        {
+                                            "_id": "60d5ec...",
+                                            "amount": 1500,
+                                            "type": "expense",
+                                            "category": "Food",
+                                            "description": "Lunch at Casino",
+                                            "merchant": "Casino",
+                                            "date": "2026-01-04T12:30:00Z",
+                                            "isAutoCategorized": true
+                                        }
+                                    ],
+                                    "pagination": {
+                                        "page": 1,
+                                        "total": 120,
+                                        "pages": 6
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "Create Transaction",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Transaction"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "_id": "60d5ec...",
+                                        "amount": 1500,
+                                        "type": "expense",
+                                        "category": "Food",
+                                        "description": "Lunch"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/transactions/{id}": {
+            "get": {
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "Get Transaction",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "_id": "60d5ec...",
+                                        "amount": 1500,
+                                        "type": "expense",
+                                        "category": "Food",
+                                        "description": "Lunch",
+                                        "merchant": "Casino",
+                                        "tags": [
+                                            "food",
+                                            "daily"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "Update Transaction",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "amount": {
+                                        "type": "number"
+                                    },
+                                    "description": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "_id": "60d5ec...",
+                                        "amount": 1800
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "Delete Transaction",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "message": "Deleted successfully."
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/transactions/bulk": {
+            "post": {
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "Bulk Upload",
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "file": {
+                                        "type": "string",
+                                        "format": "binary"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "imported": 45,
+                                        "failed": 2,
+                                        "errors": [
+                                            {
+                                                "row": 12,
+                                                "error": "Invalid"
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/goals": {
+            "get": {
+                "tags": [
+                    "Goals"
+                ],
+                "summary": "List Goals",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": [
+                                        {
+                                            "_id": "60d5ec...",
+                                            "name": "Emergency Fund",
+                                            "targetAmount": 1000000,
+                                            "currentAmount": 250000,
+                                            "progress": 25,
+                                            "status": "active",
+                                            "priority": "high",
+                                            "emoji": "🛡️"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Goals"
+                ],
+                "summary": "Create Goal",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Goal"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "_id": "60d5ec...",
+                                        "name": "Voyage",
+                                        "targetAmount": 500000
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/goals/{id}": {
+            "get": {
+                "tags": [
+                    "Goals"
+                ],
+                "summary": "Get Goal",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "_id": "60d5ec...",
+                                        "name": "Emergency Fund",
+                                        "targetAmount": 1000000,
+                                        "currentAmount": 250000,
+                                        "contributions": [
+                                            {
+                                                "amount": 10000,
+                                                "date": "2026-01-01T10:00:00Z"
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "put": {
+                    "tags": [
+                        "Goals"
+                    ],
+                    "summary": "Update Goal",
+                    "parameters": [
+                        {
+                            "name": "id",
+                            "in": "path",
+                            "required": true
+                        }
+                    ],
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "OK",
+                            "content": {
+                                "application/json": {
+                                    "example": {
+                                        "success": true,
+                                        "data": {
+                                            "_id": "60d5ec...",
+                                            "name": "New Name"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "delete": {
+                    "tags": [
+                        "Goals"
+                    ],
+                    "summary": "Delete Goal",
+                    "parameters": [
+                        {
+                            "name": "id",
+                            "in": "path",
+                            "required": true
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "OK",
+                            "content": {
+                                "application/json": {
+                                    "example": {
+                                        "success": true,
+                                        "message": "Deleted"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/goals/{id}/contribute": {
+            "post": {
+                "tags": [
+                    "Goals"
+                ],
+                "summary": "Contribute",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "amount": {
+                                        "type": "number"
+                                    },
+                                    "note": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "_id": "60d5ec...",
+                                        "currentAmount": 260000,
+                                        "progress": 26
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/budgets/current": {
+            "get": {
+                "tags": [
+                    "Budgets"
+                ],
+                "summary": "Get Current Budget",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "_id": "60d5ec...",
+                                        "totalAllocated": 200000,
+                                        "totalSpent": 145000,
+                                        "categories": [
+                                            {
+                                                "name": "Food",
+                                                "allocated": 80000,
+                                                "spent": 62000,
+                                                "percentage": 77.5
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/budgets": {
+            "get": {
+                "tags": [
+                    "Budgets"
+                ],
+                "summary": "List Budgets",
+                "parameters": [
+                    {
+                        "name": "year",
+                        "in": "query"
+                    },
+                    {
+                        "name": "month",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": [
+                                        {
+                                            "_id": "60d5ec...",
+                                            "period": {
+                                                "month": 1,
+                                                "year": 2026
+                                            },
+                                            "totalAllocated": 200000
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Budgets"
+                ],
+                "summary": "Create Budget",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Budget"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "_id": "60d5ec...",
+                                        "period": {
+                                            "month": 2,
+                                            "year": 2026
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/budgets/{id}": {
+            "put": {
+                "tags": [
+                    "Budgets"
+                ],
+                "summary": "Update Budget",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "totalAllocated": {
+                                        "type": "number"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "totalAllocated": 250000
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/ocr/scan": {
+            "post": {
+                "tags": [
+                    "AI Tools"
+                ],
+                "summary": "OCR Scan",
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "receipt": {
+                                        "type": "string",
+                                        "format": "binary"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "merchant": "Casino",
+                                        "total": 12500,
+                                        "items": [
+                                            {
+                                                "name": "Milk",
+                                                "price": 1200
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/sms/parse": {
+            "post": {
+                "tags": [
+                    "AI Tools"
+                ],
+                "summary": "Parse SMS",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "content": {
+                                        "type": "string",
+                                        "example": "Transfert de 15000 XAF réussi."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "amount": 15000,
+                                        "merchant": "Orange Money",
+                                        "category": "Services"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/sms/bulk-parse": {
+            "post": {
+                "tags": [
+                    "AI Tools"
+                ],
+                "summary": "Bulk Parse SMS",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "messages": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "201": {
+                            "description": "Created",
+                            "content": {
+                                "application/json": {
+                                    "example": {
+                                        "success": true,
+                                        "data": {
+                                            "processed": 10,
+                                            "imported": 8,
+                                            "failed": 2
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/coach/ask": {
+            "post": {
+                "tags": [
+                    "Coach"
+                ],
+                "summary": "Ask Coach",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "message": {
+                                        "type": "string",
+                                        "example": "Comment économiser ?"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "response": "Réduisez vos loisirs de 10%.",
+                                        "suggestions": [
+                                            "Voir budget"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/coach/history": {
+            "get": {
+                "tags": [
+                    "Coach"
+                ],
+                "summary": "Coach History",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": [
+                                        {
+                                            "role": "user",
+                                            "message": "Hi"
+                                        },
+                                        {
+                                            "role": "coach",
+                                            "message": "Hello"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/insights/spending": {
+            "get": {
+                "tags": [
+                    "Coach"
+                ],
+                "summary": "Spending Insights",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "topCategory": "Food",
+                                        "biggestExpense": 50000,
+                                        "anomaly": false
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/reports/dashboard": {
+            "get": {
+                "tags": [
+                    "Reports"
+                ],
+                "summary": "Dashboard Summary",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "walletBalance": 125000,
+                                        "monthlyIncome": 450000,
+                                        "totalSpent": 145000,
+                                        "savingsRate": 67.7,
+                                        "budgetHealth": {
+                                            "status": "active",
+                                            "percentageUsed": 72.5
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/reports/analysis": {
+            "get": {
+                "tags": [
+                    "Reports"
+                ],
+                "summary": "Spending Analysis",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": [
+                                        {
+                                            "category": "Food",
+                                            "amount": 62000,
+                                            "count": 12
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/reports/trends": {
+            "get": {
+                "tags": [
+                    "Reports"
+                ],
+                "summary": "Savings Trend",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": [
+                                        {
+                                            "period": "1/2026",
+                                            "income": 450000,
+                                            "expense": 320000,
+                                            "savings": 130000
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/reports/narrative": {
+            "get": {
+                "tags": [
+                    "Reports"
+                ],
+                "summary": "Narrative Report",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "title": "Analyse Janvier",
+                                        "summary": "Bien joué.",
+                                        "health_score": 85
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/reports/export/csv": {
+            "get": {
+                "tags": [
+                    "Reports"
+                ],
+                "summary": "Export CSV",
+                "responses": {
+                    "200": {
+                        "description": "CSV Export",
+                        "content": {
+                            "text/csv": {
+                                "example": "Date,Amount,Category\n2026-01-01,1500,Food"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/investments": {
+            "get": {
+                "tags": [
+                    "Investments"
+                ],
+                "summary": "List Investments",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": [
+                                        {
+                                            "_id": "60d5ec...",
+                                            "title": "Bitcoin",
+                                            "currentValue": 650000,
+                                            "performance": 30
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Investments"
+                ],
+                "summary": "Create Investment",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Investment"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "_id": "60d5ec...",
+                                        "title": "Crypto",
+                                        "initialAmount": 100000
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/investments/{id}/value": {
+            "patch": {
+                "tags": [
+                    "Investments"
+                ],
+                "summary": "Update Value",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "value": {
+                                        "type": "number"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "newValue": 670000
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/investments/{id}/close": {
+            "post": {
+                "tags": [
+                    "Investments"
+                ],
+                "summary": "Close",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "message": "Closed"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/challenges": {
+            "get": {
+                "tags": [
+                    "Challenges"
+                ],
+                "summary": "All Challenges",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": [
+                                        {
+                                            "_id": "60d5ec...",
+                                            "title": "52 Weeks Challenge",
+                                            "difficulty": "medium"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/challenges/my-challenges": {
+            "get": {
+                "tags": [
+                    "Challenges"
+                ],
+                "summary": "My Challenges",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": [
+                                        {
+                                            "_id": "60d5ec...",
+                                            "status": "active",
+                                            "progress": 25,
+                                            "challengeId": {
+                                                "title": "52 Weeks"
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/challenges/join": {
+            "post": {
+                "tags": [
+                    "Challenges"
+                ],
+                "summary": "Join Challenge",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "challengeId": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "message": "Joined"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/challenges/validate-week": {
+            "post": {
+                "tags": [
+                    "Challenges"
+                ],
+                "summary": "Validate Week",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "userChallengeId": {
+                                        "type": "string"
+                                    },
+                                    "weekNumber": {
+                                        "type": "integer"
+                                    },
+                                    "amount": {
+                                        "type": "number"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "xpGained": 50,
+                                        "newBalance": 12500
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/payments/checkout/stripe": {
+            "post": {
+                "tags": [
+                    "Payments"
+                ],
+                "summary": "Stripe",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "amount": {
+                                        "type": "number"
+                                    },
+                                    "type": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "url": "https://checkout.stripe.com/...",
+                                        "reference": "STP-123"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/payments/init/notchpay": {
+            "post": {
+                "tags": [
+                    "Payments"
+                ],
+                "summary": "NotchPay",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "amount": {
+                                        "type": "number"
+                                    },
+                                    "type": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "url": "https://api.notchpay.co/...",
+                                        "reference": "NTP-456"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/webhooks/stripe": {
+            "post": {
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "Stripe",
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/webhooks/notchpay": {
+            "post": {
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "NotchPay",
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/upload/receipt": {
+            "post": {
+                "tags": [
+                    "Upload"
+                ],
+                "summary": "Receipt",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "url": "https://storage..."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/upload/avatar": {
+            "post": {
+                "tags": [
+                    "Upload"
+                ],
+                "summary": "Avatar",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "url": "https://storage..."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/emails/send": {
+            "post": {
+                "tags": [
+                    "Emails"
+                ],
+                "summary": "Send Email",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "message": "Sent"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
