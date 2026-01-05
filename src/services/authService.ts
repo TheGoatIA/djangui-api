@@ -15,13 +15,13 @@ const signToken = (id: string, secret: string, expiresIn: any) => {
 export const createSendToken = (user: IUserDocument) => {
   const accessToken = signToken(
     user._id.toString(),
-    process.env.JWT_SECRET || 'super-secret',
+    process.env.JWT_ACCESS_SECRET || 'super-secret',
     process.env.JWT_ACCESS_EXPIRATION || '15m',
   );
 
   const refreshToken = signToken(
     user._id.toString(),
-    process.env.JWT_SECRET || 'super-secret-refresh',
+    process.env.JWT_REFRESH_SECRET || 'super-secret-refresh',
     process.env.JWT_REFRESH_EXPIRATION || '7d',
   );
 
@@ -181,7 +181,7 @@ export class AuthService {
       // 1) Verify refresh token
       const decoded = jwt.verify(
         refreshToken,
-        process.env.JWT_SECRET || 'super-secret-refresh',
+        process.env.JWT_REFRESH_SECRET || 'super-secret-refresh',
       ) as { id: string };
 
       // 2) Check if user still exists
