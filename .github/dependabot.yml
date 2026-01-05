@@ -4,6 +4,7 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    target-branch: "dev"
     open-pull-requests-limit: 20
     reviewers:
       - "borisgauty" # Based on your registration name
@@ -15,3 +16,4 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+    target-branch: "dev"

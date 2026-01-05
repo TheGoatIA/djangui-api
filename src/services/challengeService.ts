@@ -186,7 +186,26 @@ export class ChallengeService {
           icon: '💎',
         },
       ]);
-      logger.info('Seed challenges created');
+      logger.info('Basic seed challenges created');
+    }
+
+    // Check specifically for the 52-week challenge and add it if missing
+    const tontineChallenge = await Challenge.findOne({
+      title: 'Challenge 52 Semaines (1000F)',
+    });
+    if (!tontineChallenge) {
+      await Challenge.create({
+        title: 'Challenge 52 Semaines (1000F)',
+        description:
+          'Un défi progressif sur un an : commence par 1000F, puis ajoute 1000F chaque semaine (Semaine 52 = 52 000F). Total : 1 378 000 XAF !',
+        type: 'saving',
+        difficulty: 'hard',
+        targetAmount: 1378000,
+        durationDays: 365,
+        rewardPoints: 1000,
+        icon: '🚀',
+      });
+      logger.info('52-Week 1000F Challenge created');
     }
   }
 }
