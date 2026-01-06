@@ -16,6 +16,11 @@ const userSchema = new Schema<IUserDocument>(
       lowercase: true,
       trim: true,
     },
+    role: {
+      type: String,
+      enum: ['user', 'admin'],
+      default: 'user',
+    },
     password: {
       type: String,
       minlength: 8,
@@ -124,6 +129,16 @@ const userSchema = new Schema<IUserDocument>(
       },
     ],
     fcmTokens: [String],
+    deviceInfo: {
+      model: String,
+      os: String,
+      osVersion: String,
+      platform: {
+        type: String,
+        enum: ['android', 'ios', 'web'],
+      },
+    },
+    appVersion: String,
     lastLogin: Date,
     refreshToken: String,
   },

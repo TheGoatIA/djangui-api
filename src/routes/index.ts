@@ -14,10 +14,14 @@ import uploadRoutes from './upload.routes';
 import { WebhookController } from '../controllers/webhookController';
 import investmentRoutes from './investment.routes';
 import emailRoutes from './email.routes';
+import adminRoutes from './admin.routes';
+import systemRoutes from './system.routes';
 
 const router = Router();
 
 router.use('/auth', authRoutes);
+router.use('/system', systemRoutes);
+router.use('/admin', adminRoutes); // Admin routes
 router.use('/transactions', transactionRoutes);
 router.use('/budgets', budgetRoutes);
 router.use('/goals', goalRoutes);

@@ -195,4 +195,20 @@ export class AuthController {
       next(err);
     }
   }
+
+  static async updateDeviceInfo(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const { deviceInfo, appVersion } = req.body;
+      const user = await AuthService.updateDeviceInfo(req.user._id, { deviceInfo, appVersion });
+
+      res.status(200).json({
+        success: true,
+        data: {
+          user,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
 }

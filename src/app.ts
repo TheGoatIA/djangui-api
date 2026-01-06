@@ -7,7 +7,7 @@ import { RedisStore } from 'rate-limit-redis';
 import redis from './config/redis';
 import path from 'path';
 import errorHandler from './middleware/errorHandler';
-import requestLogger from './middleware/requestLogger';
+import { requestLogger } from './middleware/requestLogger'; // Changed import to named export
 import routes from './routes';
 import swaggerUi from 'swagger-ui-express';
 import swaggerDocument from '../docs/swagger.json';
