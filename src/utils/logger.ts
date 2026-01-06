@@ -29,7 +29,7 @@ winston.addColors(colors);
 // Define log format for files (JSON is better for parsing/stats)
 const fileFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-  winston.format.json()
+  winston.format.json(),
 );
 
 // Define log format for console (Readable)
@@ -38,7 +38,8 @@ const consoleFormat = winston.format.combine(
   winston.format.colorize({ all: true }),
   winston.format.printf(
     (info) =>
-      `${info.timestamp} ${info.level}: ${info.message}${info.userId ? ` [User: ${info.userId}]` : ''
+      `${info.timestamp} ${info.level}: ${info.message}${
+        info.userId ? ` [User: ${info.userId}]` : ''
       }${info.context ? ` [Context: ${info.context}]` : ''}`,
   ),
 );

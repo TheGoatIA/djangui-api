@@ -21,10 +21,9 @@ const protect = async (req: AuthRequest, res: Response, next: NextFunction) => {
     }
 
     // 2) Verification token
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_ACCESS_SECRET || 'super-secret',
-    ) as { id: string };
+    const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET || 'super-secret') as {
+      id: string;
+    };
 
     // 3) Check if user still exists
     const currentUser = await User.findById(decoded.id);
