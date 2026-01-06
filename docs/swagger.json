@@ -1706,6 +1706,24 @@
                         }
                     }
                 }
+            },
+            "delete": {
+                "tags": [
+                    "Budgets"
+                ],
+                "summary": "Delete Budget",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
             }
         },
         "/v1/ocr/scan": {
@@ -2191,6 +2209,26 @@
                 }
             }
         },
+        "/v1/investments/{id}": {
+            "delete": {
+                "tags": [
+                    "Investments"
+                ],
+                "summary": "Delete Investment",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
+            }
+        },
         "/v1/challenges": {
             "get": {
                 "tags": [
@@ -2323,6 +2361,26 @@
                                 }
                             }
                         }
+                    }
+                }
+            }
+        },
+        "/v1/challenges/{id}": {
+            "delete": {
+                "tags": [
+                    "Challenges"
+                ],
+                "summary": "Unjoin Challenge",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
                     }
                 }
             }
