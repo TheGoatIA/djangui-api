@@ -21,10 +21,9 @@ const protect = async (req: AuthRequest, res: Response, next: NextFunction) => {
     }
 
     // 2) Verification token
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_ACCESS_SECRET || 'super-secret',
-    ) as { id: string };
+    const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET || 'super-secret') as {
+      id: string;
+    };
 
     // 3) Check if user still exists
     const currentUser = await User.findById(decoded.id);
@@ -59,5 +58,16 @@ const premiumOnly = async (req: AuthRequest, res: Response, next: NextFunction) 
   next();
 };
 
-export { protect, premiumOnly };
+const restrictTo = (...roles: string[]) => {
+  return (req: AuthRequest, res: Response, next: NextFunction) => {
+    // roles ['admin', 'lead-guide']. role='user'
+    if (!roles.includes(req.user.role)) {
+      return next(new AppError('You do not have permission to perform this action', 403));
+    }
+
+    next();
+  };
+};
+
+export { protect, premiumOnly, restrictTo };
 export default protect;

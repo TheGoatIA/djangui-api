@@ -43,4 +43,14 @@ export class InvestmentController {
       next(error);
     }
   }
+
+  static async delete(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      await InvestmentService.deleteInvestment(id, req.user!._id);
+      res.status(204).json({ success: true, data: null });
+    } catch (error) {
+      next(error);
+    }
+  }
 }

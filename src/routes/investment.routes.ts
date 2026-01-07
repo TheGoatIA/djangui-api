@@ -11,5 +11,6 @@ router.post('/', InvestmentController.create);
 router.get('/', InvestmentController.list);
 router.patch('/:id/value', InvestmentController.updateValue);
 router.post('/:id/close', InvestmentController.close);
+router.delete('/:id', InvestmentController.delete);
 
 export default router;

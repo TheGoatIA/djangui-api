@@ -1,4 +1,4 @@
-import { model } from '../../config/gemini';
+import { GeminiService } from './geminiService';
 import fs from 'fs';
 import logger from '../../utils/logger';
 
@@ -32,7 +32,7 @@ export class OCRService {
         Return ONLY the JSON.
       `;
 
-      const result = await model.generateContent([
+      const parsed = await GeminiService.generateJSON([
         prompt,
         {
           inlineData: {
@@ -41,11 +41,6 @@ export class OCRService {
           },
         },
       ]);
-
-      const responseText = result.response.text();
-      // Clean up potential markdown formatting in response
-      const jsonStr = responseText.replace(/```json|```/g, '').trim();
-      const parsed = JSON.parse(jsonStr);
 
       return {
         merchant: parsed.merchant || 'Inconnu',

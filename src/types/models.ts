@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 
 export interface IUser {
   email: string;
+  role: 'user' | 'admin';
   password?: string;
   firstName: string;
   lastName: string;
@@ -41,6 +42,13 @@ export interface IUser {
     awardedAt: Date;
   }[];
   fcmTokens: string[];
+  deviceInfo?: {
+    model?: string;
+    os?: string;
+    osVersion?: string;
+    platform: 'android' | 'ios' | 'web';
+  };
+  appVersion?: string;
   lastLogin?: Date;
   refreshToken?: string;
   createdAt: Date;

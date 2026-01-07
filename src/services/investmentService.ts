@@ -69,4 +69,15 @@ export class InvestmentService {
 
     return investment;
   }
+
+  /**
+   * Delete an investment
+   */
+  static async deleteInvestment(id: string, userId: string) {
+    const investment = await Investment.findOneAndDelete({ _id: id, userId });
+    if (!investment) {
+      throw new AppError('Investment not found', 404);
+    }
+    return true;
+  }
 }
