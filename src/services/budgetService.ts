@@ -52,4 +52,14 @@ export class BudgetService {
 
     return budget;
   }
+
+  static async deleteBudget(id: string, userId: string) {
+    const budget = await Budget.findOneAndDelete({ _id: id, userId });
+
+    if (!budget) {
+      throw new AppError('Budget not found', 404);
+    }
+
+    return true;
+  }
 }

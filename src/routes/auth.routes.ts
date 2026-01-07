@@ -22,6 +22,8 @@ router.get('/me', AuthController.getMe);
 router.patch('/me', AuthController.updateMe);
 router.post('/logout', AuthController.logout);
 router.post('/fcm-token', AuthController.updateFCMToken);
+router.post('/fcm-token', AuthController.updateFCMToken);
 router.post('/link-phone', AuthController.linkPhoneNumber);
+router.patch('/device', AuthController.updateDeviceInfo);
 
 export default router;

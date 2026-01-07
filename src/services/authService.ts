@@ -318,4 +318,18 @@ export class AuthService {
     if (!user) throw new AppError('User not found', 404);
     return user;
   }
+
+  static async updateDeviceInfo(userId: string, data: { deviceInfo: any; appVersion: string }) {
+    const user = await User.findByIdAndUpdate(
+      userId,
+      {
+        deviceInfo: data.deviceInfo,
+        appVersion: data.appVersion,
+      },
+      { new: true, runValidators: true },
+    );
+
+    if (!user) throw new AppError('User not found', 404);
+    return user;
+  }
 }

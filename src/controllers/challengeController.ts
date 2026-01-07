@@ -56,4 +56,16 @@ export class ChallengeController {
       next(err);
     }
   }
+  static async unjoin(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      await ChallengeService.unjoinChallenge(id, req.user._id);
+      res.status(204).json({
+        success: true,
+        data: null,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
 }

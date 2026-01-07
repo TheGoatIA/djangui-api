@@ -208,4 +208,17 @@ export class ChallengeService {
       logger.info('52-Week 1000F Challenge created');
     }
   }
+
+  static async unjoinChallenge(userChallengeId: string, userId: string) {
+    const userChallenge = await UserChallenge.findOneAndDelete({
+      _id: userChallengeId,
+      userId,
+    });
+
+    if (!userChallenge) {
+      throw new AppError('Participation not found', 404);
+    }
+
+    return true;
+  }
 }

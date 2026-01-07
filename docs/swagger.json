@@ -494,6 +494,464 @@
         }
     ],
     "paths": {
+        "/v1/admin/stats": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Get Dashboard Stats",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/admin/users": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Get All Users",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "page",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "search",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/admin/notifications/send": {
+            "post": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Send Push Notification",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "userIds": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "topic": {
+                                        "type": "string"
+                                    },
+                                    "title": {
+                                        "type": "string"
+                                    },
+                                    "body": {
+                                        "type": "string"
+                                    },
+                                    "data": {
+                                        "type": "object"
+                                    }
+                                },
+                                "required": [
+                                    "title",
+                                    "body"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/admin/transactions": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "List All Transactions (Supervision)",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "amount[gt]",
+                        "in": "query",
+                        "schema": {
+                            "type": "number"
+                        },
+                        "description": "Filter by amount greater than"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/admin/challenges": {
+            "post": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Create System Challenge",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "title",
+                                    "description",
+                                    "targetAmount",
+                                    "durationDays"
+                                ],
+                                "properties": {
+                                    "title": {
+                                        "type": "string"
+                                    },
+                                    "description": {
+                                        "type": "string"
+                                    },
+                                    "targetAmount": {
+                                        "type": "number"
+                                    },
+                                    "durationDays": {
+                                        "type": "integer"
+                                    },
+                                    "rewardPoints": {
+                                        "type": "integer"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Created"
+                    }
+                }
+            }
+        },
+        "/v1/admin/settings": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Get System Settings",
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            },
+            "patch": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Update System Setting",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "key",
+                                    "value"
+                                ],
+                                "properties": {
+                                    "key": {
+                                        "type": "string"
+                                    },
+                                    "value": {
+                                        "type": "object"
+                                    },
+                                    "group": {
+                                        "type": "string"
+                                    },
+                                    "isPublic": {
+                                        "type": "boolean"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/admin/users/{id}/status": {
+            "patch": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Ban/Unban User",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "isActive": {
+                                        "type": "boolean"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/auth/device": {
+            "patch": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Update Device Info",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "deviceInfo",
+                                    "appVersion"
+                                ],
+                                "properties": {
+                                    "deviceInfo": {
+                                        "type": "object",
+                                        "properties": {
+                                            "model": {
+                                                "type": "string"
+                                            },
+                                            "os": {
+                                                "type": "string"
+                                            },
+                                            "osVersion": {
+                                                "type": "string"
+                                            },
+                                            "platform": {
+                                                "type": "string",
+                                                "enum": [
+                                                    "android",
+                                                    "ios",
+                                                    "web"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "appVersion": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/system/version-check": {
+            "get": {
+                "tags": [
+                    "System"
+                ],
+                "summary": "Check App Version",
+                "parameters": [
+                    {
+                        "name": "platform",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "android",
+                                "ios"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "version",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "success",
+                                    "data": {
+                                        "forceUpdate": false,
+                                        "updateAvailable": true,
+                                        "latestVersion": "1.2.0",
+                                        "minVersion": "1.0.0",
+                                        "updateUrl": "https://...",
+                                        "maintenanceMode": false
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/admin/health": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Get System Health (Redis/Mongo)",
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/admin/db/backup": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Trigger DB Backup",
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/admin/logs": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "List Log Files",
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/admin/logs/{filename}": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Download Log File",
+                "parameters": [
+                    {
+                        "name": "filename",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK (File Stream)"
+                    }
+                }
+            }
+        },
+        "/v1/admin/analytics/financials": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Get Advanced Financial Analytics",
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
         "/health": {
             "get": {
                 "tags": [
@@ -1706,6 +2164,24 @@
                         }
                     }
                 }
+            },
+            "delete": {
+                "tags": [
+                    "Budgets"
+                ],
+                "summary": "Delete Budget",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
             }
         },
         "/v1/ocr/scan": {
@@ -2191,6 +2667,26 @@
                 }
             }
         },
+        "/v1/investments/{id}": {
+            "delete": {
+                "tags": [
+                    "Investments"
+                ],
+                "summary": "Delete Investment",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
+            }
+        },
         "/v1/challenges": {
             "get": {
                 "tags": [
@@ -2323,6 +2819,26 @@
                                 }
                             }
                         }
+                    }
+                }
+            }
+        },
+        "/v1/challenges/{id}": {
+            "delete": {
+                "tags": [
+                    "Challenges"
+                ],
+                "summary": "Unjoin Challenge",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
                     }
                 }
             }

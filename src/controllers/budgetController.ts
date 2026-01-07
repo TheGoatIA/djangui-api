@@ -54,4 +54,16 @@ export class BudgetController {
       next(err);
     }
   }
+
+  static async delete(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      await BudgetService.deleteBudget(req.params.id, req.user._id);
+      res.status(204).json({
+        success: true,
+        data: null,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
 }

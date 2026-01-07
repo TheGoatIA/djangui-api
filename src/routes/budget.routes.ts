@@ -15,6 +15,9 @@ router
 
 router.get('/current', BudgetController.getCurrent);
 
-router.route('/:id').put(validate(updateBudgetSchema), BudgetController.update);
+router
+  .route('/:id')
+  .put(validate(updateBudgetSchema), BudgetController.update)
+  .delete(BudgetController.delete);
 
 export default router;

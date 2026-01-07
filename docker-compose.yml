@@ -7,7 +7,7 @@ services:
       - "5000:5000"
     environment:
       - NODE_ENV=production
-      - MONGODB_URI=mongodb://mongodb:27017/djangui
+      - MONGODB_URI=mongodb://mongodb:27017/djangui?replicaSet=rs0
       - REDIS_URL=redis://redis:6379
     depends_on:
       - mongodb
@@ -19,12 +19,19 @@ services:
 
   mongodb:
     image: mongo:latest
+    command: [ "--replSet", "rs0", "--bind_ip_all" ]
     ports:
       - "27017:27017"
     volumes:
       - mongodb_data:/data/db
     networks:
       - djangui-network
+    healthcheck:
+      test: echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]}) }" | mongosh --port 27017 --quiet
+      interval: 10s
+      timeout: 30s
+      retries: 5
+      start_period: 5s
 
   redis:
     image: redis:alpine

@@ -10,5 +10,6 @@ router.get('/', ChallengeController.getAll);
 router.get('/my-challenges', ChallengeController.getUserChallenges);
 router.post('/join', ChallengeController.join);
 router.post('/validate-week', ChallengeController.validateWeek);
+router.delete('/:id', ChallengeController.unjoin);
 
 export default router;
