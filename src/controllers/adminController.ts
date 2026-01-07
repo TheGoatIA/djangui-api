@@ -18,6 +18,7 @@ export class AdminController {
   // --- SYSTEM MANAGEMENT ---
 
   // 1. Database Backup (Mongodump)
+  // 1. Database Backup (Mongodump)
   static async backupDatabase(req: Request, res: Response, next: NextFunction) {
     try {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -36,8 +37,21 @@ export class AdminController {
 
       exec(command, (error, stdout, stderr) => {
         if (error) {
-          console.error(`Backup error: ${error.message}`);
-          return next(new AppError('Backup failed execution', 500));
+          console.error(`Backup error: ${error}`);
+          const isCommandNotFound =
+            error.message.includes('not recognized') || // Windows
+            error.message.includes('not found') || // Linux/Mac
+            error.code === 127;
+
+          if (isCommandNotFound) {
+            return next(
+              new AppError(
+                'Backup failed: mongodump tool not found on server. Please install MongoDB Database Tools and add to PATH.',
+                500,
+              ),
+            );
+          }
+          return next(new AppError(`Backup failed execution: ${error.message}`, 500));
         }
 
         // For simplicity, we define success if command runs.
@@ -113,11 +127,22 @@ export class AdminController {
 
   static async downloadLog(req: Request, res: Response, next: NextFunction) {
     try {
-      const { filename } = req.params;
-      const filePath = path.join(__dirname, '../../logs', filename);
+      let { filename } = req.params;
+      const logsDir = path.join(__dirname, '../../logs');
+
+      // Alias 'combined.log' and 'error.log' to today's log
+      if (filename === 'combined.log' || filename === 'error.log') {
+        const today = new Date().toISOString().split('T')[0];
+        const prefix = filename.split('.')[0];
+        filename = `${prefix}-${today}.log`;
+      }
+
+      const filePath = path.join(logsDir, filename);
 
       if (!fs.existsSync(filePath)) {
-        return next(new AppError('Log file not found', 404));
+        return next(
+          new AppError(`Log file not found: ${filename} (Aliases tried: combined.log -> today)`, 404),
+        );
       }
 
       res.download(filePath);

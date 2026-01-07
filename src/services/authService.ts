@@ -301,6 +301,7 @@ export class AuthService {
       'language',
       'preferences',
       'phone',
+      'monthlyIncome',
     ];
 
     const filteredUpdate: any = {};
