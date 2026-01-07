@@ -1351,6 +1351,89 @@
                 }
             }
         },
+        "/v1/auth/change-password": {
+            "patch": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Change user password",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "currentPassword": {
+                                        "type": "string"
+                                    },
+                                    "newPassword": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "currentPassword",
+                                    "newPassword"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/auth/delete-me": {
+            "delete": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Delete user account",
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/auth/sessions": {
+            "get": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Get active sessions",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "sessions": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/auth/logout": {
             "post": {
                 "tags": [
@@ -3024,6 +3107,62 @@
                 }
             }
         },
+        "/v1/payments/cancel-subscription": {
+            "post": {
+                "tags": [
+                    "Payments"
+                ],
+                "summary": "Cancel Premium Subscription",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "message": "Subscription cancelled successfully...",
+                                    "data": {
+                                        "plan": "premium",
+                                        "status": "cancelled",
+                                        "endDate": "2026-02-06T..."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/payments": {
+            "get": {
+                "tags": [
+                    "Payments"
+                ],
+                "summary": "My Payment History",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "results": 2,
+                                    "data": [
+                                        {
+                                            "amount": 5000,
+                                            "currency": "XAF",
+                                            "status": "completed",
+                                            "type": "deposit",
+                                            "createdAt": "2026-01-07T12:00:00Z"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/payments/checkout/stripe": {
             "post": {
                 "tags": [
@@ -3106,6 +3245,45 @@
                 }
             }
         },
+        "/v1/payments/verify/{reference}": {
+            "get": {
+                "tags": [
+                    "Payments"
+                ],
+                "summary": "Verify Transaction Status",
+                "parameters": [
+                    {
+                        "name": "reference",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "status": "completed",
+                                        "payment": {
+                                            "reference": "NTP-ABC...",
+                                            "amount": 5000,
+                                            "currency": "XAF",
+                                            "status": "completed"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/webhooks/stripe": {
             "post": {
                 "tags": [
@@ -3137,7 +3315,22 @@
                 "tags": [
                     "Upload"
                 ],
-                "summary": "Receipt",
+                "summary": "Upload and scan a receipt",
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "receipt": {
+                                        "type": "string",
+                                        "format": "binary"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -3146,7 +3339,11 @@
                                 "example": {
                                     "success": true,
                                     "data": {
-                                        "url": "https://storage..."
+                                        "merchant": "Casino",
+                                        "amount": 1500,
+                                        "date": "2026-01-07",
+                                        "fileName": "receipt-123.jpg",
+                                        "filePath": "uploads/receipts/receipt-123.jpg"
                                     }
                                 }
                             }
@@ -3160,7 +3357,22 @@
                 "tags": [
                     "Upload"
                 ],
-                "summary": "Avatar",
+                "summary": "Upload user avatar",
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "avatar": {
+                                        "type": "string",
+                                        "format": "binary"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -3169,7 +3381,7 @@
                                 "example": {
                                     "success": true,
                                     "data": {
-                                        "url": "https://storage..."
+                                        "avatarUrl": "/uploads/avatars/avatar-123.jpg"
                                     }
                                 }
                             }

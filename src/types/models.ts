@@ -42,6 +42,19 @@ export interface IUser {
     awardedAt: Date;
   }[];
   fcmTokens: string[];
+  sessions: {
+    deviceId?: string;
+    deviceInfo?: {
+      model?: string;
+      os?: string;
+      osVersion?: string;
+      platform: 'android' | 'ios' | 'web';
+    };
+    appVersion?: string;
+    refreshToken?: string;
+    lastActive: Date;
+    ipAddress?: string;
+  }[];
   deviceInfo?: {
     model?: string;
     os?: string;

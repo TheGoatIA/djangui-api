@@ -5,6 +5,7 @@ import User from '../models/User';
 import { AppError } from '../middleware/errorHandler';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger';
+import { NotificationService } from './notificationService';
 
 export class PaymentService {
   /**
@@ -152,16 +153,105 @@ export class PaymentService {
       await User.findByIdAndUpdate(payment.userId, {
         $inc: { walletBalance: payment.amount },
       });
+
+      // Notify
+      await NotificationService.sendToUser(payment.userId.toString(), {
+        title: 'Recharge réussie 💰',
+        body: `Votre portefeuille a été crédité de ${payment.amount} ${payment.currency}.`,
+        data: { type: 'payment', status: 'success', reference },
+      });
+
     } else if (payment.type === 'subscription') {
-      await User.findByIdAndUpdate(payment.userId, {
+      logger.info(`Upgrading user ${payment.userId} to Premium...`);
+      const updatedUser = await User.findByIdAndUpdate(payment.userId, {
         'subscription.plan': 'premium',
         'subscription.status': 'active',
         'subscription.startDate': new Date(),
         // Plan for 1 month
         'subscription.endDate': new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      }, { new: true });
+
+      logger.info(`User upgrade result: ${updatedUser?.subscription?.plan}`);
+
+      // Notify
+      await NotificationService.sendToUser(payment.userId.toString(), {
+        title: 'Abonnement activé 🌟',
+        body: 'Félicitations ! Vous êtes maintenant membre Premium.',
+        data: { type: 'payment', status: 'success', reference },
       });
     }
 
     return payment;
+  }
+
+  /**
+   * Manually verify transaction status with provider
+   */
+  static async verifyTransaction(reference: string) {
+    const payment = await Payment.findOne({ reference });
+    if (!payment) throw new AppError('Payment not found', 404);
+
+    if (payment.status === 'completed') {
+      return { status: 'completed', payment };
+    }
+
+    let isPaid = false;
+    let externalStatus = 'pending';
+
+    try {
+      if (payment.method === 'notchpay') {
+        // Verify with NotchPay API
+        const response = await notchpayApi.get(`/payments/${payment.externalReference}`);
+        const transaction = response.data.transaction;
+        externalStatus = transaction.status;
+
+        if (transaction.status === 'complete' || transaction.status === 'completed') {
+          isPaid = true;
+        }
+      } else if (payment.method === 'stripe') {
+        // Verify with Stripe API
+        const session = await stripe.checkout.sessions.retrieve(payment.externalReference!);
+        externalStatus = session.payment_status;
+
+        if (session.payment_status === 'paid') {
+          isPaid = true;
+        }
+      }
+
+      if (isPaid) {
+        const updatedPayment = await this.completePayment(reference);
+        return { status: 'completed', payment: updatedPayment };
+      } else {
+        return { status: externalStatus, payment };
+      }
+    } catch (error: any) {
+      logger.error(`Verification failed for ${reference}: ${error.message}`);
+      throw new AppError('Failed to verify payment with provider', 502);
+    }
+  }
+
+  /**
+   * Get payments for a specific user
+   */
+  static async getUserPayments(userId: string) {
+    return Payment.find({ userId }).sort({ createdAt: -1 });
+  }
+
+  /**
+   * Cancel active subscription
+   */
+  static async cancelSubscription(userId: string) {
+    const user = await User.findById(userId);
+    if (!user) throw new AppError('User not found', 404);
+
+    if (user.subscription?.plan !== 'premium' || user.subscription?.status !== 'active') {
+      throw new AppError('No active premium subscription to cancel', 400);
+    }
+
+    user.subscription.status = 'cancelled';
+    user.subscription.autoRenew = false;
+    await user.save();
+
+    return user;
   }
 }

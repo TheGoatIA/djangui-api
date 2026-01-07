@@ -61,6 +61,11 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Payment Callbacks (Frontend URL handling)
+import { PaymentController } from './controllers/paymentController';
+app.get('/payment/success', PaymentController.handlePaymentSuccess);
+app.get('/payment/cancel', PaymentController.handlePaymentCancel);
+
 // Error handling
 app.use(errorHandler);
 

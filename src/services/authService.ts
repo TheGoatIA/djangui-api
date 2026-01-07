@@ -149,7 +149,7 @@ export class AuthService {
     return user;
   }
 
-  static async login(email: string, password: string) {
+  static async login(email: string, password: string, sessionData?: any) {
     // 1) Check if email and password exist
     if (!email || !password) {
       throw new AppError('Please provide email and password', 400);
@@ -161,10 +161,32 @@ export class AuthService {
       throw new AppError('Incorrect email or password', 401);
     }
 
-    // 3) If everything ok, send token to client
+    // 3) Generate tokens
     const tokens = createSendToken(user);
 
-    // Update refresh token and last login
+    // 4) Manage sessions
+    const session = {
+      deviceId: sessionData?.deviceId,
+      deviceInfo: sessionData?.deviceInfo,
+      appVersion: sessionData?.appVersion,
+      refreshToken: tokens.refreshToken,
+      lastActive: new Date(),
+      ipAddress: sessionData?.ipAddress,
+    };
+
+    if (sessionData?.deviceId) {
+      // Update existing session for this device or add new
+      const sessionIndex = user.sessions.findIndex((s) => s.deviceId === sessionData.deviceId);
+      if (sessionIndex !== -1) {
+        user.sessions[sessionIndex] = { ...user.sessions[sessionIndex], ...session };
+      } else {
+        user.sessions.push(session);
+      }
+    } else {
+      user.sessions.push(session);
+    }
+
+    // Update legacy fields
     user.refreshToken = tokens.refreshToken;
     user.lastLogin = new Date();
     await (user as any).save({ validateBeforeSave: false });
@@ -184,16 +206,27 @@ export class AuthService {
         process.env.JWT_REFRESH_SECRET || 'super-secret-refresh',
       ) as { id: string };
 
-      // 2) Check if user still exists
+      // 2) Check if user still exists and HAS this session
       const user = await User.findById(decoded.id);
-      if (!user || user.refreshToken !== refreshToken) {
+      if (!user) {
+        throw new AppError('User no longer exists', 401);
+      }
+
+      const sessionIndex = user.sessions.findIndex((s) => s.refreshToken === refreshToken);
+      if (sessionIndex === -1 && user.refreshToken !== refreshToken) {
         throw new AppError('Invalid or expired refresh token', 401);
       }
 
       // 3) Generate new tokens
       const tokens = createSendToken(user);
 
-      // Update refresh token
+      // 4) Update session
+      if (sessionIndex !== -1) {
+        user.sessions[sessionIndex].refreshToken = tokens.refreshToken;
+        user.sessions[sessionIndex].lastActive = new Date();
+      }
+
+      // Update legacy fields
       user.refreshToken = tokens.refreshToken;
       await (user as any).save({ validateBeforeSave: false });
 
@@ -318,6 +351,37 @@ export class AuthService {
 
     if (!user) throw new AppError('User not found', 404);
     return user;
+  }
+
+  static async changePassword(userId: string, data: any) {
+    const { currentPassword, newPassword } = data;
+    if (!currentPassword || !newPassword) {
+      throw new AppError('Please provide current and new password', 400);
+    }
+
+    const user = await User.findById(userId).select('+password');
+    if (!user || !(await user.comparePassword(currentPassword))) {
+      throw new AppError('Current password is incorrect', 401);
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    return true;
+  }
+
+  static async deleteAccount(userId: string) {
+    const user = await User.findByIdAndDelete(userId);
+    if (!user) throw new AppError('User not found', 404);
+
+    // TODO: Cleanup other user data (transactions, goals, etc.) if needed
+    return true;
+  }
+
+  static async getSessions(userId: string) {
+    const user = await User.findById(userId).select('sessions');
+    if (!user) throw new AppError('User not found', 404);
+    return user.sessions || [];
   }
 
   static async updateDeviceInfo(userId: string, data: { deviceInfo: any; appVersion: string }) {

@@ -54,13 +54,56 @@ export class AuthController {
   static async login(req: Request, res: Response, next: NextFunction) {
     try {
       const { email, password } = req.body;
-      const { user, tokens } = await AuthService.login(email, password);
+      const { user, tokens } = await AuthService.login(email, password, {
+        deviceId: req.body.deviceId,
+        deviceInfo: req.body.deviceInfo,
+        appVersion: req.body.appVersion,
+        ipAddress: req.ip,
+      });
 
       res.status(200).json({
         success: true,
         data: {
           user,
           tokens,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async changePassword(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      await AuthService.changePassword(req.user._id, req.body);
+      res.status(200).json({
+        success: true,
+        message: 'Password updated successfully',
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async deleteMe(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      await AuthService.deleteAccount(req.user._id);
+      res.status(200).json({
+        success: true,
+        message: 'Account deleted successfully',
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async getSessions(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const sessions = await AuthService.getSessions(req.user._id);
+      res.status(200).json({
+        success: true,
+        data: {
+          sessions,
         },
       });
     } catch (err) {

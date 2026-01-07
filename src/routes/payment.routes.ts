@@ -8,5 +8,8 @@ router.use(protect);
 
 router.post('/checkout/stripe', PaymentController.checkoutStripe);
 router.post('/init/notchpay', PaymentController.initNotchPay);
+router.get('/verify/:reference', PaymentController.verifyTransaction);
+router.get('/', PaymentController.getMyPayments);
+router.post('/cancel-subscription', PaymentController.cancelSubscription);
 
 export default router;
