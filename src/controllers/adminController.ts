@@ -11,6 +11,8 @@ import { exec } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import Redis from 'ioredis';
+import os from 'os';
+import { AuditService } from '../services/auditService';
 
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 
@@ -418,6 +420,65 @@ export class AdminController {
         { new: true, upsert: true, setDefaultsOnInsert: true },
       );
       res.status(200).json({ status: 'success', data: setting });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // 10. Server Resource Monitoring
+  static async getServerResources(req: Request, res: Response, next: NextFunction) {
+    try {
+      const totalMem = os.totalmem();
+      const freeMem = os.freemem();
+      const usedMem = totalMem - freeMem;
+
+      const resources = {
+        memory: {
+          total: `${(totalMem / (1024 * 1024 * 1024)).toFixed(2)} GB`,
+          free: `${(freeMem / (1024 * 1024 * 1024)).toFixed(2)} GB`,
+          used: `${(usedMem / (1024 * 1024 * 1024)).toFixed(2)} GB`,
+          percentageUsed: `${((usedMem / totalMem) * 100).toFixed(2)}%`,
+        },
+        processMemory: process.memoryUsage(),
+        cpu: {
+          model: os.cpus()[0].model,
+          count: os.cpus().length,
+          loadAvg: os.loadavg(), // [1, 5, 15] mins
+        },
+        os: {
+          platform: os.platform(),
+          release: os.release(),
+          uptime: `${(os.uptime() / 3600).toFixed(2)} hours`,
+        },
+        timestamp: new Date(),
+      };
+
+      res.status(200).json({
+        status: 'success',
+        data: resources,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // 11. Audit Logs Visibility
+  static async getAuditLogs(req: Request, res: Response, next: NextFunction) {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+
+      const query: any = {};
+      if (req.query.userId) query.userId = req.query.userId;
+      if (req.query.action) query.action = req.query.action;
+      if (req.query.resource) query.resource = req.query.resource;
+
+      const result = await AuditService.getLogs(query, { page, limit });
+
+      res.status(200).json({
+        status: 'success',
+        ...result,
+      });
     } catch (error) {
       next(error);
     }

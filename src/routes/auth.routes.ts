@@ -23,6 +23,8 @@ router.patch('/me', AuthController.updateMe);
 router.patch('/change-password', AuthController.changePassword);
 router.delete('/delete-me', AuthController.deleteMe);
 router.get('/sessions', AuthController.getSessions);
+router.delete('/sessions/:sessionId', AuthController.revokeSession);
+router.delete('/sessions', AuthController.revokeAllSessions);
 router.post('/logout', AuthController.logout);
 router.post('/fcm-token', AuthController.updateFCMToken);
 router.post('/link-phone', AuthController.linkPhoneNumber);

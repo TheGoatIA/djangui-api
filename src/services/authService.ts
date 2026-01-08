@@ -6,6 +6,7 @@ import admin from '../config/firebase';
 import crypto from 'crypto';
 import { EmailService } from './emailService';
 import { SlackService } from './slackService';
+import { AuditService } from './auditService';
 
 const signToken = (id: string, secret: string, expiresIn: any) => {
   return jwt.sign({ id }, secret, {
@@ -59,10 +60,15 @@ export class AuthService {
     newUser.refreshToken = tokens.refreshToken;
     await (newUser as any).save({ validateBeforeSave: false });
 
-    // Slack notification for new user
-    await SlackService.sendNotification(
-      `🚀 *Nouvel Utilisateur* ! \n*Nom*: ${newUser.firstName} ${newUser.lastName}\n*Email*: ${newUser.email}`,
-    );
+    // Audit Log for registration
+    AuditService.record({
+      userId: newUser._id as any,
+      action: 'REGISTER',
+      resource: 'USER',
+      resourceId: newUser._id.toString(),
+      status: 'success',
+      metadata: { email: newUser.email },
+    });
 
     return { user: newUser, tokens };
   }
@@ -98,12 +104,15 @@ export class AuthService {
           isEmailVerified: !!email,
           isPhoneVerified: !!phone_number,
         });
-        logger.info(`New user created via Firebase Auth: ${user.email || phone_number}`);
-
-        // Slack notification for new user
-        await SlackService.sendNotification(
-          `🚀 *Nouvel Utilisateur (Firebase)* ! \n*Nom*: ${user.firstName} ${user.lastName}\n*Email*: ${user.email}\n*Tel*: ${user.phone || 'N/A'}`,
-        );
+        // Audit Log for new user creation
+        AuditService.record({
+          userId: user._id as any,
+          action: 'REGISTER_FIREBASE',
+          resource: 'USER',
+          resourceId: user._id.toString(),
+          status: 'success',
+          metadata: { email: user.email, provider: 'firebase' },
+        });
       } else {
         // Update user info
         user.firebaseUid = uid;
@@ -122,10 +131,13 @@ export class AuthService {
       // 4) Generate backend tokens
       const tokens = createSendToken(user);
 
-      // Update refresh token and last login
-      user.refreshToken = tokens.refreshToken;
-      user.lastLogin = new Date();
-      await (user as any).save({ validateBeforeSave: false });
+      // Audit Log for login
+      AuditService.record({
+        userId: user._id as any,
+        action: 'LOGIN_FIREBASE',
+        resource: 'USER',
+        status: 'success',
+      });
 
       return { user, tokens };
     } catch (error: any) {
@@ -198,9 +210,17 @@ export class AuthService {
     }
 
     // Update legacy fields
-    user.refreshToken = tokens.refreshToken;
     user.lastLogin = new Date();
     await (user as any).save({ validateBeforeSave: false });
+
+    // Audit Log for login
+    AuditService.record({
+      userId: user._id as any,
+      action: 'LOGIN',
+      resource: 'USER',
+      status: 'success',
+      metadata: { deviceId: sessionData?.deviceId },
+    });
 
     return { user, tokens };
   }
@@ -251,7 +271,16 @@ export class AuthService {
     const user = await User.findById(userId);
     if (user) {
       user.refreshToken = undefined;
+      // Also clear sessions on logout? Usually we just clear the current one.
+      // For simplicity here, we clear legacy refresh token.
       await (user as any).save({ validateBeforeSave: false });
+
+      AuditService.record({
+        userId: user._id as any,
+        action: 'LOGOUT',
+        resource: 'USER',
+        status: 'success',
+      });
     }
     return true;
   }
@@ -393,6 +422,44 @@ export class AuthService {
     const user = await User.findById(userId).select('sessions');
     if (!user) throw new AppError('User not found', 404);
     return user.sessions || [];
+  }
+
+  static async revokeSession(userId: string, sessionId: string) {
+    const user = await User.findById(userId);
+    if (!user) throw new AppError('User not found', 404);
+
+    const sessionIndex = user.sessions.findIndex((s: any) => s._id.toString() === sessionId);
+    if (sessionIndex !== -1) {
+      user.sessions.splice(sessionIndex, 1);
+      await (user as any).save({ validateBeforeSave: false });
+
+      AuditService.record({
+        userId: user._id as any,
+        action: 'REVOKE_SESSION',
+        resource: 'SESSION',
+        resourceId: sessionId,
+        status: 'success',
+      });
+    }
+    return true;
+  }
+
+  static async revokeAllSessions(userId: string) {
+    const user = await User.findById(userId);
+    if (!user) throw new AppError('User not found', 404);
+
+    user.sessions = [];
+    user.refreshToken = undefined;
+    await (user as any).save({ validateBeforeSave: false });
+
+    AuditService.record({
+      userId: user._id as any,
+      action: 'REVOKE_ALL_SESSIONS',
+      resource: 'USER',
+      status: 'success',
+    });
+
+    return true;
   }
 
   static async updateDeviceInfo(userId: string, data: { deviceInfo: any; appVersion: string }) {

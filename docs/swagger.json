@@ -1124,6 +1124,88 @@
                 }
             }
         },
+        "/v1/admin/resources": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Get Real-time Server Resource Usage (RAM, CPU, Uptime)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "memory": {
+                                                    "type": "object"
+                                                },
+                                                "cpu": {
+                                                    "type": "object"
+                                                },
+                                                "os": {
+                                                    "type": "object"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/admin/audit-logs": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Get Paginated Audit Logs",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "userId",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "action",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
         "/health": {
             "get": {
                 "tags": [
@@ -1430,6 +1512,40 @@
                                 }
                             }
                         }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Revoke all sessions (except current)",
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/auth/sessions/{sessionId}": {
+            "delete": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Revoke a specific session",
+                "parameters": [
+                    {
+                        "name": "sessionId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
                     }
                 }
             }

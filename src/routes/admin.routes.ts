@@ -30,5 +30,7 @@ router.get('/db/backup', AdminController.backupDatabase);
 router.get('/logs', AdminController.getLogs);
 router.get('/logs/:filename', AdminController.downloadLog);
 router.get('/analytics/financials', AdminController.getFinancialAnalytics);
+router.get('/resources', AdminController.getServerResources);
+router.get('/audit-logs', AdminController.getAuditLogs);
 
 export default router;

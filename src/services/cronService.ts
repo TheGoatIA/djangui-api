@@ -8,6 +8,7 @@ import mongoose from 'mongoose';
 import { DbBackupService } from './dbBackupService';
 import { ReportService } from './reportService';
 import { EmailService } from './emailService';
+import { ArchiveService } from './archiveService';
 
 export class CronService {
   /**
@@ -34,9 +35,14 @@ export class CronService {
       this.sendDailyAdminReport();
     });
 
-    // Daily at 02:00 AM: Database Backup
-    cron.schedule('0 2 * * *', () => {
-      this.runDailyBackup();
+    // Daily at 03:00 AM: Financial Integrity Check
+    cron.schedule('0 3 * * *', () => {
+      this.runFinancialIntegrityCheck();
+    });
+
+    // Monthly on the 1st at 04:00 AM: Data Archiving
+    cron.schedule('0 4 1 * *', () => {
+      this.runDataArchiving();
     });
 
     logger.info('Cron jobs initialized successfully');
@@ -220,6 +226,63 @@ export class CronService {
       logger.info('Daily database backup job completed');
     } catch (error: any) {
       logger.error(`Error in runDailyBackup job: ${error.message}`);
+    }
+  }
+
+  /**
+   * Run financial integrity check and alert if anomalies found
+   */
+  private static async runFinancialIntegrityCheck() {
+    try {
+      const anomalies = await ReportService.checkFinancialIntegrity();
+      if (anomalies.length > 0) {
+        const adminEmail = process.env.ADMIN_EMAIL || 'me@borisgauty.com';
+        const html = `
+          <h3>Alerte : Anomalies de Portefeuille Détectées</h3>
+          <p>Le script de réconciliation a trouvé ${anomalies.length} utilisateurs avec un solde incohérent.</p>
+          <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr style="background-color: #f2f2f2;">
+                <th style="padding: 8px; border: 1px solid #ddd;">Email</th>
+                <th style="padding: 8px; border: 1px solid #ddd;">Solde Réel</th>
+                <th style="padding: 8px; border: 1px solid #ddd;">Solde Calculé</th>
+                <th style="padding: 8px; border: 1px solid #ddd;">Différence</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${anomalies.map(a => `
+                <tr>
+                  <td style="padding: 8px; border: 1px solid #ddd;">${a.email}</td>
+                  <td style="padding: 8px; border: 1px solid #ddd;">${a.walletBalance}</td>
+                  <td style="padding: 8px; border: 1px solid #ddd;">${a.calculatedBalance}</td>
+                  <td style="padding: 8px; border: 1px solid #ddd; color: red;">${a.diff.toFixed(2)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+
+        await EmailService.sendEmail(
+          adminEmail,
+          `🚨 ANOMALIE FINANCIÈRE - ${new Date().toLocaleDateString()}`,
+          'Des écarts de solde ont été détectés.',
+          html
+        );
+      }
+    } catch (error: any) {
+      logger.error(`Error in runFinancialIntegrityCheck job: ${error.message}`);
+    }
+  }
+
+  /**
+   * Run data archiving job
+   */
+  private static async runDataArchiving() {
+    try {
+      await ArchiveService.runArchiving();
+      logger.info('Monthly data archiving job completed');
+    } catch (error: any) {
+      logger.error(`Error in runDataArchiving job: ${error.message}`);
     }
   }
 }

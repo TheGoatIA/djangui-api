@@ -6,6 +6,7 @@ import { AppError } from '../middleware/errorHandler';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger';
 import { NotificationService } from './notificationService';
+import { AuditService } from './auditService';
 
 export class PaymentService {
   /**
@@ -77,6 +78,16 @@ export class PaymentService {
       externalReference: session.id,
     });
 
+    // Audit Log for payment initiation
+    AuditService.record({
+      userId: userId as any,
+      action: 'INIT_PAYMENT',
+      resource: 'PAYMENT',
+      resourceId: reference,
+      status: 'success',
+      metadata: { method: 'stripe', amount, type },
+    });
+
     return { url: session.url, reference };
   }
 
@@ -120,6 +131,16 @@ export class PaymentService {
         reference,
         status: 'pending',
         externalReference: response.data.transaction.reference,
+      });
+
+      // Audit Log for payment initiation
+      AuditService.record({
+        userId: userId as any,
+        action: 'INIT_PAYMENT',
+        resource: 'PAYMENT',
+        resourceId: reference,
+        status: 'success',
+        metadata: { method: 'notchpay', amount, type },
       });
 
       return {
@@ -180,6 +201,16 @@ export class PaymentService {
         data: { type: 'payment', status: 'success', reference },
       });
     }
+
+    // Audit Log for payment completion
+    AuditService.record({
+      userId: payment.userId as any,
+      action: 'COMPLETE_PAYMENT',
+      resource: 'PAYMENT',
+      resourceId: reference,
+      status: 'success',
+      metadata: { type: payment.type, amount: payment.amount },
+    });
 
     return payment;
   }
@@ -251,6 +282,15 @@ export class PaymentService {
     user.subscription.status = 'cancelled';
     user.subscription.autoRenew = false;
     await user.save();
+
+    // Audit Log for subscription cancellation
+    AuditService.record({
+      userId: userId as any,
+      action: 'CANCEL_SUBSCRIPTION',
+      resource: 'USER',
+      resourceId: userId,
+      status: 'success',
+    });
 
     return user;
   }

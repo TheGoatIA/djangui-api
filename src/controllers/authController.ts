@@ -111,6 +111,31 @@ export class AuthController {
     }
   }
 
+  static async revokeSession(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const { sessionId } = req.params;
+      await AuthService.revokeSession(req.user._id, sessionId);
+      res.status(200).json({
+        success: true,
+        message: 'Session revoked successfully',
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async revokeAllSessions(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      await AuthService.revokeAllSessions(req.user._id);
+      res.status(200).json({
+        success: true,
+        message: 'All sessions revoked successfully',
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
   static async refresh(req: Request, res: Response, next: NextFunction) {
     try {
       const { refreshToken } = req.body;

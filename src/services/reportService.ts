@@ -242,4 +242,49 @@ export class ReportService {
       },
     };
   }
+
+  /**
+   * Check for users with financial balance discrepancies (Audit/Health check)
+   */
+  static async checkFinancialIntegrity() {
+    const activeUsers = await User.find({ isActive: true });
+    const anomalies: any[] = [];
+
+    for (const user of activeUsers) {
+      const stats = await Transaction.aggregate([
+        { $match: { userId: user._id } },
+        {
+          $group: {
+            _id: '$type',
+            total: { $sum: '$amount' },
+          },
+        },
+      ]);
+
+      const income = stats.find((s) => s._id === 'income')?.total || 0;
+      const expense = stats.find((s) => s._id === 'expense')?.total || 0;
+      const calculatedBalance = income - expense;
+
+      // Check if calculated balance matches walletBalance (allowing minor floating point difference)
+      const diff = Math.abs(calculatedBalance - user.walletBalance);
+      if (diff > 0.01) {
+        anomalies.push({
+          userId: user._id,
+          email: user.email,
+          walletBalance: user.walletBalance,
+          calculatedBalance,
+          diff,
+        });
+      }
+    }
+
+    if (anomalies.length > 0) {
+      logger.warn(`Financial Integrity Check: Found ${anomalies.length} anomalies.`);
+      // We'll alert this in CronService
+    } else {
+      logger.info('Financial Integrity Check: No anomalies found.');
+    }
+
+    return anomalies;
+  }
 }
