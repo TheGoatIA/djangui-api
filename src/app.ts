@@ -7,7 +7,8 @@ import { RedisStore } from 'rate-limit-redis';
 import redis from './config/redis';
 import path from 'path';
 import errorHandler from './middleware/errorHandler';
-import { requestLogger } from './middleware/requestLogger'; // Changed import to named export
+import { requestLogger } from './middleware/requestLogger';
+import { MonitoringService } from './services/monitoringService';
 import routes from './routes';
 import swaggerUi from 'swagger-ui-express';
 import swaggerDocument from '../docs/swagger.json';
@@ -29,6 +30,7 @@ const limiter = rateLimit({
 
 // Middlewares
 app.use(limiter);
+app.use(MonitoringService.metricsMiddleware.bind(MonitoringService));
 app.use(requestLogger);
 app.use(helmet());
 app.use(cors());
@@ -60,6 +62,9 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
   });
 });
+
+// Prometheus Metrics Endpoint
+app.get('/metrics', MonitoringService.getMetrics.bind(MonitoringService));
 
 // Payment Callbacks (Frontend URL handling)
 import { PaymentController } from './controllers/paymentController';

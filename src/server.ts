@@ -5,6 +5,7 @@ import connectDB from './config/database';
 import redis from './config/redis';
 import { ChallengeService } from './services/challengeService';
 import { CronService } from './services/cronService';
+import { MonitoringService } from './services/monitoringService';
 import logger from './utils/logger';
 import app from './app'; // Keep this import as 'app' is used later
 import './config/redis'; // Initialize Redis connection
@@ -17,6 +18,9 @@ const startServer = async () => {
 
     // Seed initial challenges
     await ChallengeService.seedChallenges();
+
+    // Initialize Monitoring (Prometheus)
+    MonitoringService.init();
 
     // Initialize Cron Jobs
     CronService.init();

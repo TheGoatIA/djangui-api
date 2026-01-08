@@ -5,6 +5,7 @@ import logger from '../utils/logger';
 import admin from '../config/firebase';
 import crypto from 'crypto';
 import { EmailService } from './emailService';
+import { SlackService } from './slackService';
 
 const signToken = (id: string, secret: string, expiresIn: any) => {
   return jwt.sign({ id }, secret, {
@@ -58,6 +59,11 @@ export class AuthService {
     newUser.refreshToken = tokens.refreshToken;
     await (newUser as any).save({ validateBeforeSave: false });
 
+    // Slack notification for new user
+    await SlackService.sendNotification(
+      `🚀 *Nouvel Utilisateur* ! \n*Nom*: ${newUser.firstName} ${newUser.lastName}\n*Email*: ${newUser.email}`,
+    );
+
     return { user: newUser, tokens };
   }
 
@@ -93,6 +99,11 @@ export class AuthService {
           isPhoneVerified: !!phone_number,
         });
         logger.info(`New user created via Firebase Auth: ${user.email || phone_number}`);
+
+        // Slack notification for new user
+        await SlackService.sendNotification(
+          `🚀 *Nouvel Utilisateur (Firebase)* ! \n*Nom*: ${user.firstName} ${user.lastName}\n*Email*: ${user.email}\n*Tel*: ${user.phone || 'N/A'}`,
+        );
       } else {
         // Update user info
         user.firebaseUid = uid;

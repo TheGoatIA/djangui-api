@@ -55,11 +55,11 @@ export class ReportService {
       savingsRate: Math.max(0, savingsRate),
       budgetHealth: budget
         ? {
-            totalAllocated: budget.totalAllocated,
-            totalSpent: budget.totalSpent,
-            status: budget.status,
-            percentageUsed: (budget.totalSpent / budget.totalAllocated) * 100,
-          }
+          totalAllocated: budget.totalAllocated,
+          totalSpent: budget.totalSpent,
+          status: budget.status,
+          percentageUsed: (budget.totalSpent / budget.totalAllocated) * 100,
+        }
         : null,
       currency: user?.currency || 'XAF',
     };
@@ -189,5 +189,57 @@ export class ReportService {
     }
 
     return aiReport;
+  }
+
+  /**
+   * Get global application stats for the last 24 hours (Admin Report)
+   */
+  static async getGlobalDailyStats() {
+    const now = new Date();
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    const [newUsers, transactions, activeSessions] = await Promise.all([
+      // 1. New Users
+      User.countDocuments({ createdAt: { $gte: yesterday } }),
+
+      // 2. Transactions (Count & Volume)
+      Transaction.aggregate([
+        { $match: { date: { $gte: yesterday } } },
+        {
+          $group: {
+            _id: '$type',
+            count: { $sum: 1 },
+            totalAmount: { $sum: '$amount' },
+          },
+        },
+      ]),
+
+      // 3. Active Users (Users who had session activity in last 24h)
+      User.countDocuments({ 'sessions.lastActive': { $gte: yesterday } }),
+    ]);
+
+    const incomeStats = transactions.find((t) => t._id === 'income') || { count: 0, totalAmount: 0 };
+    const expenseStats = transactions.find((t) => t._id === 'expense') || { count: 0, totalAmount: 0 };
+
+    return {
+      period: {
+        start: yesterday,
+        end: now,
+      },
+      users: {
+        new: newUsers,
+        active: activeSessions,
+      },
+      transactions: {
+        income: {
+          count: incomeStats.count,
+          volume: incomeStats.totalAmount,
+        },
+        expense: {
+          count: expenseStats.count,
+          volume: expenseStats.totalAmount,
+        },
+      },
+    };
   }
 }

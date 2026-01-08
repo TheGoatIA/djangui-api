@@ -5,6 +5,9 @@ import Transaction from '../models/Transaction';
 import { NotificationService } from './notificationService';
 import logger from '../utils/logger';
 import mongoose from 'mongoose';
+import { DbBackupService } from './dbBackupService';
+import { ReportService } from './reportService';
+import { EmailService } from './emailService';
 
 export class CronService {
   /**
@@ -24,6 +27,16 @@ export class CronService {
     // Monthly on the 1st at 00:01 AM: Reset/Init budgets
     cron.schedule('1 0 1 * *', () => {
       this.autoInitMonthlyBudgets();
+    });
+
+    // Daily at midnight: Global Activity Report
+    cron.schedule('0 0 * * *', () => {
+      this.sendDailyAdminReport();
+    });
+
+    // Daily at 02:00 AM: Database Backup
+    cron.schedule('0 2 * * *', () => {
+      this.runDailyBackup();
     });
 
     logger.info('Cron jobs initialized successfully');
@@ -141,6 +154,72 @@ export class CronService {
       logger.info('Monthly budgets initialized');
     } catch (error: any) {
       logger.error(`Error in autoInitMonthlyBudgets job: ${error.message}`);
+    }
+  }
+
+  /**
+   * Send daily global activity report to admin
+   */
+  private static async sendDailyAdminReport() {
+    try {
+      const stats = await ReportService.getGlobalDailyStats();
+      const adminEmail = process.env.ADMIN_EMAIL || 'me@borisgauty.com';
+
+      const html = `
+        <h3>Rapport d'Activité Journalier</h3>
+        <p><strong>Période :</strong> ${stats.period.start.toLocaleString()} - ${stats.period.end.toLocaleString()}</p>
+        
+        <h4>Utilisateurs</h4>
+        <ul>
+          <li>Nouveaux : ${stats.users.new}</li>
+          <li>Actifs (24h) : ${stats.users.active}</li>
+        </ul>
+
+        <h4>Transactions</h4>
+        <table style="width: 100%; border-collapse: collapse;">
+          <thead>
+            <tr style="background-color: #f2f2f2;">
+              <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Type</th>
+              <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Nombre</th>
+              <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Volume Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="padding: 8px; border: 1px solid #ddd;">Revenus</td>
+              <td style="padding: 8px; border: 1px solid #ddd;">${stats.transactions.income.count}</td>
+              <td style="padding: 8px; border: 1px solid #ddd;">${stats.transactions.income.volume}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px; border: 1px solid #ddd;">Dépenses</td>
+              <td style="padding: 8px; border: 1px solid #ddd;">${stats.transactions.expense.count}</td>
+              <td style="padding: 8px; border: 1px solid #ddd;">${stats.transactions.expense.volume}</td>
+            </tr>
+          </tbody>
+        </table>
+      `;
+
+      await EmailService.sendEmail(
+        adminEmail,
+        `📊 Rapport Journalier DJANGUI - ${new Date().toLocaleDateString()}`,
+        'Votre rapport quotidien est prêt.',
+        html,
+      );
+      logger.info('Daily admin report sent');
+    } catch (error: any) {
+      logger.error(`Error in sendDailyAdminReport job: ${error.message}`);
+    }
+  }
+
+  /**
+   * Run daily database backup
+   */
+  private static async runDailyBackup() {
+    try {
+      await DbBackupService.runBackup();
+      logger.info('Daily database backup job completed');
+    } catch (error: any) {
+      logger.error(`Error in runDailyBackup job: ${error.message}`);
     }
   }
 }
