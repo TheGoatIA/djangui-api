@@ -48,7 +48,7 @@ export class PaymentService {
           price_data: {
             currency: currency.toLowerCase(),
             product_data: {
-              name: type === 'subscription' ? 'Djangui Premium' : 'Wallet Deposit',
+              name: type === 'subscription' ? 'Kauri Premium' : 'Wallet Deposit',
             },
             unit_amount: this.formatAmount(amount, currency),
           },
@@ -117,7 +117,7 @@ export class PaymentService {
           phone: user.phone,
         },
         description:
-          type === 'subscription' ? 'Abonnement Djangui Premium' : 'Recharge Portefeuille',
+          type === 'subscription' ? 'Abonnement Kauri Premium' : 'Recharge Portefeuille',
         reference,
         callback: `${process.env.FRONTEND_URL}/payment/success?ref=${reference}`,
       });

@@ -40,10 +40,10 @@ export class PaymentController {
           <p>Retour automatique vers l'application...</p>
           <script>
              setTimeout(() => {
-                window.location.href = "djangui://payment/success?ref=${ref}&status=${status || 'completed'}";
+                window.location.href = "kauri://payment/success?ref=${ref}&status=${status || 'completed'}";
              }, 1500);
           </script>
-          <a href="djangui://payment/success?ref=${ref}" style="display:inline-block; margin-top:20px; padding:10px 20px; background:#4CAF50; color:white; text-decoration:none; border-radius:5px;">Retourner à l'App</a>
+          <a href="kauri://payment/success?ref=${ref}" style="display:inline-block; margin-top:20px; padding:10px 20px; background:#4CAF50; color:white; text-decoration:none; border-radius:5px;">Retourner à l'App</a>
         </body>
       </html>
     `);

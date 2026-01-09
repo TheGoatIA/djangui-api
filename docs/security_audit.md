@@ -1,4 +1,4 @@
-# Security Audit Report - Djangui API
+# Security Audit Report - Kauri API
 
 ## 1. Authentication & Authorization
 - **JWT Protection**: Implemented robust token verification with `jsonwebtoken`.

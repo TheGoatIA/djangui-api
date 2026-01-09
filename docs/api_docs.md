@@ -1,6 +1,6 @@
-# Djangui API Documentation
+# Kauri API Documentation
 
-Welcome to the Djangui API documentation. This API powers the Djangui financial management application, providing features for transaction tracking, budgeting, saving goals, AI-powered coaching, and more.
+Welcome to the Kauri API documentation. This API powers the Kauri financial management application, providing features for transaction tracking, budgeting, saving goals, AI-powered coaching, and more.
 
 ## Base URL
 `http://localhost:5000/api/v1` (Development)

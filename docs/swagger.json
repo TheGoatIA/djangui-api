@@ -1,14 +1,18 @@
 {
     "openapi": "3.0.0",
     "info": {
-        "title": "Djangui API",
+        "title": "Kauri API",
         "version": "1.0.0",
-        "description": "API for Djangui - Smart Financial Management. This documentation reflects real-world responses aligned with the database models."
+        "description": "API for Kauri - Smart Financial Management. This documentation reflects real-world responses aligned with the database models."
     },
     "servers": [
         {
+            "url": "https://api.kauri-app.com/api",
+            "description": "Production Server"
+        },
+        {
             "url": "http://localhost:3000/api",
-            "description": "Local server"
+            "description": "Local Development Server"
         }
     ],
     "components": {
@@ -489,6 +493,96 @@
                     }
                 }
             },
+            "SupportTicket": {
+                "type": "object",
+                "properties": {
+                    "_id": {
+                        "type": "string"
+                    },
+                    "userId": {
+                        "type": "string"
+                    },
+                    "subject": {
+                        "type": "string"
+                    },
+                    "message": {
+                        "type": "string"
+                    },
+                    "category": {
+                        "type": "string",
+                        "enum": [
+                            "bug",
+                            "payment",
+                            "account",
+                            "other"
+                        ]
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "open",
+                            "in_progress",
+                            "closed"
+                        ]
+                    },
+                    "responses": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "sender": {
+                                    "type": "string",
+                                    "enum": [
+                                        "user",
+                                        "admin"
+                                    ]
+                                },
+                                "message": {
+                                    "type": "string"
+                                },
+                                "date": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                }
+                            }
+                        }
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "SystemSetting": {
+                "type": "object",
+                "properties": {
+                    "key": {
+                        "type": "string"
+                    },
+                    "value": {
+                        "type": "object"
+                    },
+                    "group": {
+                        "type": "string",
+                        "enum": [
+                            "general",
+                            "maintenance",
+                            "payment",
+                            "app_version",
+                            "legal",
+                            "app_info",
+                            "mobile"
+                        ]
+                    },
+                    "isPublic": {
+                        "type": "boolean"
+                    }
+                }
+            },
             "ErrorResponse": {
                 "type": "object",
                 "properties": {
@@ -666,6 +760,299 @@
                 }
             }
         },
+        "/v1/support/tickets": {
+            "get": {
+                "tags": [
+                    "Support"
+                ],
+                "summary": "Get My Tickets",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/SupportTicket"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Support"
+                ],
+                "summary": "Create Ticket",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "subject",
+                                    "message"
+                                ],
+                                "properties": {
+                                    "subject": {
+                                        "type": "string"
+                                    },
+                                    "message": {
+                                        "type": "string"
+                                    },
+                                    "category": {
+                                        "type": "string",
+                                        "enum": [
+                                            "bug",
+                                            "payment",
+                                            "account",
+                                            "other"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Created"
+                    }
+                }
+            }
+        },
+        "/v1/support/tickets/{id}/reply": {
+            "post": {
+                "tags": [
+                    "Support"
+                ],
+                "summary": "Reply to Ticket",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "message"
+                                ],
+                                "properties": {
+                                    "message": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/admin/support/tickets": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Get All Tickets",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/admin/support/tickets/{id}/status": {
+            "patch": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Update Ticket Status",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "status"
+                                ],
+                                "properties": {
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "open",
+                                            "in_progress",
+                                            "closed"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/admin/support/tickets/{id}/reply": {
+            "post": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Reply to Ticket (Admin)",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "message"
+                                ],
+                                "properties": {
+                                    "message": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/system/public-settings": {
+            "get": {
+                "tags": [
+                    "System"
+                ],
+                "summary": "Get Public Settings (Legal URLs, App Info)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/admin/connections": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Get User Connection Logs",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
         "/v1/admin/stats": {
             "get": {
                 "tags": [
@@ -741,6 +1128,10 @@
                         "application/json": {
                             "schema": {
                                 "type": "object",
+                                "required": [
+                                    "title",
+                                    "body"
+                                ],
                                 "properties": {
                                     "userIds": {
                                         "type": "array",
@@ -748,8 +1139,16 @@
                                             "type": "string"
                                         }
                                     },
-                                    "topic": {
-                                        "type": "string"
+                                    "type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "specific",
+                                            "all",
+                                            "android",
+                                            "ios",
+                                            "premium"
+                                        ],
+                                        "default": "specific"
                                     },
                                     "title": {
                                         "type": "string"
@@ -757,18 +1156,110 @@
                                     "body": {
                                         "type": "string"
                                     },
+                                    "imageUrl": {
+                                        "type": "string"
+                                    },
                                     "data": {
                                         "type": "object"
+                                    },
+                                    "topic": {
+                                        "type": "string"
+                                    }
+                                }
+                            },
+                            "examples": {
+                                "All Users": {
+                                    "summary": "Send to everyone",
+                                    "value": {
+                                        "type": "all",
+                                        "title": "Grande Nouvelle !",
+                                        "body": "Découvrez notre nouvelle fonctionnalité.",
+                                        "imageUrl": "https://example.com/image.png"
                                     }
                                 },
-                                "required": [
-                                    "title",
-                                    "body"
-                                ]
+                                "Android Only": {
+                                    "summary": "Send to Android users",
+                                    "value": {
+                                        "type": "android",
+                                        "title": "Mise à jour Android",
+                                        "body": "Nouvelle version disponible."
+                                    }
+                                },
+                                "iOS Only": {
+                                    "summary": "Send to iOS users",
+                                    "value": {
+                                        "type": "ios",
+                                        "title": "Mise à jour iOS",
+                                        "body": "Nouvelle version disponible."
+                                    }
+                                },
+                                "Premium Only": {
+                                    "summary": "Send to Premium users",
+                                    "value": {
+                                        "type": "premium",
+                                        "title": "Merci !",
+                                        "body": "Merci de faire partie de nos membres Premium."
+                                    }
+                                },
+                                "Specific Users": {
+                                    "summary": "Send to specific users (Legacy)",
+                                    "value": {
+                                        "type": "specific",
+                                        "userIds": [
+                                            "60d5ec1860641029c4257850"
+                                        ],
+                                        "title": "Message personnel",
+                                        "body": "Bonjour !"
+                                    }
+                                }
                             }
                         }
                     }
                 },
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/admin/ai/stats": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Get AI Usage Stats (Aggregated)",
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/admin/ai/logs": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Get AI Usage Logs (List)",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "default": 1
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "default": 20
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK"
@@ -1643,6 +2134,42 @@
                                 }
                             }
                         }
+                    }
+                }
+            }
+        },
+        "/v1/auth/connection": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Log user connection (IP, Device)",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "ip": {
+                                        "type": "string"
+                                    },
+                                    "country": {
+                                        "type": "string"
+                                    },
+                                    "city": {
+                                        "type": "string"
+                                    },
+                                    "device": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK"
                     }
                 }
             }

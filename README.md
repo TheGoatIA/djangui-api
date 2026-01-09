@@ -1,6 +1,6 @@
-# 🏦 Djangui - Smart Financial Management API
+# 🏦 Kauri - Smart Financial Management API
 
-Djangui is a comprehensive, production-ready REST API for personal finance management. It leverages AI to provide deep financial insights, automate budgeting, and scan physical receipts, creating a seamless financial ecosystem.
+Kauri is a comprehensive, production-ready REST API for personal finance management. It leverages AI to provide deep financial insights, automate budgeting, and scan physical receipts, creating a seamless financial ecosystem.
 
 ---
 

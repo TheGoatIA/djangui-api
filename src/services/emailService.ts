@@ -37,14 +37,14 @@ export class EmailService {
       <body>
         <div class="container">
           <div class="header">
-            <h1>DJANGUI</h1>
+            <h1>KAURI</h1>
           </div>
           <div class="content">
             <h2 style="color: #2E7D32; margin-top: 0;">${title}</h2>
             ${bodyContent}
           </div>
           <div class="footer">
-            <p>© ${new Date().getFullYear()} Djangui. Tous droits réservés.</p>
+            <p>© ${new Date().getFullYear()} Kauri. Tous droits réservés.</p>
             <p>Simplifiez vos finances, réalisez vos projets.</p>
           </div>
         </div>
@@ -64,7 +64,7 @@ export class EmailService {
 
     try {
       await client.messages.create(DOMAIN, {
-        from: `Djangui Team <no-reply@${DOMAIN}>`,
+        from: `Kauri Team <no-reply@${DOMAIN}>`,
         to,
         subject,
         text,
@@ -85,7 +85,7 @@ export class EmailService {
 
     const body = `
       <p>Bonjour,</p>
-      <p>Bienvenue sur <strong>Djangui</strong> ! Nous sommes ravis de vous compter parmi nous.</p>
+      <p>Bienvenue sur <strong>Kauri</strong> ! Nous sommes ravis de vous compter parmi nous.</p>
       <p>Pour activer votre compte et commencer à gérer vos finances, veuillez confirmer votre adresse email en cliquant sur le bouton ci-dessous :</p>
       <div class="button-container">
         <a href="${verificationUrl}" class="button">Vérifier mon email</a>
@@ -98,7 +98,7 @@ export class EmailService {
     `;
 
     const html = this.getBaseTemplate('Bienvenue !', body);
-    const text = `Bienvenue sur Djangui ! Confirmez votre email ici: ${verificationUrl}`;
+    const text = `Bienvenue sur Kauri ! Confirmez votre email ici: ${verificationUrl}`;
 
     await this.sendEmail(to, subject, text, html);
   }
@@ -112,7 +112,7 @@ export class EmailService {
 
     const body = `
       <p>Bonjour,</p>
-      <p>Nous avons reçu une demande de réinitialisation de mot de passe pour votre compte Djangui.</p>
+      <p>Nous avons reçu une demande de réinitialisation de mot de passe pour votre compte Kauri.</p>
       <p>Si vous êtes à l'origine de cette demande, cliquez sur le bouton ci-dessous pour choisir un nouveau mot de passe :</p>
       <div class="button-container">
         <a href="${resetUrl}" class="button">Réinitialiser le mot de passe</a>

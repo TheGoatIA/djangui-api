@@ -1,6 +1,6 @@
-# Documentation API Djangui - Spécifications Exhaustives
+# Documentation API Kauri - Spécifications Exhaustives
 
-Cette documentation est conçue pour les développeurs et intégrateurs du projet Djangui. Elle décrit chaque point d'entrée, les structures de données, les règles de gestion et offre des exemples de requêtes et réponses pour chaque cas d'usage.
+Cette documentation est conçue pour les développeurs et intégrateurs du projet Kauri. Elle décrit chaque point d'entrée, les structures de données, les règles de gestion et offre des exemples de requêtes et réponses pour chaque cas d'usage.
 
 ---
 
@@ -374,7 +374,7 @@ Réponse: `{ "success": true, "data": { "forceUpdate": false, "updateAvailable":
 ---
 
 ### 📝 Notes de Fin
-Cette documentation est l'unique source de vérité pour l'API Djangui. Elle contient l'intégralité des endpoints avec leurs schémas de requête et de réponse.
+Cette documentation est l'unique source de vérité pour l'API Kauri. Elle contient l'intégralité des endpoints avec leurs schémas de requête et de réponse.
 
 *Fiche technique de livraison - Version Finalisée - 07 Janvier 2026.*
 

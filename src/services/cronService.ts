@@ -207,7 +207,7 @@ export class CronService {
 
       await EmailService.sendEmail(
         adminEmail,
-        `📊 Rapport Journalier DJANGUI - ${new Date().toLocaleDateString()}`,
+        `📊 Rapport Journalier KAURI - ${new Date().toLocaleDateString()}`,
         'Votre rapport quotidien est prêt.',
         html,
       );

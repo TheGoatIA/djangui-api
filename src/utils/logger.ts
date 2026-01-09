@@ -82,7 +82,7 @@ if (process.env.GRAYLOG_HOST) {
       handleExceptions: true,
       graylog: {
         servers: [{ host: process.env.GRAYLOG_HOST, port: parseInt(process.env.GRAYLOG_PORT || '12201') }],
-        hostname: 'djangui-api',
+        hostname: 'kauri-api',
         facility: 'Node.js',
         bufferSize: 1400,
       },

@@ -94,7 +94,7 @@ export class AuthService {
         // 3) Create user if not exists
         const nameParts = (name || '').split(' ');
         user = await User.create({
-          email: email || `${uid}@phone.djangui.com`, // Placeholder for phone-only users
+          email: email || `${uid}@phone.kauri-app.com`, // Placeholder for phone-only users
           phone: phone_number,
           firstName: nameParts[0] || 'User',
           lastName: nameParts.slice(1).join(' ') || 'Firebase',

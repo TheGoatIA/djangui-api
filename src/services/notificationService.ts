@@ -8,6 +8,7 @@ export interface NotificationPayload {
   title: string;
   body: string;
   data?: Record<string, string>;
+  imageUrl?: string;
 }
 
 export class NotificationService {
@@ -22,6 +23,7 @@ export class NotificationService {
         title: payload.title,
         body: payload.body,
         data: payload.data,
+        // TODO: Add imageUrl field to Notification model if we want to retrieve it later in history
       });
 
       // 2. Send via FCM
@@ -37,6 +39,7 @@ export class NotificationService {
         notification: {
           title: payload.title,
           body: payload.body,
+          imageUrl: payload.imageUrl, // Add image URL support
         },
         data: payload.data,
         tokens: user.fcmTokens,
@@ -82,6 +85,7 @@ export class NotificationService {
         notification: {
           title: payload.title,
           body: payload.body,
+          imageUrl: payload.imageUrl,
         },
         data: payload.data,
         topic,

@@ -7,13 +7,13 @@ services:
       - "5000:5000"
     environment:
       - NODE_ENV=production
-      - MONGODB_URI=mongodb://mongodb:27017/djangui?replicaSet=rs0
+      - MONGODB_URI=mongodb://mongodb:27017/kauri?replicaSet=rs0
       - REDIS_URL=redis://redis:6379
     depends_on:
       - mongodb
       - redis
     networks:
-      - djangui-network
+      - kauri-network
     volumes:
       - ./uploads:/app/uploads
 
@@ -25,7 +25,7 @@ services:
     volumes:
       - mongodb_data:/data/db
     networks:
-      - djangui-network
+      - kauri-network
     healthcheck:
       test: echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]}) }" | mongosh --port 27017 --quiet
       interval: 10s
@@ -38,7 +38,7 @@ services:
     ports:
       - "6379:6379"
     networks:
-      - djangui-network
+      - kauri-network
 
   # Centralized Logging (Graylog)
   opensearch:
@@ -61,7 +61,7 @@ services:
     volumes:
       - opensearch_data:/usr/share/opensearch/data
     networks:
-      - djangui-network
+      - kauri-network
 
   graylog:
     image: graylog/graylog:5.2
@@ -79,7 +79,7 @@ services:
       - "9000:9000"
       - "12201:12201/udp"
     networks:
-      - djangui-network
+      - kauri-network
     volumes:
       - graylog_data:/usr/share/graylog/data
 
@@ -91,7 +91,7 @@ services:
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
     networks:
-      - djangui-network
+      - kauri-network
 
   grafana:
     image: grafana/grafana:latest
@@ -100,12 +100,12 @@ services:
     depends_on:
       - prometheus
     networks:
-      - djangui-network
+      - kauri-network
     volumes:
       - grafana_data:/var/lib/grafana
 
 networks:
-  djangui-network:
+  kauri-network:
     driver: bridge
 
 volumes:
