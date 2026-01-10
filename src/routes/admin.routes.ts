@@ -1,5 +1,7 @@
 import express from 'express';
 import { AdminController } from '../controllers/adminController';
+import { CountryController } from '../controllers/countryController';
+import { CountryRequestController } from '../controllers/countryRequestController';
 import { protect, restrictTo } from '../middleware/auth';
 
 const router = express.Router();
@@ -10,8 +12,11 @@ router.use(restrictTo('admin'));
 
 router.get('/stats', AdminController.getDashboardStats);
 router.get('/users', AdminController.getAllUsers);
+router.get('/users/:id', AdminController.getUserDetails); // Get User Details
+router.patch('/users/:id', AdminController.updateUser); // Update User Profile
 router.patch('/users/:id/status', AdminController.updateUserStatus);
 router.post('/notifications/send', AdminController.sendPushNotification); // New route
+router.post('/notifications/email', AdminController.sendEmail); // Admin Only Email
 
 router.get('/transactions', AdminController.getAllTransactions);
 
@@ -24,11 +29,39 @@ router.delete('/challenges/:id', AdminController.deleteChallenge);
 router.get('/settings', AdminController.getSystemSettings);
 router.patch('/settings', AdminController.updateSystemSetting);
 
+// Country Management
+router.get('/countries', CountryController.getAllCountries);
+router.post('/countries', CountryController.addCountry);
+router.patch('/countries/:id', CountryController.updateCountry);
+
+// Country Change Requests
+router.get('/country-requests', CountryRequestController.listRequests);
+router.patch('/country-requests/:id/process', CountryRequestController.processRequest);
+
+// Goals Management
+router.get('/goals', AdminController.getAllGoals);
+router.delete('/goals/:id', AdminController.deleteGoal);
+
 // System Management
 router.get('/health', AdminController.getSystemHealth);
+router.get('/db/stats', AdminController.getDatabaseStats);
+router.get('/db/export', AdminController.exportDatabase);
 router.get('/db/backup', AdminController.backupDatabase);
 router.get('/logs', AdminController.getLogs);
 router.get('/logs/:filename', AdminController.downloadLog);
 router.get('/analytics/financials', AdminController.getFinancialAnalytics);
+router.get('/resources', AdminController.getServerResources);
+router.get('/audit-logs', AdminController.getAuditLogs);
+router.get('/connections', AdminController.getConnectionLogs);
+
+// AI Analytics
+router.get('/ai/stats', AdminController.getAIUsageStats);
+router.get('/ai/logs', AdminController.getAIUsageLogs);
+
+// Support & Tickets
+import * as SupportController from '../controllers/supportController';
+router.get('/support/tickets', SupportController.getAllTickets);
+router.patch('/support/tickets/:id/status', SupportController.updateTicketStatus);
+router.post('/support/tickets/:id/reply', SupportController.replyTicketAdmin);
 
 export default router;

@@ -42,6 +42,19 @@ export interface IUser {
     awardedAt: Date;
   }[];
   fcmTokens: string[];
+  sessions: {
+    deviceId?: string;
+    deviceInfo?: {
+      model?: string;
+      os?: string;
+      osVersion?: string;
+      platform: 'android' | 'ios' | 'web';
+    };
+    appVersion?: string;
+    refreshToken?: string;
+    lastActive: Date;
+    ipAddress?: string;
+  }[];
   deviceInfo?: {
     model?: string;
     os?: string;
@@ -199,6 +212,27 @@ export interface ISavingGoal {
     date: Date;
     note?: string;
   }[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ICountry {
+  code: string; // ISO 3166-1 alpha-2
+  name: string;
+  currency: string;
+  currencySymbol: string;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ICountryChangeRequest {
+  userId: mongoose.Types.ObjectId;
+  requestedCountryCode: string;
+  status: 'pending' | 'approved' | 'rejected';
+  rejectionReason?: string;
+  adminId?: mongoose.Types.ObjectId;
+  processedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }

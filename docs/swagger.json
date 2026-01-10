@@ -1,14 +1,18 @@
 {
     "openapi": "3.0.0",
     "info": {
-        "title": "Djangui API",
+        "title": "Kauri API",
         "version": "1.0.0",
-        "description": "API for Djangui - Smart Financial Management. This documentation reflects real-world responses aligned with the database models."
+        "description": "API for Kauri - Smart Financial Management. This documentation reflects real-world responses aligned with the database models."
     },
     "servers": [
         {
+            "url": "https://api.kauri-app.com/api",
+            "description": "Production Server"
+        },
+        {
             "url": "http://localhost:3000/api",
-            "description": "Local server"
+            "description": "Local Development Server"
         }
     ],
     "components": {
@@ -462,6 +466,123 @@
                     }
                 }
             },
+            "Notification": {
+                "type": "object",
+                "properties": {
+                    "_id": {
+                        "type": "string"
+                    },
+                    "userId": {
+                        "type": "string"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "body": {
+                        "type": "string"
+                    },
+                    "data": {
+                        "type": "object"
+                    },
+                    "isRead": {
+                        "type": "boolean"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "SupportTicket": {
+                "type": "object",
+                "properties": {
+                    "_id": {
+                        "type": "string"
+                    },
+                    "userId": {
+                        "type": "string"
+                    },
+                    "subject": {
+                        "type": "string"
+                    },
+                    "message": {
+                        "type": "string"
+                    },
+                    "category": {
+                        "type": "string",
+                        "enum": [
+                            "bug",
+                            "payment",
+                            "account",
+                            "other"
+                        ]
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "open",
+                            "in_progress",
+                            "closed"
+                        ]
+                    },
+                    "responses": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "sender": {
+                                    "type": "string",
+                                    "enum": [
+                                        "user",
+                                        "admin"
+                                    ]
+                                },
+                                "message": {
+                                    "type": "string"
+                                },
+                                "date": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                }
+                            }
+                        }
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "SystemSetting": {
+                "type": "object",
+                "properties": {
+                    "key": {
+                        "type": "string"
+                    },
+                    "value": {
+                        "type": "object"
+                    },
+                    "group": {
+                        "type": "string",
+                        "enum": [
+                            "general",
+                            "maintenance",
+                            "payment",
+                            "app_version",
+                            "legal",
+                            "app_info",
+                            "mobile"
+                        ]
+                    },
+                    "isPublic": {
+                        "type": "boolean"
+                    }
+                }
+            },
             "ErrorResponse": {
                 "type": "object",
                 "properties": {
@@ -485,6 +606,76 @@
                         "type": "string"
                     }
                 }
+            },
+            "Country": {
+                "type": "object",
+                "properties": {
+                    "_id": {
+                        "type": "string"
+                    },
+                    "code": {
+                        "type": "string",
+                        "example": "CM"
+                    },
+                    "name": {
+                        "type": "string",
+                        "example": "Cameroun"
+                    },
+                    "currency": {
+                        "type": "string",
+                        "example": "XAF"
+                    },
+                    "currencySymbol": {
+                        "type": "string",
+                        "example": "FCFA"
+                    },
+                    "isActive": {
+                        "type": "boolean",
+                        "example": true
+                    }
+                }
+            },
+            "CountryChangeRequest": {
+                "type": "object",
+                "properties": {
+                    "_id": {
+                        "type": "string"
+                    },
+                    "userId": {
+                        "type": "string"
+                    },
+                    "requestedCountryCode": {
+                        "type": "string",
+                        "example": "US"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "pending",
+                            "approved",
+                            "rejected"
+                        ],
+                        "example": "pending"
+                    },
+                    "rejectionReason": {
+                        "type": "string"
+                    },
+                    "adminId": {
+                        "type": "string"
+                    },
+                    "processedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
             }
         }
     },
@@ -494,6 +685,444 @@
         }
     ],
     "paths": {
+        "/v1/notifications": {
+            "get": {
+                "tags": [
+                    "Notifications"
+                ],
+                "summary": "Get user notifications",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "results": {
+                                            "type": "integer"
+                                        },
+                                        "total": {
+                                            "type": "integer"
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/Notification"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/notifications/unread-count": {
+            "get": {
+                "tags": [
+                    "Notifications"
+                ],
+                "summary": "Get unread notifications count",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "count": {
+                                                    "type": "integer"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/notifications/mark-all-read": {
+            "patch": {
+                "tags": [
+                    "Notifications"
+                ],
+                "summary": "Mark all notifications as read",
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/notifications/{id}/read": {
+            "patch": {
+                "tags": [
+                    "Notifications"
+                ],
+                "summary": "Mark notification as read",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/notifications/{id}": {
+            "delete": {
+                "tags": [
+                    "Notifications"
+                ],
+                "summary": "Delete notification",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
+            }
+        },
+        "/v1/support/tickets": {
+            "get": {
+                "tags": [
+                    "Support"
+                ],
+                "summary": "Get My Tickets",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/SupportTicket"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Support"
+                ],
+                "summary": "Create Ticket",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "subject",
+                                    "message"
+                                ],
+                                "properties": {
+                                    "subject": {
+                                        "type": "string"
+                                    },
+                                    "message": {
+                                        "type": "string"
+                                    },
+                                    "category": {
+                                        "type": "string",
+                                        "enum": [
+                                            "bug",
+                                            "payment",
+                                            "account",
+                                            "other"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Created"
+                    }
+                }
+            }
+        },
+        "/v1/support/tickets/{id}/reply": {
+            "post": {
+                "tags": [
+                    "Support"
+                ],
+                "summary": "Reply to Ticket",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "message"
+                                ],
+                                "properties": {
+                                    "message": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/admin/support/tickets": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Get All Tickets",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/admin/support/tickets/{id}/status": {
+            "patch": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Update Ticket Status",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "status"
+                                ],
+                                "properties": {
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "open",
+                                            "in_progress",
+                                            "closed"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/admin/support/tickets/{id}/reply": {
+            "post": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Reply to Ticket (Admin)",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "message"
+                                ],
+                                "properties": {
+                                    "message": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/system/public-settings": {
+            "get": {
+                "tags": [
+                    "System"
+                ],
+                "summary": "Get Public Settings (Legal URLs, App Info)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/admin/connections": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Get User Connection Logs",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
         "/v1/admin/stats": {
             "get": {
                 "tags": [
@@ -569,6 +1198,10 @@
                         "application/json": {
                             "schema": {
                                 "type": "object",
+                                "required": [
+                                    "title",
+                                    "body"
+                                ],
                                 "properties": {
                                     "userIds": {
                                         "type": "array",
@@ -576,8 +1209,16 @@
                                             "type": "string"
                                         }
                                     },
-                                    "topic": {
-                                        "type": "string"
+                                    "type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "specific",
+                                            "all",
+                                            "android",
+                                            "ios",
+                                            "premium"
+                                        ],
+                                        "default": "specific"
                                     },
                                     "title": {
                                         "type": "string"
@@ -585,18 +1226,110 @@
                                     "body": {
                                         "type": "string"
                                     },
+                                    "imageUrl": {
+                                        "type": "string"
+                                    },
                                     "data": {
                                         "type": "object"
+                                    },
+                                    "topic": {
+                                        "type": "string"
+                                    }
+                                }
+                            },
+                            "examples": {
+                                "All Users": {
+                                    "summary": "Send to everyone",
+                                    "value": {
+                                        "type": "all",
+                                        "title": "Grande Nouvelle !",
+                                        "body": "Découvrez notre nouvelle fonctionnalité.",
+                                        "imageUrl": "https://example.com/image.png"
                                     }
                                 },
-                                "required": [
-                                    "title",
-                                    "body"
-                                ]
+                                "Android Only": {
+                                    "summary": "Send to Android users",
+                                    "value": {
+                                        "type": "android",
+                                        "title": "Mise à jour Android",
+                                        "body": "Nouvelle version disponible."
+                                    }
+                                },
+                                "iOS Only": {
+                                    "summary": "Send to iOS users",
+                                    "value": {
+                                        "type": "ios",
+                                        "title": "Mise à jour iOS",
+                                        "body": "Nouvelle version disponible."
+                                    }
+                                },
+                                "Premium Only": {
+                                    "summary": "Send to Premium users",
+                                    "value": {
+                                        "type": "premium",
+                                        "title": "Merci !",
+                                        "body": "Merci de faire partie de nos membres Premium."
+                                    }
+                                },
+                                "Specific Users": {
+                                    "summary": "Send to specific users (Legacy)",
+                                    "value": {
+                                        "type": "specific",
+                                        "userIds": [
+                                            "60d5ec1860641029c4257850"
+                                        ],
+                                        "title": "Message personnel",
+                                        "body": "Bonjour !"
+                                    }
+                                }
                             }
                         }
                     }
                 },
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/admin/ai/stats": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Get AI Usage Stats (Aggregated)",
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/admin/ai/logs": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Get AI Usage Logs (List)",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "default": 1
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "default": 20
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK"
@@ -737,6 +1470,213 @@
                 }
             }
         },
+        "/v1/admin/countries": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "List all countries (including inactive)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "countries": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/Country"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Add a new supported country",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "code",
+                                    "name",
+                                    "currency"
+                                ],
+                                "properties": {
+                                    "code": {
+                                        "type": "string"
+                                    },
+                                    "name": {
+                                        "type": "string"
+                                    },
+                                    "currency": {
+                                        "type": "string"
+                                    },
+                                    "currencySymbol": {
+                                        "type": "string"
+                                    },
+                                    "isActive": {
+                                        "type": "boolean"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Created"
+                    }
+                }
+            }
+        },
+        "/v1/admin/countries/{id}": {
+            "patch": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Update country details",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Country"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Updated"
+                    }
+                }
+            }
+        },
+        "/v1/admin/country-requests": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "List all country change requests",
+                "parameters": [
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "pending",
+                                "approved",
+                                "rejected"
+                            ]
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "requests": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/CountryChangeRequest"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/admin/country-requests/{id}/process": {
+            "patch": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Approve or Reject a country change request",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "status"
+                                ],
+                                "properties": {
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "approved",
+                                            "rejected"
+                                        ]
+                                    },
+                                    "rejectionReason": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Processed"
+                    }
+                }
+            }
+        },
         "/v1/admin/users/{id}/status": {
             "patch": {
                 "tags": [
@@ -823,6 +1763,42 @@
                 "responses": {
                     "200": {
                         "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/system/countries": {
+            "get": {
+                "tags": [
+                    "System"
+                ],
+                "summary": "Get supported countries",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "countries": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/Country"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -945,6 +1921,88 @@
                     "Admin"
                 ],
                 "summary": "Get Advanced Financial Analytics",
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/admin/resources": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Get Real-time Server Resource Usage (RAM, CPU, Uptime)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "memory": {
+                                                    "type": "object"
+                                                },
+                                                "cpu": {
+                                                    "type": "object"
+                                                },
+                                                "os": {
+                                                    "type": "object"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/admin/audit-logs": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Get Paginated Audit Logs",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "userId",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "action",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK"
@@ -1179,6 +2237,123 @@
                 }
             }
         },
+        "/v1/auth/change-password": {
+            "patch": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Change user password",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "currentPassword": {
+                                        "type": "string"
+                                    },
+                                    "newPassword": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "currentPassword",
+                                    "newPassword"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/auth/delete-me": {
+            "delete": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Delete user account",
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/auth/sessions": {
+            "get": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Get active sessions",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "sessions": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Revoke all sessions (except current)",
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/auth/sessions/{sessionId}": {
+            "delete": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Revoke a specific session",
+                "parameters": [
+                    {
+                        "name": "sessionId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
         "/v1/auth/logout": {
             "post": {
                 "tags": [
@@ -1269,6 +2444,91 @@
                                 "example": {
                                     "success": true,
                                     "message": "Phone number successfully linked."
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/connection": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Log user connection (IP, Device)",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "ip": {
+                                        "type": "string"
+                                    },
+                                    "country": {
+                                        "type": "string"
+                                    },
+                                    "city": {
+                                        "type": "string"
+                                    },
+                                    "device": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/auth/request-country-change": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Request to change residence country",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "countryCode"
+                                ],
+                                "properties": {
+                                    "countryCode": {
+                                        "type": "string",
+                                        "example": "US"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Request submitted",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object"
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1403,6 +2663,15 @@
                                     },
                                     "monthlyIncome": {
                                         "type": "number"
+                                    },
+                                    "currency": {
+                                        "type": "string"
+                                    },
+                                    "language": {
+                                        "type": "string"
+                                    },
+                                    "phone": {
+                                        "type": "string"
                                     },
                                     "preferences": {
                                         "type": "object"
@@ -2843,6 +4112,62 @@
                 }
             }
         },
+        "/v1/payments/cancel-subscription": {
+            "post": {
+                "tags": [
+                    "Payments"
+                ],
+                "summary": "Cancel Premium Subscription",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "message": "Subscription cancelled successfully...",
+                                    "data": {
+                                        "plan": "premium",
+                                        "status": "cancelled",
+                                        "endDate": "2026-02-06T..."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/payments": {
+            "get": {
+                "tags": [
+                    "Payments"
+                ],
+                "summary": "My Payment History",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "results": 2,
+                                    "data": [
+                                        {
+                                            "amount": 5000,
+                                            "currency": "XAF",
+                                            "status": "completed",
+                                            "type": "deposit",
+                                            "createdAt": "2026-01-07T12:00:00Z"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/payments/checkout/stripe": {
             "post": {
                 "tags": [
@@ -2925,6 +4250,45 @@
                 }
             }
         },
+        "/v1/payments/verify/{reference}": {
+            "get": {
+                "tags": [
+                    "Payments"
+                ],
+                "summary": "Verify Transaction Status",
+                "parameters": [
+                    {
+                        "name": "reference",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "status": "completed",
+                                        "payment": {
+                                            "reference": "NTP-ABC...",
+                                            "amount": 5000,
+                                            "currency": "XAF",
+                                            "status": "completed"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/webhooks/stripe": {
             "post": {
                 "tags": [
@@ -2956,7 +4320,22 @@
                 "tags": [
                     "Upload"
                 ],
-                "summary": "Receipt",
+                "summary": "Upload and scan a receipt",
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "receipt": {
+                                        "type": "string",
+                                        "format": "binary"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -2965,7 +4344,11 @@
                                 "example": {
                                     "success": true,
                                     "data": {
-                                        "url": "https://storage..."
+                                        "merchant": "Casino",
+                                        "amount": 1500,
+                                        "date": "2026-01-07",
+                                        "fileName": "receipt-123.jpg",
+                                        "filePath": "uploads/receipts/receipt-123.jpg"
                                     }
                                 }
                             }
@@ -2979,7 +4362,22 @@
                 "tags": [
                     "Upload"
                 ],
-                "summary": "Avatar",
+                "summary": "Upload user avatar",
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "avatar": {
+                                        "type": "string",
+                                        "format": "binary"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -2988,7 +4386,7 @@
                                 "example": {
                                     "success": true,
                                     "data": {
-                                        "url": "https://storage..."
+                                        "avatarUrl": "/uploads/avatars/avatar-123.jpg"
                                     }
                                 }
                             }

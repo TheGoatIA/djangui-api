@@ -16,6 +16,7 @@ export const registerSchema = Joi.object({
     'any.required': 'Last name is required',
   }),
   phone: Joi.string().optional(),
+  country: Joi.string().length(2).uppercase().optional(),
 });
 
 export const loginSchema = Joi.object({
