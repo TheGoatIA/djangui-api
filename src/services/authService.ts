@@ -5,6 +5,9 @@ import logger from '../utils/logger';
 import admin from '../config/firebase';
 import crypto from 'crypto';
 import { EmailService } from './emailService';
+import { SlackService } from './slackService';
+import { AuditService } from './auditService';
+import Country from '../models/Country';
 
 const signToken = (id: string, secret: string, expiresIn: any) => {
   return jwt.sign({ id }, secret, {
@@ -35,7 +38,19 @@ export class AuthService {
       throw new AppError('Email already in use', 409);
     }
 
-    const newUser = await User.create(userData);
+    // Find country to set correct currency
+    const countryCode = (userData.country || 'CM').toUpperCase();
+    const country = await Country.findOne({ code: countryCode, isActive: true });
+
+    if (!country && userData.country) {
+      throw new AppError("Ce pays n'est pas encore supporté.", 400);
+    }
+
+    const newUser = await User.create({
+      ...userData,
+      country: countryCode,
+      currency: country ? country.currency : 'XAF',
+    });
 
     // Generate verification token
     const verificationToken = crypto.randomBytes(32).toString('hex');
@@ -57,6 +72,16 @@ export class AuthService {
     // Store refresh token in user
     newUser.refreshToken = tokens.refreshToken;
     await (newUser as any).save({ validateBeforeSave: false });
+
+    // Audit Log for registration
+    AuditService.record({
+      userId: newUser._id as any,
+      action: 'REGISTER',
+      resource: 'USER',
+      resourceId: newUser._id.toString(),
+      status: 'success',
+      metadata: { email: newUser.email },
+    });
 
     return { user: newUser, tokens };
   }
@@ -82,7 +107,7 @@ export class AuthService {
         // 3) Create user if not exists
         const nameParts = (name || '').split(' ');
         user = await User.create({
-          email: email || `${uid}@phone.djangui.com`, // Placeholder for phone-only users
+          email: email || `${uid}@phone.kauri-app.com`, // Placeholder for phone-only users
           phone: phone_number,
           firstName: nameParts[0] || 'User',
           lastName: nameParts.slice(1).join(' ') || 'Firebase',
@@ -92,7 +117,15 @@ export class AuthService {
           isEmailVerified: !!email,
           isPhoneVerified: !!phone_number,
         });
-        logger.info(`New user created via Firebase Auth: ${user.email || phone_number}`);
+        // Audit Log for new user creation
+        AuditService.record({
+          userId: user._id as any,
+          action: 'REGISTER_FIREBASE',
+          resource: 'USER',
+          resourceId: user._id.toString(),
+          status: 'success',
+          metadata: { email: user.email, provider: 'firebase' },
+        });
       } else {
         // Update user info
         user.firebaseUid = uid;
@@ -111,10 +144,13 @@ export class AuthService {
       // 4) Generate backend tokens
       const tokens = createSendToken(user);
 
-      // Update refresh token and last login
-      user.refreshToken = tokens.refreshToken;
-      user.lastLogin = new Date();
-      await (user as any).save({ validateBeforeSave: false });
+      // Audit Log for login
+      AuditService.record({
+        userId: user._id as any,
+        action: 'LOGIN_FIREBASE',
+        resource: 'USER',
+        status: 'success',
+      });
 
       return { user, tokens };
     } catch (error: any) {
@@ -149,7 +185,7 @@ export class AuthService {
     return user;
   }
 
-  static async login(email: string, password: string) {
+  static async login(email: string, password: string, sessionData?: any) {
     // 1) Check if email and password exist
     if (!email || !password) {
       throw new AppError('Please provide email and password', 400);
@@ -161,13 +197,43 @@ export class AuthService {
       throw new AppError('Incorrect email or password', 401);
     }
 
-    // 3) If everything ok, send token to client
+    // 3) Generate tokens
     const tokens = createSendToken(user);
 
-    // Update refresh token and last login
-    user.refreshToken = tokens.refreshToken;
+    // 4) Manage sessions
+    const session = {
+      deviceId: sessionData?.deviceId,
+      deviceInfo: sessionData?.deviceInfo,
+      appVersion: sessionData?.appVersion,
+      refreshToken: tokens.refreshToken,
+      lastActive: new Date(),
+      ipAddress: sessionData?.ipAddress,
+    };
+
+    if (sessionData?.deviceId) {
+      // Update existing session for this device or add new
+      const sessionIndex = user.sessions.findIndex((s) => s.deviceId === sessionData.deviceId);
+      if (sessionIndex !== -1) {
+        user.sessions[sessionIndex] = { ...user.sessions[sessionIndex], ...session };
+      } else {
+        user.sessions.push(session);
+      }
+    } else {
+      user.sessions.push(session);
+    }
+
+    // Update legacy fields
     user.lastLogin = new Date();
     await (user as any).save({ validateBeforeSave: false });
+
+    // Audit Log for login
+    AuditService.record({
+      userId: user._id as any,
+      action: 'LOGIN',
+      resource: 'USER',
+      status: 'success',
+      metadata: { deviceId: sessionData?.deviceId },
+    });
 
     return { user, tokens };
   }
@@ -184,16 +250,27 @@ export class AuthService {
         process.env.JWT_REFRESH_SECRET || 'super-secret-refresh',
       ) as { id: string };
 
-      // 2) Check if user still exists
+      // 2) Check if user still exists and HAS this session
       const user = await User.findById(decoded.id);
-      if (!user || user.refreshToken !== refreshToken) {
+      if (!user) {
+        throw new AppError('User no longer exists', 401);
+      }
+
+      const sessionIndex = user.sessions.findIndex((s) => s.refreshToken === refreshToken);
+      if (sessionIndex === -1 && user.refreshToken !== refreshToken) {
         throw new AppError('Invalid or expired refresh token', 401);
       }
 
       // 3) Generate new tokens
       const tokens = createSendToken(user);
 
-      // Update refresh token
+      // 4) Update session
+      if (sessionIndex !== -1) {
+        user.sessions[sessionIndex].refreshToken = tokens.refreshToken;
+        user.sessions[sessionIndex].lastActive = new Date();
+      }
+
+      // Update legacy fields
       user.refreshToken = tokens.refreshToken;
       await (user as any).save({ validateBeforeSave: false });
 
@@ -207,7 +284,16 @@ export class AuthService {
     const user = await User.findById(userId);
     if (user) {
       user.refreshToken = undefined;
+      // Also clear sessions on logout? Usually we just clear the current one.
+      // For simplicity here, we clear legacy refresh token.
       await (user as any).save({ validateBeforeSave: false });
+
+      AuditService.record({
+        userId: user._id as any,
+        action: 'LOGOUT',
+        resource: 'USER',
+        status: 'success',
+      });
     }
     return true;
   }
@@ -301,6 +387,7 @@ export class AuthService {
       'language',
       'preferences',
       'phone',
+      'monthlyIncome',
     ];
 
     const filteredUpdate: any = {};
@@ -317,6 +404,75 @@ export class AuthService {
 
     if (!user) throw new AppError('User not found', 404);
     return user;
+  }
+
+  static async changePassword(userId: string, data: any) {
+    const { currentPassword, newPassword } = data;
+    if (!currentPassword || !newPassword) {
+      throw new AppError('Please provide current and new password', 400);
+    }
+
+    const user = await User.findById(userId).select('+password');
+    if (!user || !(await user.comparePassword(currentPassword))) {
+      throw new AppError('Current password is incorrect', 401);
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    return true;
+  }
+
+  static async deleteAccount(userId: string) {
+    const user = await User.findByIdAndDelete(userId);
+    if (!user) throw new AppError('User not found', 404);
+
+    // TODO: Cleanup other user data (transactions, goals, etc.) if needed
+    return true;
+  }
+
+  static async getSessions(userId: string) {
+    const user = await User.findById(userId).select('sessions');
+    if (!user) throw new AppError('User not found', 404);
+    return user.sessions || [];
+  }
+
+  static async revokeSession(userId: string, sessionId: string) {
+    const user = await User.findById(userId);
+    if (!user) throw new AppError('User not found', 404);
+
+    const sessionIndex = user.sessions.findIndex((s: any) => s._id.toString() === sessionId);
+    if (sessionIndex !== -1) {
+      user.sessions.splice(sessionIndex, 1);
+      await (user as any).save({ validateBeforeSave: false });
+
+      AuditService.record({
+        userId: user._id as any,
+        action: 'REVOKE_SESSION',
+        resource: 'SESSION',
+        resourceId: sessionId,
+        status: 'success',
+      });
+    }
+    return true;
+  }
+
+  static async revokeAllSessions(userId: string) {
+    const user = await User.findById(userId);
+    if (!user) throw new AppError('User not found', 404);
+
+    user.sessions = [];
+    user.refreshToken = undefined;
+    await (user as any).save({ validateBeforeSave: false });
+
+    AuditService.record({
+      userId: user._id as any,
+      action: 'REVOKE_ALL_SESSIONS',
+      resource: 'USER',
+      status: 'success',
+    });
+
+    return true;
   }
 
   static async updateDeviceInfo(userId: string, data: { deviceInfo: any; appVersion: string }) {

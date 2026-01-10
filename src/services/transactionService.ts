@@ -8,6 +8,7 @@ import { NotificationService } from './notificationService';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import mongoose from 'mongoose';
+import User from '../models/User';
 
 export class TransactionService {
   static async createTransaction(userId: string, data: any) {
@@ -34,6 +35,17 @@ export class TransactionService {
       });
 
       await transaction.save({ session });
+
+      // Update User Wallet Balance
+      if (data.type === 'income') {
+        await User.findByIdAndUpdate(userId, { $inc: { walletBalance: data.amount } }, { session });
+      } else if (data.type === 'expense') {
+        await User.findByIdAndUpdate(
+          userId,
+          { $inc: { walletBalance: -data.amount } },
+          { session },
+        );
+      }
 
       // Apply automated saving strategies (e.g., Roundup)
       if (transaction.type === 'expense') {
@@ -153,19 +165,62 @@ export class TransactionService {
   }
 
   static async updateTransaction(id: string, userId: string, data: any) {
-    // Note: Updating a transaction might require complex logic to update budgets/goals
-    // For now, let's implement basic update
-    const transaction = await Transaction.findOneAndUpdate(
-      { _id: id, userId },
-      { $set: data },
-      { new: true, runValidators: true },
-    );
+    const session = await mongoose.startSession();
+    session.startTransaction();
 
-    if (!transaction) {
-      throw new AppError('Transaction not found', 404);
+    try {
+      const oldTransaction = await Transaction.findOne({ _id: id, userId }).session(session);
+      if (!oldTransaction) {
+        throw new AppError('Transaction not found', 404);
+      }
+
+      // Revert old balance impact
+      if (oldTransaction.type === 'income') {
+        await User.findByIdAndUpdate(
+          userId,
+          { $inc: { walletBalance: -oldTransaction.amount } },
+          { session },
+        );
+      } else if (oldTransaction.type === 'expense') {
+        await User.findByIdAndUpdate(
+          userId,
+          { $inc: { walletBalance: oldTransaction.amount } },
+          { session },
+        );
+      }
+
+      // Apply changes
+      const updatedTransaction = await Transaction.findByIdAndUpdate(
+        id,
+        { $set: data },
+        { new: true, runValidators: true, session },
+      );
+
+      // Apply new balance impact
+      if (updatedTransaction) {
+        if (updatedTransaction.type === 'income') {
+          await User.findByIdAndUpdate(
+            userId,
+            { $inc: { walletBalance: updatedTransaction.amount } },
+            { session },
+          );
+        } else if (updatedTransaction.type === 'expense') {
+          await User.findByIdAndUpdate(
+            userId,
+            { $inc: { walletBalance: -updatedTransaction.amount } },
+            { session },
+          );
+        }
+      }
+
+      await session.commitTransaction();
+      return updatedTransaction;
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
     }
-
-    return transaction;
   }
 
   static async deleteTransaction(id: string, userId: string) {
@@ -174,6 +229,14 @@ export class TransactionService {
       throw new AppError('Transaction not found', 404);
     }
     // TODO: Update budget/goal if necessary
+
+    // Reverse balance update
+    if (transaction.type === 'income') {
+      await User.findByIdAndUpdate(userId, { $inc: { walletBalance: -transaction.amount } });
+    } else if (transaction.type === 'expense') {
+      await User.findByIdAndUpdate(userId, { $inc: { walletBalance: transaction.amount } });
+    }
+
     return true;
   }
 

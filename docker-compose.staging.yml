@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  api-staging:
+    build: .
+    ports:
+      - "5001:5000"
+    environment:
+      - NODE_ENV=staging
+      - MONGODB_URI=mongodb://mongodb-staging:27017/djangui_staging?replicaSet=rs0
+      - REDIS_URL=redis://redis-staging:6379
+    depends_on:
+      - mongodb-staging
+      - redis-staging
+    networks:
+      - djangui-staging-network
+    volumes:
+      - ./uploads-staging:/app/uploads
+
+  mongodb-staging:
+    image: mongo:latest
+    command: [ "--replSet", "rs0", "--bind_ip_all" ]
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongodb_staging_data:/data/db
+    networks:
+      - djangui-staging-network
+    healthcheck:
+      test: echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb-staging:27017'}]}) }" | mongosh --port 27017 --quiet
+      interval: 10s
+      timeout: 30s
+      retries: 5
+
+  redis-staging:
+    image: redis:alpine
+    ports:
+      - "6380:6379"
+    networks:
+      - djangui-staging-network
+
+networks:
+  djangui-staging-network:
+    driver: bridge
+
+volumes:
+  mongodb_staging_data:

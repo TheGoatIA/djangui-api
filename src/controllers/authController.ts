@@ -54,7 +54,12 @@ export class AuthController {
   static async login(req: Request, res: Response, next: NextFunction) {
     try {
       const { email, password } = req.body;
-      const { user, tokens } = await AuthService.login(email, password);
+      const { user, tokens } = await AuthService.login(email, password, {
+        deviceId: req.body.deviceId,
+        deviceInfo: req.body.deviceInfo,
+        appVersion: req.body.appVersion,
+        ipAddress: req.ip,
+      });
 
       res.status(200).json({
         success: true,
@@ -62,6 +67,69 @@ export class AuthController {
           user,
           tokens,
         },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async changePassword(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      await AuthService.changePassword(req.user._id, req.body);
+      res.status(200).json({
+        success: true,
+        message: 'Password updated successfully',
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async deleteMe(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      await AuthService.deleteAccount(req.user._id);
+      res.status(200).json({
+        success: true,
+        message: 'Account deleted successfully',
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async getSessions(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const sessions = await AuthService.getSessions(req.user._id);
+      res.status(200).json({
+        success: true,
+        data: {
+          sessions,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async revokeSession(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const { sessionId } = req.params;
+      await AuthService.revokeSession(req.user._id, sessionId);
+      res.status(200).json({
+        success: true,
+        message: 'Session revoked successfully',
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async revokeAllSessions(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      await AuthService.revokeAllSessions(req.user._id);
+      res.status(200).json({
+        success: true,
+        message: 'All sessions revoked successfully',
       });
     } catch (err) {
       next(err);
@@ -206,6 +274,28 @@ export class AuthController {
         data: {
           user,
         },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async logConnection(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const { ip, country, city, device } = req.body;
+      const ConnectionLog = await import('../models/ConnectionLog').then((m) => m.default);
+
+      await ConnectionLog.create({
+        userId: req.user._id,
+        ip: ip || req.ip,
+        country,
+        city,
+        device,
+      });
+
+      res.status(200).json({
+        success: true,
+        message: 'Connection logged',
       });
     } catch (err) {
       next(err);

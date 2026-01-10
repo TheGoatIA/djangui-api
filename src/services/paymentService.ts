@@ -5,6 +5,8 @@ import User from '../models/User';
 import { AppError } from '../middleware/errorHandler';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger';
+import { NotificationService } from './notificationService';
+import { AuditService } from './auditService';
 
 export class PaymentService {
   /**
@@ -46,7 +48,7 @@ export class PaymentService {
           price_data: {
             currency: currency.toLowerCase(),
             product_data: {
-              name: type === 'subscription' ? 'Djangui Premium' : 'Wallet Deposit',
+              name: type === 'subscription' ? 'Kauri Premium' : 'Wallet Deposit',
             },
             unit_amount: this.formatAmount(amount, currency),
           },
@@ -74,6 +76,16 @@ export class PaymentService {
       reference,
       status: 'pending',
       externalReference: session.id,
+    });
+
+    // Audit Log for payment initiation
+    AuditService.record({
+      userId: userId as any,
+      action: 'INIT_PAYMENT',
+      resource: 'PAYMENT',
+      resourceId: reference,
+      status: 'success',
+      metadata: { method: 'stripe', amount, type },
     });
 
     return { url: session.url, reference };
@@ -104,8 +116,7 @@ export class PaymentService {
           email: user.email,
           phone: user.phone,
         },
-        description:
-          type === 'subscription' ? 'Abonnement Djangui Premium' : 'Recharge Portefeuille',
+        description: type === 'subscription' ? 'Abonnement Kauri Premium' : 'Recharge Portefeuille',
         reference,
         callback: `${process.env.FRONTEND_URL}/payment/success?ref=${reference}`,
       });
@@ -119,6 +130,16 @@ export class PaymentService {
         reference,
         status: 'pending',
         externalReference: response.data.transaction.reference,
+      });
+
+      // Audit Log for payment initiation
+      AuditService.record({
+        userId: userId as any,
+        action: 'INIT_PAYMENT',
+        resource: 'PAYMENT',
+        resourceId: reference,
+        status: 'success',
+        metadata: { method: 'notchpay', amount, type },
       });
 
       return {
@@ -152,16 +173,127 @@ export class PaymentService {
       await User.findByIdAndUpdate(payment.userId, {
         $inc: { walletBalance: payment.amount },
       });
+
+      // Notify
+      await NotificationService.sendToUser(payment.userId.toString(), {
+        title: 'Recharge réussie 💰',
+        body: `Votre portefeuille a été crédité de ${payment.amount} ${payment.currency}.`,
+        data: { type: 'payment', status: 'success', reference },
+      });
     } else if (payment.type === 'subscription') {
-      await User.findByIdAndUpdate(payment.userId, {
-        'subscription.plan': 'premium',
-        'subscription.status': 'active',
-        'subscription.startDate': new Date(),
-        // Plan for 1 month
-        'subscription.endDate': new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      logger.info(`Upgrading user ${payment.userId} to Premium...`);
+      const updatedUser = await User.findByIdAndUpdate(
+        payment.userId,
+        {
+          'subscription.plan': 'premium',
+          'subscription.status': 'active',
+          'subscription.startDate': new Date(),
+          // Plan for 1 month
+          'subscription.endDate': new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        },
+        { new: true },
+      );
+
+      logger.info(`User upgrade result: ${updatedUser?.subscription?.plan}`);
+
+      // Notify
+      await NotificationService.sendToUser(payment.userId.toString(), {
+        title: 'Abonnement activé 🌟',
+        body: 'Félicitations ! Vous êtes maintenant membre Premium.',
+        data: { type: 'payment', status: 'success', reference },
       });
     }
 
+    // Audit Log for payment completion
+    AuditService.record({
+      userId: payment.userId as any,
+      action: 'COMPLETE_PAYMENT',
+      resource: 'PAYMENT',
+      resourceId: reference,
+      status: 'success',
+      metadata: { type: payment.type, amount: payment.amount },
+    });
+
     return payment;
+  }
+
+  /**
+   * Manually verify transaction status with provider
+   */
+  static async verifyTransaction(reference: string) {
+    const payment = await Payment.findOne({ reference });
+    if (!payment) throw new AppError('Payment not found', 404);
+
+    if (payment.status === 'completed') {
+      return { status: 'completed', payment };
+    }
+
+    let isPaid = false;
+    let externalStatus = 'pending';
+
+    try {
+      if (payment.method === 'notchpay') {
+        // Verify with NotchPay API
+        const response = await notchpayApi.get(`/payments/${payment.externalReference}`);
+        const transaction = response.data.transaction;
+        externalStatus = transaction.status;
+
+        if (transaction.status === 'complete' || transaction.status === 'completed') {
+          isPaid = true;
+        }
+      } else if (payment.method === 'stripe') {
+        // Verify with Stripe API
+        const session = await stripe.checkout.sessions.retrieve(payment.externalReference!);
+        externalStatus = session.payment_status;
+
+        if (session.payment_status === 'paid') {
+          isPaid = true;
+        }
+      }
+
+      if (isPaid) {
+        const updatedPayment = await this.completePayment(reference);
+        return { status: 'completed', payment: updatedPayment };
+      } else {
+        return { status: externalStatus, payment };
+      }
+    } catch (error: any) {
+      logger.error(`Verification failed for ${reference}: ${error.message}`);
+      throw new AppError('Failed to verify payment with provider', 502);
+    }
+  }
+
+  /**
+   * Get payments for a specific user
+   */
+  static async getUserPayments(userId: string) {
+    return Payment.find({ userId }).sort({ createdAt: -1 });
+  }
+
+  /**
+   * Cancel active subscription
+   */
+  static async cancelSubscription(userId: string) {
+    const user = await User.findById(userId);
+    if (!user) throw new AppError('User not found', 404);
+
+    if (user.subscription?.plan !== 'premium' || user.subscription?.status !== 'active') {
+      throw new AppError('No active premium subscription to cancel', 400);
+    }
+
+    user.subscription.status = 'cancelled';
+    user.subscription.autoRenew = false;
+    await user.save();
+
+    // Audit Log for subscription cancellation
+    AuditService.record({
+      userId: userId as any,
+      action: 'CANCEL_SUBSCRIPTION',
+      resource: 'USER',
+      resourceId: userId,
+      status: 'success',
+    });
+
+    return user;
   }
 }

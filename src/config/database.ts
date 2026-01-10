@@ -3,7 +3,7 @@ import logger from '../utils/logger';
 
 const connectDB = async (): Promise<void> => {
   try {
-    const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/djangui';
+    const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/kauri';
     await mongoose.connect(mongoURI);
     logger.info('MongoDB connected successfully');
   } catch (error) {

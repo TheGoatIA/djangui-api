@@ -21,7 +21,7 @@ export class PromptBuilder {
   static buildCoachSystemPrompt(user: IUser, context: any): string {
     const { firstName, monthlyIncome, currency, language, preferences } = user;
     return `
-      Tu es un coach d'épargne expert et bienveillant nommé Djangui.
+      Tu es un coach d'épargne expert et bienveillant nommé Kauri.
       Tu parles à ${firstName}. Son revenu mensuel est de ${monthlyIncome} ${currency}.
       Ton ton doit être ${preferences.coachTone}.
       Langue de réponse: ${language === 'fr' ? 'Français' : 'Anglais'}.
@@ -53,7 +53,7 @@ export class PromptBuilder {
   }
   static buildNarrativeReportPrompt(user: IUser, reportData: any): string {
     return `
-      En tant que coach financier Djangui, rédige un rapport mensuel narratif et motivant pour ${user.firstName}.
+      En tant que coach financier Kauri, rédige un rapport mensuel narratif et motivant pour ${user.firstName}.
       Données du mois: ${JSON.stringify(reportData)}
       
       Le rapport doit inclure:

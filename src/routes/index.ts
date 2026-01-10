@@ -16,12 +16,16 @@ import investmentRoutes from './investment.routes';
 import emailRoutes from './email.routes';
 import adminRoutes from './admin.routes';
 import systemRoutes from './system.routes';
+import notificationRoutes from './notification.routes';
+import supportRoutes from './support.routes';
 
 const router = Router();
 
 router.use('/auth', authRoutes);
 router.use('/system', systemRoutes);
 router.use('/admin', adminRoutes); // Admin routes
+router.use('/notifications', notificationRoutes);
+router.use('/support', supportRoutes);
 router.use('/transactions', transactionRoutes);
 router.use('/budgets', budgetRoutes);
 router.use('/goals', goalRoutes);

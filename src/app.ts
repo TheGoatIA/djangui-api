@@ -7,17 +7,27 @@ import { RedisStore } from 'rate-limit-redis';
 import redis from './config/redis';
 import path from 'path';
 import errorHandler from './middleware/errorHandler';
-import { requestLogger } from './middleware/requestLogger'; // Changed import to named export
+import { requestLogger } from './middleware/requestLogger';
+import { MonitoringService } from './services/monitoringService';
 import routes from './routes';
 import swaggerUi from 'swagger-ui-express';
 import swaggerDocument from '../docs/swagger.json';
 
 const app = express();
 
+app.use(
+  cors({
+    origin: ['http://localhost:5173', 'http://localhost:4200', 'http://localhost:8100'],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  }),
+);
+
 // Rate limiting using Redis
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
+  max: 1000, // Increased limit for admin usage
   message: 'Too many requests from this IP, please try again after 15 minutes',
   standardHeaders: true,
   legacyHeaders: false,
@@ -29,9 +39,14 @@ const limiter = rateLimit({
 
 // Middlewares
 app.use(limiter);
+app.use(MonitoringService.metricsMiddleware.bind(MonitoringService));
 app.use(requestLogger);
-app.use(helmet());
-app.use(cors());
+app.use(
+  helmet({
+    crossOriginResourcePolicy: false,
+  }),
+);
+
 app.use(compression());
 app.use(
   express.json({
@@ -56,10 +71,18 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 app.get('/api/health', (req, res) => {
   res.status(200).json({
     status: 'success',
-    message: 'Djangui API is healthy',
+    message: 'Kauri API is healthy',
     timestamp: new Date().toISOString(),
   });
 });
+
+// Prometheus Metrics Endpoint
+app.get('/metrics', MonitoringService.getMetrics.bind(MonitoringService));
+
+// Payment Callbacks (Frontend URL handling)
+import { PaymentController } from './controllers/paymentController';
+app.get('/payment/success', PaymentController.handlePaymentSuccess);
+app.get('/payment/cancel', PaymentController.handlePaymentCancel);
 
 // Error handling
 app.use(errorHandler);

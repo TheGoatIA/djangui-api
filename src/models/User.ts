@@ -129,6 +129,25 @@ const userSchema = new Schema<IUserDocument>(
       },
     ],
     fcmTokens: [String],
+    sessions: [
+      {
+        deviceId: String,
+        deviceInfo: {
+          model: String,
+          os: String,
+          osVersion: String,
+          platform: {
+            type: String,
+            enum: ['android', 'ios', 'web'],
+          },
+        },
+        appVersion: String,
+        refreshToken: String,
+        lastActive: { type: Date, default: Date.now },
+        ipAddress: String,
+      },
+    ],
+    // Legacy fields (kept for compatibility during migration if needed)
     deviceInfo: {
       model: String,
       os: String,

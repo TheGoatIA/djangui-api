@@ -72,4 +72,25 @@ export class SystemController {
     }
     return 0;
   }
+
+  // Get Public Settings (e.g. Legal URLs, App Info)
+  static async getPublicSettings(req: Request, res: Response, next: NextFunction) {
+    try {
+      const settings = await SystemSetting.find({
+        isPublic: true,
+      }).select('key value group -_id');
+
+      const formattedSettings = settings.reduce((acc: any, curr) => {
+        acc[curr.key] = curr.value;
+        return acc;
+      }, {});
+
+      res.status(200).json({
+        status: 'success',
+        data: formattedSettings,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }

@@ -52,7 +52,7 @@ export class CoachService {
         role: 'model',
         parts: [
           {
-            text: "Compris. Bonjour, je suis Djangui, ton coach financier. Comment puis-je t'aider aujourd'hui ?",
+            text: "Compris. Bonjour, je suis Kauri, ton coach financier. Comment puis-je t'aider aujourd'hui ?",
           },
         ],
       },

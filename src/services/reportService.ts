@@ -190,4 +190,107 @@ export class ReportService {
 
     return aiReport;
   }
+
+  /**
+   * Get global application stats for the last 24 hours (Admin Report)
+   */
+  static async getGlobalDailyStats() {
+    const now = new Date();
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    const [newUsers, transactions, activeSessions] = await Promise.all([
+      // 1. New Users
+      User.countDocuments({ createdAt: { $gte: yesterday } }),
+
+      // 2. Transactions (Count & Volume)
+      Transaction.aggregate([
+        { $match: { date: { $gte: yesterday } } },
+        {
+          $group: {
+            _id: '$type',
+            count: { $sum: 1 },
+            totalAmount: { $sum: '$amount' },
+          },
+        },
+      ]),
+
+      // 3. Active Users (Users who had session activity in last 24h)
+      User.countDocuments({ 'sessions.lastActive': { $gte: yesterday } }),
+    ]);
+
+    const incomeStats = transactions.find((t) => t._id === 'income') || {
+      count: 0,
+      totalAmount: 0,
+    };
+    const expenseStats = transactions.find((t) => t._id === 'expense') || {
+      count: 0,
+      totalAmount: 0,
+    };
+
+    return {
+      period: {
+        start: yesterday,
+        end: now,
+      },
+      users: {
+        new: newUsers,
+        active: activeSessions,
+      },
+      transactions: {
+        income: {
+          count: incomeStats.count,
+          volume: incomeStats.totalAmount,
+        },
+        expense: {
+          count: expenseStats.count,
+          volume: expenseStats.totalAmount,
+        },
+      },
+    };
+  }
+
+  /**
+   * Check for users with financial balance discrepancies (Audit/Health check)
+   */
+  static async checkFinancialIntegrity() {
+    const activeUsers = await User.find({ isActive: true });
+    const anomalies: any[] = [];
+
+    for (const user of activeUsers) {
+      const stats = await Transaction.aggregate([
+        { $match: { userId: user._id } },
+        {
+          $group: {
+            _id: '$type',
+            total: { $sum: '$amount' },
+          },
+        },
+      ]);
+
+      const income = stats.find((s) => s._id === 'income')?.total || 0;
+      const expense = stats.find((s) => s._id === 'expense')?.total || 0;
+      const calculatedBalance = income - expense;
+
+      // Check if calculated balance matches walletBalance (allowing minor floating point difference)
+      const diff = Math.abs(calculatedBalance - user.walletBalance);
+      if (diff > 0.01) {
+        anomalies.push({
+          userId: user._id,
+          email: user.email,
+          walletBalance: user.walletBalance,
+          calculatedBalance,
+          diff,
+        });
+      }
+    }
+
+    if (anomalies.length > 0) {
+      logger.warn(`Financial Integrity Check: Found ${anomalies.length} anomalies.`);
+      // We'll alert this in CronService
+    } else {
+      logger.info('Financial Integrity Check: No anomalies found.');
+    }
+
+    return anomalies;
+  }
 }
