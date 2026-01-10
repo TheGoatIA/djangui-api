@@ -116,8 +116,7 @@ export class PaymentService {
           email: user.email,
           phone: user.phone,
         },
-        description:
-          type === 'subscription' ? 'Abonnement Kauri Premium' : 'Recharge Portefeuille',
+        description: type === 'subscription' ? 'Abonnement Kauri Premium' : 'Recharge Portefeuille',
         reference,
         callback: `${process.env.FRONTEND_URL}/payment/success?ref=${reference}`,
       });
@@ -181,16 +180,19 @@ export class PaymentService {
         body: `Votre portefeuille a été crédité de ${payment.amount} ${payment.currency}.`,
         data: { type: 'payment', status: 'success', reference },
       });
-
     } else if (payment.type === 'subscription') {
       logger.info(`Upgrading user ${payment.userId} to Premium...`);
-      const updatedUser = await User.findByIdAndUpdate(payment.userId, {
-        'subscription.plan': 'premium',
-        'subscription.status': 'active',
-        'subscription.startDate': new Date(),
-        // Plan for 1 month
-        'subscription.endDate': new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      }, { new: true });
+      const updatedUser = await User.findByIdAndUpdate(
+        payment.userId,
+        {
+          'subscription.plan': 'premium',
+          'subscription.status': 'active',
+          'subscription.startDate': new Date(),
+          // Plan for 1 month
+          'subscription.endDate': new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        },
+        { new: true },
+      );
 
       logger.info(`User upgrade result: ${updatedUser?.subscription?.plan}`);
 

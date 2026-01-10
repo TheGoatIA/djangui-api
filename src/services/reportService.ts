@@ -55,11 +55,11 @@ export class ReportService {
       savingsRate: Math.max(0, savingsRate),
       budgetHealth: budget
         ? {
-          totalAllocated: budget.totalAllocated,
-          totalSpent: budget.totalSpent,
-          status: budget.status,
-          percentageUsed: (budget.totalSpent / budget.totalAllocated) * 100,
-        }
+            totalAllocated: budget.totalAllocated,
+            totalSpent: budget.totalSpent,
+            status: budget.status,
+            percentageUsed: (budget.totalSpent / budget.totalAllocated) * 100,
+          }
         : null,
       currency: user?.currency || 'XAF',
     };
@@ -218,8 +218,14 @@ export class ReportService {
       User.countDocuments({ 'sessions.lastActive': { $gte: yesterday } }),
     ]);
 
-    const incomeStats = transactions.find((t) => t._id === 'income') || { count: 0, totalAmount: 0 };
-    const expenseStats = transactions.find((t) => t._id === 'expense') || { count: 0, totalAmount: 0 };
+    const incomeStats = transactions.find((t) => t._id === 'income') || {
+      count: 0,
+      totalAmount: 0,
+    };
+    const expenseStats = transactions.find((t) => t._id === 'expense') || {
+      count: 0,
+      totalAmount: 0,
+    };
 
     return {
       period: {

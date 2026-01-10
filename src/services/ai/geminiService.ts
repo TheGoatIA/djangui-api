@@ -8,22 +8,22 @@ import AIUsage from '../../models/AIUsage';
 // Pricing Constants (Cost per 1M tokens) - Updated Jan 2026
 const PRICING: Record<string, { input: number; output: number }> = {
   // Legacy
-  'gemini-1.5-flash': { input: 0.075, output: 0.30 }, // Approximate based on Flash-Lite/Previous trends
-  'gemini-1.5-pro': { input: 3.50, output: 10.50 },
+  'gemini-1.5-flash': { input: 0.075, output: 0.3 }, // Approximate based on Flash-Lite/Previous trends
+  'gemini-1.5-pro': { input: 3.5, output: 10.5 },
 
   // Flash Series
-  'gemini-2.0-flash': { input: 0.10, output: 0.40 },
-  'gemini-2.0-flash-lite': { input: 0.075, output: 0.30 }, // "Votre modèle le plus petit"
-  'gemini-2.5-flash': { input: 0.30, output: 2.50 }, // Preview Pricing
-  'gemini-2.5-flash-lite': { input: 0.10, output: 0.40 },
-  'gemini-3-flash-preview': { input: 0.50, output: 3.00 },
+  'gemini-2.0-flash': { input: 0.1, output: 0.4 },
+  'gemini-2.0-flash-lite': { input: 0.075, output: 0.3 }, // "Votre modèle le plus petit"
+  'gemini-2.5-flash': { input: 0.3, output: 2.5 }, // Preview Pricing
+  'gemini-2.5-flash-lite': { input: 0.1, output: 0.4 },
+  'gemini-3-flash-preview': { input: 0.5, output: 3.0 },
 
   // Pro Series
-  'gemini-2.5-pro': { input: 1.25, output: 10.00 },
-  'gemini-3-pro-preview': { input: 2.00, output: 12.00 },
+  'gemini-2.5-pro': { input: 1.25, output: 10.0 },
+  'gemini-3-pro-preview': { input: 2.0, output: 12.0 },
 
   // Default Fallback
-  'default': { input: 0.50, output: 1.00 }
+  default: { input: 0.5, output: 1.0 },
 };
 
 export class GeminiService {
@@ -52,7 +52,7 @@ export class GeminiService {
     usageMetadata: any,
     durationMs: number,
     status: 'success' | 'failure' = 'success',
-    errorMessage?: string
+    errorMessage?: string,
   ) {
     try {
       const promptTokens = usageMetadata?.promptTokenCount || 0;
@@ -74,7 +74,7 @@ export class GeminiService {
         cost: totalCost,
         durationMs,
         status,
-        errorMessage
+        errorMessage,
       });
     } catch (err) {
       logger.error(`Failed to save AI usage log: ${err}`);
@@ -146,7 +146,7 @@ export class GeminiService {
       chat.sendMessage = async (message: string | Array<string | any>) => {
         const startTime = Date.now();
         try {
-          // Calculate input tokens implicitly? 
+          // Calculate input tokens implicitly?
           // Gemini API usageMetadata in response includes total prompt tokens (history + new message)
 
           const result = await originalSendMessage(message);

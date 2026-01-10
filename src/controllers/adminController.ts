@@ -34,9 +34,9 @@ export class AdminController {
             promptTokens: { $sum: '$promptTokens' },
             completionTokens: { $sum: '$completionTokens' },
             totalCalls: { $sum: 1 },
-            avgLatency: { $avg: '$durationMs' }
-          }
-        }
+            avgLatency: { $avg: '$durationMs' },
+          },
+        },
       ]);
 
       // 2. Cost by Model
@@ -45,10 +45,10 @@ export class AdminController {
           $group: {
             _id: '$modelName',
             cost: { $sum: '$cost' },
-            count: { $sum: 1 }
-          }
+            count: { $sum: 1 },
+          },
         },
-        { $sort: { cost: -1 } }
+        { $sort: { cost: -1 } },
       ]);
 
       // 3. Top Users by Cost
@@ -58,8 +58,8 @@ export class AdminController {
           $group: {
             _id: '$userId',
             totalCost: { $sum: '$cost' },
-            totalCalls: { $sum: 1 }
-          }
+            totalCalls: { $sum: 1 },
+          },
         },
         { $sort: { totalCost: -1 } },
         { $limit: 10 },
@@ -68,8 +68,8 @@ export class AdminController {
             from: 'users',
             localField: '_id',
             foreignField: '_id',
-            as: 'user'
-          }
+            as: 'user',
+          },
         },
         { $unwind: '$user' },
         {
@@ -78,9 +78,9 @@ export class AdminController {
             firstName: '$user.firstName',
             lastName: '$user.lastName',
             totalCost: 1,
-            totalCalls: 1
-          }
-        }
+            totalCalls: 1,
+          },
+        },
       ]);
 
       res.status(200).json({
@@ -88,8 +88,8 @@ export class AdminController {
         data: {
           totals: totalStats[0] || { totalCost: 0, totalTokens: 0, totalCalls: 0 },
           models: modelStats,
-          topUsers: userStats
-        }
+          topUsers: userStats,
+        },
       });
     } catch (error) {
       next(error);
@@ -117,7 +117,7 @@ export class AdminController {
         total,
         page,
         totalPages: Math.ceil(total / limit),
-        data: logs
+        data: logs,
       });
     } catch (error) {
       next(error);
@@ -250,7 +250,10 @@ export class AdminController {
 
       if (!fs.existsSync(filePath)) {
         return next(
-          new AppError(`Log file not found: ${filename} (Aliases tried: combined.log -> today)`, 404),
+          new AppError(
+            `Log file not found: ${filename} (Aliases tried: combined.log -> today)`,
+            404,
+          ),
         );
       }
 
@@ -349,17 +352,17 @@ export class AdminController {
             },
             actual: {
               $sum: {
-                $cond: [{ $eq: ['$status', 'completed'] }, '$amount', 0]
-              }
+                $cond: [{ $eq: ['$status', 'completed'] }, '$amount', 0],
+              },
             },
             planned: {
               $sum: {
-                $cond: [{ $eq: ['$status', 'pending'] }, '$amount', 0]
-              }
-            }
-          }
+                $cond: [{ $eq: ['$status', 'pending'] }, '$amount', 0],
+              },
+            },
+          },
         },
-        { $sort: { '_id.date': 1 } }
+        { $sort: { '_id.date': 1 } },
       ]);
 
       // Fill missing days
@@ -368,12 +371,12 @@ export class AdminController {
       for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
         const dateStr = d.toISOString().split('T')[0];
         const dayName = days[d.getDay()];
-        const found = chartAggregation.find(c => c._id.date === dateStr);
+        const found = chartAggregation.find((c) => c._id.date === dateStr);
         filledChartData.push({
           name: dayName,
           date: dateStr,
           actual: found ? found.actual : 0,
-          planned: found ? found.planned : 0
+          planned: found ? found.planned : 0,
         });
       }
 
@@ -387,7 +390,7 @@ export class AdminController {
           },
           financials: transactionsStats,
           system: systemHealth,
-          chartData: filledChartData
+          chartData: filledChartData,
         },
       });
     } catch (error) {
@@ -467,9 +470,7 @@ export class AdminController {
       }
 
       // Fetch recent transactions for this user
-      const transactions = await Transaction.find({ userId: id })
-        .sort({ date: -1 })
-        .limit(10);
+      const transactions = await Transaction.find({ userId: id }).sort({ date: -1 }).limit(10);
 
       // Calculate total volume for this user
       const volumeStats = await Transaction.aggregate([
@@ -560,9 +561,9 @@ export class AdminController {
           return next(new AppError('userIds array is required for specific targeting', 400));
         }
         // We don't query DB here, loop below handles individual sends (or could fetch valid ones)
-        // But logic below expects a list of IDs for promise mapping if we stick to old style, 
-        // OR we query users to get their tokens if we want to bulk send? 
-        // The service expects `sendToUser(id, payload)`. 
+        // But logic below expects a list of IDs for promise mapping if we stick to old style,
+        // OR we query users to get their tokens if we want to bulk send?
+        // The service expects `sendToUser(id, payload)`.
         // Let's just pass the IDs.
         targetUsers = userIds.map((id: string) => ({ _id: id }));
       } else if (userIds && userIds.length > 0) {
@@ -588,11 +589,11 @@ export class AdminController {
           case 'android':
             query = {
               $or: [
-                { 'deviceInfo.platform': 'android' }, // Legacy/Root 
+                { 'deviceInfo.platform': 'android' }, // Legacy/Root
                 { 'deviceInfo.platform': 'Android' },
-                { 'sessions.deviceInfo.platform.type': 'android' } // Session based
+                { 'sessions.deviceInfo.platform.type': 'android' }, // Session based
               ],
-              fcmTokens: { $exists: true, $not: { $size: 0 } }
+              fcmTokens: { $exists: true, $not: { $size: 0 } },
             };
             break;
 
@@ -601,9 +602,9 @@ export class AdminController {
               $or: [
                 { 'deviceInfo.platform': 'ios' },
                 { 'deviceInfo.platform': 'iOS' },
-                { 'sessions.deviceInfo.platform.type': 'ios' }
+                { 'sessions.deviceInfo.platform.type': 'ios' },
               ],
-              fcmTokens: { $exists: true, $not: { $size: 0 } }
+              fcmTokens: { $exists: true, $not: { $size: 0 } },
             };
             break;
 
@@ -611,12 +612,17 @@ export class AdminController {
             query = {
               'subscription.plan': 'premium',
               'subscription.status': 'active',
-              fcmTokens: { $exists: true, $not: { $size: 0 } }
+              fcmTokens: { $exists: true, $not: { $size: 0 } },
             };
             break;
 
           default:
-            return next(new AppError('Invalid notification type. Use: specific, all, android, ios, premium', 400));
+            return next(
+              new AppError(
+                'Invalid notification type. Use: specific, all, android, ios, premium',
+                400,
+              ),
+            );
         }
 
         // Fetch only IDs
@@ -637,7 +643,7 @@ export class AdminController {
       // Helper function to chunk array
       const chunkArray = (arr: any[], size: number) => {
         return Array.from({ length: Math.ceil(arr.length / size) }, (v, i) =>
-          arr.slice(i * size, i * size + size)
+          arr.slice(i * size, i * size + size),
         );
       };
 
@@ -678,8 +684,6 @@ export class AdminController {
       next(error);
     }
   }
-
-
 
   // --- CHALLENGES MANAGEMENT ---
   static async createChallenge(req: Request, res: Response, next: NextFunction) {
@@ -840,13 +844,16 @@ export class AdminController {
       const limit = parseInt(req.query.limit as string) || 20;
       const skip = (page - 1) * limit;
 
-      const goals = await import('../models/SavingGoal').then(m => m.default.find()
-        .populate('userId', 'email firstName lastName')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit));
+      const goals = await import('../models/SavingGoal').then((m) =>
+        m.default
+          .find()
+          .populate('userId', 'email firstName lastName')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit),
+      );
 
-      const total = await import('../models/SavingGoal').then(m => m.default.countDocuments());
+      const total = await import('../models/SavingGoal').then((m) => m.default.countDocuments());
 
       res.status(200).json({
         status: 'success',
@@ -863,7 +870,9 @@ export class AdminController {
 
   static async deleteGoal(req: Request, res: Response, next: NextFunction) {
     try {
-      const goal = await import('../models/SavingGoal').then(m => m.default.findByIdAndDelete(req.params.id));
+      const goal = await import('../models/SavingGoal').then((m) =>
+        m.default.findByIdAndDelete(req.params.id),
+      );
       if (!goal) return next(new AppError('No goal found with that ID', 404));
       res.status(204).json({ status: 'success', data: null });
     } catch (error) {
@@ -881,27 +890,29 @@ export class AdminController {
       // MongoDB Stats
       const dbStats = await mongoose.connection.db.command({ dbStats: 1 });
       const collections = await mongoose.connection.db.listCollections().toArray();
-      const collectionStats = await Promise.all(collections.map(async (col) => {
-        try {
-          const stats = await mongoose.connection.db!.command({ collStats: col.name });
-          return {
-            name: col.name,
-            count: stats.count,
-            size: stats.size,
-            avgObjSize: stats.avgObjSize,
-            storageSize: stats.storageSize,
-          };
-        } catch (err) {
-          return {
-            name: col.name,
-            count: 0,
-            size: 0,
-            avgObjSize: 0,
-            storageSize: 0,
-            error: 'Stats unavailable'
-          };
-        }
-      }));
+      const collectionStats = await Promise.all(
+        collections.map(async (col) => {
+          try {
+            const stats = await mongoose.connection.db!.command({ collStats: col.name });
+            return {
+              name: col.name,
+              count: stats.count,
+              size: stats.size,
+              avgObjSize: stats.avgObjSize,
+              storageSize: stats.storageSize,
+            };
+          } catch (err) {
+            return {
+              name: col.name,
+              count: 0,
+              size: 0,
+              avgObjSize: 0,
+              storageSize: 0,
+              error: 'Stats unavailable',
+            };
+          }
+        }),
+      );
 
       // Redis Stats
       let redisInfo = {};
@@ -930,10 +941,10 @@ export class AdminController {
             storageSize: dbStats.storageSize,
             indexes: dbStats.indexes,
             indexSize: dbStats.indexSize,
-            collections: collectionStats
+            collections: collectionStats,
           },
-          redis: redisInfo
-        }
+          redis: redisInfo,
+        },
       });
     } catch (error) {
       next(error);
@@ -946,7 +957,7 @@ export class AdminController {
       const limit = parseInt(req.query.limit as string) || 20;
       const skip = (page - 1) * limit;
 
-      const ConnectionLog = await import('../models/ConnectionLog').then(m => m.default);
+      const ConnectionLog = await import('../models/ConnectionLog').then((m) => m.default);
 
       const logs = await ConnectionLog.find()
         .populate('userId', 'email firstName lastName')
@@ -979,10 +990,7 @@ export class AdminController {
       const exportData: Record<string, any[]> = {};
 
       for (const col of collections) {
-        const documents = await mongoose.connection.db
-          .collection(col.name)
-          .find({})
-          .toArray();
+        const documents = await mongoose.connection.db.collection(col.name).find({}).toArray();
         exportData[col.name] = documents;
       }
 

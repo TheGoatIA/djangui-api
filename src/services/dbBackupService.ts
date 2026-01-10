@@ -52,7 +52,7 @@ export class DbBackupService {
         `<h3>Rapport de Sauvegarde</h3>
          <p>La sauvegarde de la base de données a été effectuée et stockée sur le serveur.</p>
          <p><strong>Fichier :</strong> ${path.basename(archivePath)}</p>
-         ${statsHtml}`
+         ${statsHtml}`,
       );
 
       return { success: true, path: archivePath, stats };
@@ -61,7 +61,7 @@ export class DbBackupService {
       await EmailService.sendEmail(
         this.ADMIN_EMAIL,
         '🚨 ÉCHEC de la sauvegarde BD',
-        `L'erreur suivante est survenue lors de la sauvegarde : ${error.message}`
+        `L'erreur suivante est survenue lors de la sauvegarde : ${error.message}`,
       );
       throw error;
     }

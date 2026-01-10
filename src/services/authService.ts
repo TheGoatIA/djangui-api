@@ -86,7 +86,6 @@ export class AuthService {
     return { user: newUser, tokens };
   }
 
-
   static async firebaseAuth(idToken: string) {
     try {
       // 1) Verify Firebase ID Token

@@ -34,21 +34,16 @@ export class TransactionService {
         userId,
       });
 
-
       await transaction.save({ session });
 
       // Update User Wallet Balance
       if (data.type === 'income') {
-        await User.findByIdAndUpdate(
-          userId,
-          { $inc: { walletBalance: data.amount } },
-          { session }
-        );
+        await User.findByIdAndUpdate(userId, { $inc: { walletBalance: data.amount } }, { session });
       } else if (data.type === 'expense') {
         await User.findByIdAndUpdate(
           userId,
           { $inc: { walletBalance: -data.amount } },
-          { session }
+          { session },
         );
       }
 
@@ -181,24 +176,40 @@ export class TransactionService {
 
       // Revert old balance impact
       if (oldTransaction.type === 'income') {
-        await User.findByIdAndUpdate(userId, { $inc: { walletBalance: -oldTransaction.amount } }, { session });
+        await User.findByIdAndUpdate(
+          userId,
+          { $inc: { walletBalance: -oldTransaction.amount } },
+          { session },
+        );
       } else if (oldTransaction.type === 'expense') {
-        await User.findByIdAndUpdate(userId, { $inc: { walletBalance: oldTransaction.amount } }, { session });
+        await User.findByIdAndUpdate(
+          userId,
+          { $inc: { walletBalance: oldTransaction.amount } },
+          { session },
+        );
       }
 
       // Apply changes
       const updatedTransaction = await Transaction.findByIdAndUpdate(
         id,
         { $set: data },
-        { new: true, runValidators: true, session }
+        { new: true, runValidators: true, session },
       );
 
       // Apply new balance impact
       if (updatedTransaction) {
         if (updatedTransaction.type === 'income') {
-          await User.findByIdAndUpdate(userId, { $inc: { walletBalance: updatedTransaction.amount } }, { session });
+          await User.findByIdAndUpdate(
+            userId,
+            { $inc: { walletBalance: updatedTransaction.amount } },
+            { session },
+          );
         } else if (updatedTransaction.type === 'expense') {
-          await User.findByIdAndUpdate(userId, { $inc: { walletBalance: -updatedTransaction.amount } }, { session });
+          await User.findByIdAndUpdate(
+            userId,
+            { $inc: { walletBalance: -updatedTransaction.amount } },
+            { session },
+          );
         }
       }
 

@@ -15,12 +15,14 @@ import swaggerDocument from '../docs/swagger.json';
 
 const app = express();
 
-app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:4200', 'http://localhost:8100'],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
-}));
+app.use(
+  cors({
+    origin: ['http://localhost:5173', 'http://localhost:4200', 'http://localhost:8100'],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  }),
+);
 
 // Rate limiting using Redis
 const limiter = rateLimit({
@@ -42,7 +44,7 @@ app.use(requestLogger);
 app.use(
   helmet({
     crossOriginResourcePolicy: false,
-  })
+  }),
 );
 
 app.use(compression());

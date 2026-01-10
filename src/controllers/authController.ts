@@ -283,7 +283,7 @@ export class AuthController {
   static async logConnection(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const { ip, country, city, device } = req.body;
-      const ConnectionLog = await import('../models/ConnectionLog').then(m => m.default);
+      const ConnectionLog = await import('../models/ConnectionLog').then((m) => m.default);
 
       await ConnectionLog.create({
         userId: req.user._id,

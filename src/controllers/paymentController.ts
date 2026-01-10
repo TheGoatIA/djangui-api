@@ -91,7 +91,8 @@ export class PaymentController {
       const user = await PaymentService.cancelSubscription(req.user._id);
       res.status(200).json({
         success: true,
-        message: 'Subscription cancelled successfully. You will remain premium until the end of your billing cycle.',
+        message:
+          'Subscription cancelled successfully. You will remain premium until the end of your billing cycle.',
         data: user.subscription,
       });
     } catch (err) {

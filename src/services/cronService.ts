@@ -250,14 +250,18 @@ export class CronService {
               </tr>
             </thead>
             <tbody>
-              ${anomalies.map(a => `
+              ${anomalies
+                .map(
+                  (a) => `
                 <tr>
                   <td style="padding: 8px; border: 1px solid #ddd;">${a.email}</td>
                   <td style="padding: 8px; border: 1px solid #ddd;">${a.walletBalance}</td>
                   <td style="padding: 8px; border: 1px solid #ddd;">${a.calculatedBalance}</td>
                   <td style="padding: 8px; border: 1px solid #ddd; color: red;">${a.diff.toFixed(2)}</td>
                 </tr>
-              `).join('')}
+              `,
+                )
+                .join('')}
             </tbody>
           </table>
         `;
@@ -266,7 +270,7 @@ export class CronService {
           adminEmail,
           `🚨 ANOMALIE FINANCIÈRE - ${new Date().toLocaleDateString()}`,
           'Des écarts de solde ont été détectés.',
-          html
+          html,
         );
       }
     } catch (error: any) {

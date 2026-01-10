@@ -236,4 +236,3 @@ export interface ICountryChangeRequest {
   createdAt: Date;
   updatedAt: Date;
 }
-

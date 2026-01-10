@@ -41,7 +41,8 @@ const consoleFormat = winston.format.combine(
   winston.format.colorize({ all: true }),
   winston.format.printf(
     (info) =>
-      `${info.timestamp} ${info.level}: ${info.message}${info.userId ? ` [User: ${info.userId}]` : ''
+      `${info.timestamp} ${info.level}: ${info.message}${
+        info.userId ? ` [User: ${info.userId}]` : ''
       }${info.context ? ` [Context: ${info.context}]` : ''}`,
   ),
 );
@@ -81,7 +82,9 @@ if (process.env.GRAYLOG_HOST) {
       silent: false,
       handleExceptions: true,
       graylog: {
-        servers: [{ host: process.env.GRAYLOG_HOST, port: parseInt(process.env.GRAYLOG_PORT || '12201') }],
+        servers: [
+          { host: process.env.GRAYLOG_HOST, port: parseInt(process.env.GRAYLOG_PORT || '12201') },
+        ],
         hostname: 'kauri-api',
         facility: 'Node.js',
         bufferSize: 1400,
