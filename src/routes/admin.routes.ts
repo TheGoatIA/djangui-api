@@ -1,5 +1,7 @@
 import express from 'express';
 import { AdminController } from '../controllers/adminController';
+import { CountryController } from '../controllers/countryController';
+import { CountryRequestController } from '../controllers/countryRequestController';
 import { protect, restrictTo } from '../middleware/auth';
 
 const router = express.Router();
@@ -26,6 +28,15 @@ router.delete('/challenges/:id', AdminController.deleteChallenge);
 // Settings
 router.get('/settings', AdminController.getSystemSettings);
 router.patch('/settings', AdminController.updateSystemSetting);
+
+// Country Management
+router.get('/countries', CountryController.getAllCountries);
+router.post('/countries', CountryController.addCountry);
+router.patch('/countries/:id', CountryController.updateCountry);
+
+// Country Change Requests
+router.get('/country-requests', CountryRequestController.listRequests);
+router.patch('/country-requests/:id/process', CountryRequestController.processRequest);
 
 // Goals Management
 router.get('/goals', AdminController.getAllGoals);

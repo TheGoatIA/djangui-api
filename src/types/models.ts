@@ -215,3 +215,25 @@ export interface ISavingGoal {
   createdAt: Date;
   updatedAt: Date;
 }
+
+export interface ICountry {
+  code: string; // ISO 3166-1 alpha-2
+  name: string;
+  currency: string;
+  currencySymbol: string;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ICountryChangeRequest {
+  userId: mongoose.Types.ObjectId;
+  requestedCountryCode: string;
+  status: 'pending' | 'approved' | 'rejected';
+  rejectionReason?: string;
+  adminId?: mongoose.Types.ObjectId;
+  processedAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+

@@ -606,6 +606,76 @@
                         "type": "string"
                     }
                 }
+            },
+            "Country": {
+                "type": "object",
+                "properties": {
+                    "_id": {
+                        "type": "string"
+                    },
+                    "code": {
+                        "type": "string",
+                        "example": "CM"
+                    },
+                    "name": {
+                        "type": "string",
+                        "example": "Cameroun"
+                    },
+                    "currency": {
+                        "type": "string",
+                        "example": "XAF"
+                    },
+                    "currencySymbol": {
+                        "type": "string",
+                        "example": "FCFA"
+                    },
+                    "isActive": {
+                        "type": "boolean",
+                        "example": true
+                    }
+                }
+            },
+            "CountryChangeRequest": {
+                "type": "object",
+                "properties": {
+                    "_id": {
+                        "type": "string"
+                    },
+                    "userId": {
+                        "type": "string"
+                    },
+                    "requestedCountryCode": {
+                        "type": "string",
+                        "example": "US"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "pending",
+                            "approved",
+                            "rejected"
+                        ],
+                        "example": "pending"
+                    },
+                    "rejectionReason": {
+                        "type": "string"
+                    },
+                    "adminId": {
+                        "type": "string"
+                    },
+                    "processedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
             }
         }
     },
@@ -1400,6 +1470,213 @@
                 }
             }
         },
+        "/v1/admin/countries": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "List all countries (including inactive)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "countries": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/Country"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Add a new supported country",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "code",
+                                    "name",
+                                    "currency"
+                                ],
+                                "properties": {
+                                    "code": {
+                                        "type": "string"
+                                    },
+                                    "name": {
+                                        "type": "string"
+                                    },
+                                    "currency": {
+                                        "type": "string"
+                                    },
+                                    "currencySymbol": {
+                                        "type": "string"
+                                    },
+                                    "isActive": {
+                                        "type": "boolean"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Created"
+                    }
+                }
+            }
+        },
+        "/v1/admin/countries/{id}": {
+            "patch": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Update country details",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Country"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Updated"
+                    }
+                }
+            }
+        },
+        "/v1/admin/country-requests": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "List all country change requests",
+                "parameters": [
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "pending",
+                                "approved",
+                                "rejected"
+                            ]
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "requests": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/CountryChangeRequest"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/admin/country-requests/{id}/process": {
+            "patch": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Approve or Reject a country change request",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "status"
+                                ],
+                                "properties": {
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "approved",
+                                            "rejected"
+                                        ]
+                                    },
+                                    "rejectionReason": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Processed"
+                    }
+                }
+            }
+        },
         "/v1/admin/users/{id}/status": {
             "patch": {
                 "tags": [
@@ -1486,6 +1763,42 @@
                 "responses": {
                     "200": {
                         "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/system/countries": {
+            "get": {
+                "tags": [
+                    "System"
+                ],
+                "summary": "Get supported countries",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "countries": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/Country"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -2170,6 +2483,55 @@
                 "responses": {
                     "200": {
                         "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/auth/request-country-change": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Request to change residence country",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "countryCode"
+                                ],
+                                "properties": {
+                                    "countryCode": {
+                                        "type": "string",
+                                        "example": "US"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Request submitted",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object"
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

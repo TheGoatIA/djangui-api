@@ -7,6 +7,7 @@ import crypto from 'crypto';
 import { EmailService } from './emailService';
 import { SlackService } from './slackService';
 import { AuditService } from './auditService';
+import Country from '../models/Country';
 
 const signToken = (id: string, secret: string, expiresIn: any) => {
   return jwt.sign({ id }, secret, {
@@ -37,7 +38,19 @@ export class AuthService {
       throw new AppError('Email already in use', 409);
     }
 
-    const newUser = await User.create(userData);
+    // Find country to set correct currency
+    const countryCode = (userData.country || 'CM').toUpperCase();
+    const country = await Country.findOne({ code: countryCode, isActive: true });
+
+    if (!country && userData.country) {
+      throw new AppError("Ce pays n'est pas encore supporté.", 400);
+    }
+
+    const newUser = await User.create({
+      ...userData,
+      country: countryCode,
+      currency: country ? country.currency : 'XAF',
+    });
 
     // Generate verification token
     const verificationToken = crypto.randomBytes(32).toString('hex');
@@ -72,6 +85,7 @@ export class AuthService {
 
     return { user: newUser, tokens };
   }
+
 
   static async firebaseAuth(idToken: string) {
     try {
