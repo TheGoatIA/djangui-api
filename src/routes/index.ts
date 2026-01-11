@@ -18,6 +18,9 @@ import adminRoutes from './admin.routes';
 import systemRoutes from './system.routes';
 import notificationRoutes from './notification.routes';
 import supportRoutes from './support.routes';
+import voiceRoutes from './voice.routes';
+import forecastRoutes from './forecast.routes';
+import simulatorRoutes from './simulator.routes';
 
 const router = Router();
 
@@ -39,6 +42,9 @@ router.use('/reports', reportRoutes);
 router.use('/upload', uploadRoutes);
 router.use('/investments', investmentRoutes);
 router.use('/emails', emailRoutes);
+router.use('/voice', voiceRoutes);
+router.use('/forecast', forecastRoutes);
+router.use('/simulator', simulatorRoutes);
 
 // Webhooks
 router.post('/webhooks/stripe', WebhookController.stripeWebhook);

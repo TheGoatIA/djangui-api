@@ -17,7 +17,7 @@ const app = express();
 
 app.use(
   cors({
-    origin: ['http://localhost:5173', 'http://localhost:4200', 'http://localhost:8100'],
+    origin: '*', // Allow all origins for easier testing on real devices
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],

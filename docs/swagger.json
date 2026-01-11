@@ -3498,6 +3498,56 @@
                 }
             }
         },
+        "/v1/voice/process": {
+            "post": {
+                "tags": [
+                    "AI Tools"
+                ],
+                "summary": "Kauri Voice (Gemini 2.0)",
+                "description": "Process an audio message to extract financial transaction data. Requires Premium subscription.",
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "audio": {
+                                        "type": "string",
+                                        "format": "binary",
+                                        "description": "Audio file (mp3, m4a, wav, webm...)"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "amount": 5000,
+                                        "category": "Transport",
+                                        "description": "Plein d'essence Toyota",
+                                        "type": "expense",
+                                        "date": "2026-01-10T15:00:00Z"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (No file or invalid format)"
+                    },
+                    "403": {
+                        "description": "Premium Only"
+                    }
+                }
+            }
+        },
         "/v1/sms/parse": {
             "post": {
                 "tags": [
@@ -3561,17 +3611,125 @@
                         }
                     },
                     "responses": {
-                        "201": {
-                            "description": "Created",
+                        "200": {
+                            "description": "OK",
                             "content": {
                                 "application/json": {
                                     "example": {
                                         "success": true,
-                                        "data": {
-                                            "processed": 10,
-                                            "imported": 8,
-                                            "failed": 2
-                                        }
+                                        "data": [
+                                            {
+                                                "content": "Transfert de 5000 XAF reçu.",
+                                                "success": true,
+                                                "transaction": {
+                                                    "_id": "60d5ec...",
+                                                    "amount": 5000
+                                                }
+                                            },
+                                            {
+                                                "content": "Message non financier",
+                                                "success": false,
+                                                "reason": "Parsing failed"
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/forecast/balance": {
+            "get": {
+                "tags": [
+                    "AI Tools"
+                ],
+                "summary": "Cashflow Forecast (Premium)",
+                "description": "30-day balance projection based on spending patterns. Premium only.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "forecast": [
+                                            {
+                                                "date": "2026-01-11",
+                                                "balance": 150000
+                                            },
+                                            {
+                                                "date": "2026-01-12",
+                                                "balance": 145000
+                                            }
+                                        ],
+                                        "insights": [
+                                            "Votre solde tend à diminuer plus vite le weekend."
+                                        ],
+                                        "criticalAlert": null
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Premium Only"
+                    }
+                }
+            }
+        },
+        "/v1/simulator/what-if": {
+            "post": {
+                "tags": [
+                    "AI Tools"
+                ],
+                "summary": "What If? Simulator (Premium)",
+                "description": "Simulate financial decisions (buying a car, etc.). Premium only.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "scenario": {
+                                        "type": "string",
+                                        "example": "Acheter une voiture de 5M avec un prêt."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "scenarioName": "Prêt Auto",
+                                        "immediateImpact": -500000,
+                                        "monthlyImpact": -75000,
+                                        "comparison": {
+                                            "savingsRate": {
+                                                "before": 25,
+                                                "after": 10
+                                            }
+                                        },
+                                        "analysis": "C'est un projet ambitieux qui réduira votre épargne mensuelle de 60%..."
                                     }
                                 }
                             }
@@ -3775,9 +3933,18 @@
                                 "example": {
                                     "success": true,
                                     "data": {
-                                        "title": "Analyse Janvier",
-                                        "summary": "Bien joué.",
-                                        "health_score": 85
+                                        "title": "Bilan de Janvier : Une belle progression !",
+                                        "summary": "Ce mois-ci, vous avez bien géré votre budget alimentation avec une économie de 10%. Cependant, attention aux loisirs.",
+                                        "topInsights": [
+                                            "Budget Alimentation maîtrisé",
+                                            "Objectif 'Voyage' avancé de 15%"
+                                        ],
+                                        "recommendations": [
+                                            "Augmentez votre épargne de 5% ce mois-ci",
+                                            "Réduisez les commandes Uber Eats",
+                                            "Vérifiez vos abonnements inutiles"
+                                        ],
+                                        "tone": "Encourageant"
                                     }
                                 }
                             }

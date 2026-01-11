@@ -9,6 +9,8 @@ import { DbBackupService } from './dbBackupService';
 import { ReportService } from './reportService';
 import { EmailService } from './emailService';
 import { ArchiveService } from './archiveService';
+import { ForecastService } from './ai/forecastService';
+import SavingGoal from '../models/SavingGoal';
 
 export class CronService {
   /**
@@ -18,6 +20,11 @@ export class CronService {
     // Daily at 9:00 AM: Check for low balance
     cron.schedule('0 9 * * *', () => {
       this.checkLowBalances();
+    });
+
+    // Daily at 9:00 PM: Reminder to enter transactions
+    cron.schedule('0 21 * * *', () => {
+      this.sendDailyTransactionReminders();
     });
 
     // Weekly on Monday at 8:00 AM: Financial summary
@@ -43,6 +50,26 @@ export class CronService {
     // Monthly on the 1st at 04:00 AM: Data Archiving
     cron.schedule('0 4 1 * *', () => {
       this.runDataArchiving();
+    });
+
+    // Daily at 10:00 AM: Inactivity Reminder (3 days)
+    cron.schedule('0 10 * * *', () => {
+      this.checkUserInactivity();
+    });
+
+    // Monthly on the 1st at 10:00 AM: Monthly Report Reminder
+    cron.schedule('0 10 1 * *', () => {
+      this.sendMonthlyReportReminders();
+    });
+
+    // Daily at 11:00 AM: Overdraft Prevention (Premium)
+    cron.schedule('0 11 * * *', () => {
+      this.runOverdraftPrevention();
+    });
+
+    // Daily at 08:00 AM: Goal Progress Reminder
+    cron.schedule('0 8 * * *', () => {
+      this.sendDailyGoalProgress();
     });
 
     logger.info('Cron jobs initialized successfully');
@@ -251,8 +278,8 @@ export class CronService {
             </thead>
             <tbody>
               ${anomalies
-                .map(
-                  (a) => `
+            .map(
+              (a) => `
                 <tr>
                   <td style="padding: 8px; border: 1px solid #ddd;">${a.email}</td>
                   <td style="padding: 8px; border: 1px solid #ddd;">${a.walletBalance}</td>
@@ -260,8 +287,8 @@ export class CronService {
                   <td style="padding: 8px; border: 1px solid #ddd; color: red;">${a.diff.toFixed(2)}</td>
                 </tr>
               `,
-                )
-                .join('')}
+            )
+            .join('')}
             </tbody>
           </table>
         `;
@@ -287,6 +314,123 @@ export class CronService {
       logger.info('Monthly data archiving job completed');
     } catch (error: any) {
       logger.error(`Error in runDataArchiving job: ${error.message}`);
+    }
+  }
+
+  /**
+   * Send daily reminders to enter transactions at 21h
+   */
+  private static async sendDailyTransactionReminders() {
+    try {
+      const users = await User.find({ isActive: true });
+
+      for (const user of users) {
+        await NotificationService.sendToUser(user._id.toString(), {
+          title: 'Pensée du soir 🌙',
+          body: 'As-tu noté toutes tes dépenses et revenus aujourd’hui ? Prends 1 minute pour garder tes finances à jour !',
+          data: { type: 'DAILY_REMINDER' },
+        });
+      }
+      logger.info(`Daily transaction reminders sent to ${users.length} users`);
+    } catch (error: any) {
+      logger.error(`Error in sendDailyTransactionReminders job: ${error.message}`);
+    }
+  }
+
+  /**
+   * Check for users who haven't logged any transaction in the last 3 days
+   */
+  private static async checkUserInactivity() {
+    try {
+      const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+
+      // Find active users who have no transactions since 3 days ago
+      const inactiveUsers = await User.find({ isActive: true });
+
+      for (const user of inactiveUsers) {
+        const lastTransaction = await Transaction.findOne({ userId: user._id })
+          .sort({ date: -1 })
+          .select('date');
+
+        if (!lastTransaction || lastTransaction.date < threeDaysAgo) {
+          await NotificationService.sendToUser(user._id.toString(), {
+            title: 'Tu nous manques ! 👋',
+            body: "Ça fait 3 jours que tu n'as rien noté. Reviens faire un point sur tes finances !",
+            data: { type: 'INACTIVITY_REMINDER' },
+          });
+        }
+      }
+      logger.info('Inactivity check completed');
+    } catch (error: any) {
+      logger.error(`Error in checkUserInactivity job: ${error.message}`);
+    }
+  }
+
+  /**
+   * Remind users to check their monthly narrative report on the 1st
+   */
+  private static async sendMonthlyReportReminders() {
+    try {
+      const users = await User.find({ isActive: true });
+      for (const user of users) {
+        await NotificationService.sendToUser(user._id.toString(), {
+          title: 'Ton Bilan Mensuel est prêt ! 📊',
+          body: "Découvre ton rapport narratif IA pour voir comment tu as géré tes finances le mois dernier.",
+          data: { type: 'MONTHLY_REPORT_REMINDER' },
+        });
+      }
+      logger.info('Monthly report reminders sent');
+    } catch (error: any) {
+      logger.error(`Error in sendMonthlyReportReminders job: ${error.message}`);
+    }
+  }
+
+  /**
+   * Send daily progress updates for active goals
+   */
+  private static async sendDailyGoalProgress() {
+    try {
+      const activeGoals = await SavingGoal.find({ status: 'active', progress: { $lt: 100 } });
+
+      for (const goal of activeGoals) {
+        await NotificationService.sendToUser(goal.userId.toString(), {
+          title: `Objectif : ${goal.name} 📈`,
+          body: `Tu es à ${goal.progress.toFixed(1)}% de ton objectif ! Un petit effort aujourd'hui ?`,
+          data: { type: 'GOAL_DAILY_PROGRESS', goalId: goal._id.toString() },
+        });
+      }
+      logger.info(`Daily goal progress sent for ${activeGoals.length} goals`);
+    } catch (error: any) {
+      logger.error(`Error in sendDailyGoalProgress job: ${error.message}`);
+    }
+  }
+
+  /**
+   * Proactive overdraft prevention based on forecast (Premium Only)
+   */
+  private static async runOverdraftPrevention() {
+    try {
+      const premiumUsers = await User.find({
+        'subscription.plan': 'premium',
+        'subscription.status': 'active',
+        isActive: true,
+      });
+
+      for (const user of premiumUsers) {
+        // We call the service to get the forecast
+        const result = await ForecastService.getBalanceForecast(user._id.toString());
+
+        if (result && result.criticalAlert) {
+          await NotificationService.sendToUser(user._id.toString(), {
+            title: 'Alerte Trésorerie ! ⚠️',
+            body: `Attention ${user.firstName}, une analyse montre un risque de solde négatif bientôt : ${result.criticalAlert}`,
+            data: { type: 'OVERDRAFT_PREVENTION' },
+          });
+        }
+      }
+      logger.info(`Overdraft prevention job completed for ${premiumUsers.length} premium users`);
+    } catch (error: any) {
+      logger.error(`Error in runOverdraftPrevention job: ${error.message}`);
     }
   }
 }

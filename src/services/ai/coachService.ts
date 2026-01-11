@@ -2,6 +2,8 @@ import Conversation, { IConversation } from '../../models/Conversation';
 import User from '../../models/User';
 import Transaction from '../../models/Transaction';
 import Budget from '../../models/Budget';
+import SavingGoal from '../../models/SavingGoal';
+import UserChallenge from '../../models/UserChallenge';
 import { GeminiService } from './geminiService';
 import { PromptBuilder } from './promptBuilder';
 import { AppError } from '../../middleware/errorHandler';
@@ -22,16 +24,20 @@ export class CoachService {
 
     const conversation = await this.getOrCreateConversation(userId);
 
-    // Get context (recent transactions, current budget)
+    // Get context (recent transactions, current budget, goals, challenges)
     const now = new Date();
-    const transactions = await Transaction.find({ userId }).sort({ date: -1 }).limit(5).lean();
-    const budget = await Budget.findOne({
-      userId,
-      'period.month': now.getMonth() + 1,
-      'period.year': now.getFullYear(),
-    }).lean();
+    const [transactions, budget, goals, userChallenges] = await Promise.all([
+      Transaction.find({ userId }).sort({ date: -1 }).limit(10).lean(),
+      Budget.findOne({
+        userId,
+        'period.month': now.getMonth() + 1,
+        'period.year': now.getFullYear(),
+      }).lean(),
+      SavingGoal.find({ userId, status: 'active' }).lean(),
+      UserChallenge.find({ userId, status: 'active' }).populate('challengeId').lean(),
+    ]);
 
-    const context = { transactions, budget };
+    const context = { transactions, budget, goals, challenges: userChallenges };
     const systemPrompt = PromptBuilder.buildCoachSystemPrompt(user, context);
 
     // Prepare history for Gemini

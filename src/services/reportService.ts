@@ -7,6 +7,8 @@ import { GeminiService } from './ai/geminiService';
 import { PromptBuilder } from './ai/promptBuilder';
 import { RedisService } from './redisService';
 import Investment from '../models/Investment';
+import SavingGoal from '../models/SavingGoal';
+import UserChallenge from '../models/UserChallenge';
 import { AppError } from '../middleware/errorHandler';
 
 export class ReportService {
@@ -55,11 +57,11 @@ export class ReportService {
       savingsRate: Math.max(0, savingsRate),
       budgetHealth: budget
         ? {
-            totalAllocated: budget.totalAllocated,
-            totalSpent: budget.totalSpent,
-            status: budget.status,
-            percentageUsed: (budget.totalSpent / budget.totalAllocated) * 100,
-          }
+          totalAllocated: budget.totalAllocated,
+          totalSpent: budget.totalSpent,
+          status: budget.status,
+          percentageUsed: (budget.totalSpent / budget.totalAllocated) * 100,
+        }
         : null,
       currency: user?.currency || 'XAF',
     };
@@ -160,10 +162,12 @@ export class ReportService {
     const user = await User.findById(userId);
     if (!user) throw new AppError('User not found', 404);
 
-    const [summary, categoryAnalysis, investments] = await Promise.all([
+    const [summary, categoryAnalysis, investments, goals, challenges] = await Promise.all([
       this.getDashboardSummary(userId),
       this.getSpendingAnalysis(userId, month, year),
       Investment.find({ userId, status: 'active' }),
+      SavingGoal.find({ userId, status: 'active' }),
+      UserChallenge.find({ userId, status: 'active' }).populate('challengeId'),
     ]);
 
     const investmentSummary = investments.map((inv) => ({
@@ -179,6 +183,17 @@ export class ReportService {
       summary,
       categoryAnalysis,
       investmentSummary,
+      goals: goals.map((g) => ({
+        name: g.name,
+        progress: g.progress,
+        current: g.currentAmount,
+        target: g.targetAmount,
+      })),
+      challenges: challenges.map((c: any) => ({
+        title: c.challengeId.title,
+        progress: c.progress,
+        type: c.challengeId.type,
+      })),
     };
 
     const prompt = PromptBuilder.buildNarrativeReportPrompt(user as any, reportData);
