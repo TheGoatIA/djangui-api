@@ -7,13 +7,13 @@ services:
       - "5001:5000"
     environment:
       - NODE_ENV=staging
-      - MONGODB_URI=mongodb://mongodb-staging:27017/djangui_staging?replicaSet=rs0
+      - MONGODB_URI=mongodb://mongodb-staging:27017/kauri_staging?replicaSet=rs0
       - REDIS_URL=redis://redis-staging:6379
     depends_on:
       - mongodb-staging
       - redis-staging
     networks:
-      - djangui-staging-network
+      - kauri-staging-network
     volumes:
       - ./uploads-staging:/app/uploads
 
@@ -25,7 +25,7 @@ services:
     volumes:
       - mongodb_staging_data:/data/db
     networks:
-      - djangui-staging-network
+      - kauri-staging-network
     healthcheck:
       test: echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb-staging:27017'}]}) }" | mongosh --port 27017 --quiet
       interval: 10s
@@ -37,10 +37,10 @@ services:
     ports:
       - "6380:6379"
     networks:
-      - djangui-staging-network
+      - kauri-staging-network
 
 networks:
-  djangui-staging-network:
+  kauri-staging-network:
     driver: bridge
 
 volumes:

@@ -17,7 +17,13 @@ const app = express();
 
 app.use(
   cors({
-    origin: '*', // Allow all origins for easier testing on real devices
+    origin: [
+      'https://kauri-app.com',
+      'https://api.kauri-app.com',
+      'https://admin.kauri-app.com',
+      'http://localhost:3000',
+      'http://localhost:5000',
+    ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
