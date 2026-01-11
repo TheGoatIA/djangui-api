@@ -86,7 +86,10 @@ export class AuthService {
     return { user: newUser, tokens };
   }
 
-  static async firebaseAuth(idToken: string) {
+  static async firebaseAuth(
+    idToken: string,
+    options: { country?: string; currency?: string } = {},
+  ) {
     try {
       // 1) Verify Firebase ID Token
       const decodedToken = await admin.auth().verifyIdToken(idToken);
@@ -106,6 +109,24 @@ export class AuthService {
       if (!user) {
         // 3) Create user if not exists
         const nameParts = (name || '').split(' ');
+        let countryCode = (options.country || 'CM').toUpperCase();
+        let currencyCode = options.currency || 'XAF';
+
+        // Validate country if provided
+        if (options.country) {
+          const countryDoc = await Country.findOne({
+            code: countryCode,
+            isActive: true,
+          });
+          if (countryDoc) {
+            currencyCode = countryDoc.currency;
+          } else {
+            // Fallback to default if country invalid/inactive
+            countryCode = 'CM';
+            currencyCode = 'XAF';
+          }
+        }
+
         user = await User.create({
           email: email || `${uid}@phone.kauri-app.com`, // Placeholder for phone-only users
           phone: phone_number,
@@ -116,6 +137,8 @@ export class AuthService {
           isActive: true,
           isEmailVerified: !!email,
           isPhoneVerified: !!phone_number,
+          country: countryCode,
+          currency: currencyCode,
         });
         // Audit Log for new user creation
         AuditService.record({

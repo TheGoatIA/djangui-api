@@ -2195,6 +2195,53 @@
                 }
             }
         },
+        "/v1/auth/apple": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Apple Auth (Alias)",
+                "security": [],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "idToken"
+                                ],
+                                "properties": {
+                                    "idToken": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "user": {
+                                            "_id": "apple_user_id...",
+                                            "email": "apple@email.com"
+                                        },
+                                        "tokens": {
+                                            "accessToken": "..."
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/auth/refresh": {
             "post": {
                 "tags": [
