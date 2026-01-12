@@ -4,10 +4,12 @@ import Transaction from '../../models/Transaction';
 import Budget from '../../models/Budget';
 import SavingGoal from '../../models/SavingGoal';
 import UserChallenge from '../../models/UserChallenge';
+import TontineMember from '../../models/TontineMember';
 import { GeminiService } from './geminiService';
 import { PromptBuilder } from './promptBuilder';
 import { AppError } from '../../middleware/errorHandler';
 import mongoose from 'mongoose';
+import logger from '../../utils/logger';
 
 export class CoachService {
   static async getOrCreateConversation(userId: string): Promise<IConversation> {
@@ -24,9 +26,9 @@ export class CoachService {
 
     const conversation = await this.getOrCreateConversation(userId);
 
-    // Get context (recent transactions, current budget, goals, challenges)
+    // Get context (recent transactions, current budget, goals, challenges, tontines)
     const now = new Date();
-    const [transactions, budget, goals, userChallenges] = await Promise.all([
+    const [transactions, budget, goals, userChallenges, tontineMembers] = await Promise.all([
       Transaction.find({ userId }).sort({ date: -1 }).limit(10).lean(),
       Budget.findOne({
         userId,
@@ -35,9 +37,22 @@ export class CoachService {
       }).lean(),
       SavingGoal.find({ userId, status: 'active' }).lean(),
       UserChallenge.find({ userId, status: 'active' }).populate('challengeId').lean(),
+      TontineMember.find({ userId, invitationStatus: 'accepted' }).populate('tontineId').lean(),
     ]);
 
-    const context = { transactions, budget, goals, challenges: userChallenges };
+    const context = {
+      transactions,
+      budget,
+      goals,
+      challenges: userChallenges,
+      tontines: tontineMembers.map((m: any) => ({
+        name: m.tontineId.name,
+        role: m.tontineId.creatorId.toString() === userId ? 'Créateur' : 'Membre',
+        nextAmount: m.tontineId.contributionAmount * m.parts,
+        trustScore: m.trustScore,
+        currentTurn: m.tontineId.currentTurn
+      }))
+    };
     const systemPrompt = PromptBuilder.buildCoachSystemPrompt(user, context);
 
     // Prepare history for Gemini
@@ -75,5 +90,55 @@ export class CoachService {
     await (conversation as any).save();
 
     return aiResponse;
+  }
+
+  static async generateDailyAdvice(userId: string): Promise<{ title: string; body: string }> {
+    const user = await User.findById(userId);
+    if (!user) throw new AppError('User not found', 404);
+
+    const now = new Date();
+    const [transactions, budget, goals, userChallenges, tontineMembers] = await Promise.all([
+      Transaction.find({ userId }).sort({ date: -1 }).limit(10).lean(),
+      Budget.findOne({
+        userId,
+        'period.month': now.getMonth() + 1,
+        'period.year': now.getFullYear(),
+      }).lean(),
+      SavingGoal.find({ userId, status: 'active' }).lean(),
+      UserChallenge.find({ userId, status: 'active' }).populate('challengeId').lean(),
+      TontineMember.find({ userId, invitationStatus: 'accepted' }).populate('tontineId').lean(),
+    ]);
+
+    const context = {
+      walletBalance: user.walletBalance,
+      transactions,
+      budget,
+      goals,
+      challenges: userChallenges,
+      tontines: tontineMembers.map((m: any) => ({
+        name: m.tontineId.name,
+        role: m.tontineId.creatorId.toString() === userId ? 'Créateur' : 'Membre',
+        nextAmount: m.tontineId.contributionAmount * m.parts,
+        trustScore: m.trustScore,
+        currentTurn: m.tontineId.currentTurn,
+        status: m.tontineId.status
+      }))
+    };
+
+    const prompt = PromptBuilder.buildDailyAdvicePrompt(user as any, context);
+
+    try {
+      const data = await GeminiService.generateJSON(prompt, 'daily-advice');
+      return {
+        title: data.title || 'Conseil Kauri 💡',
+        body: data.body || 'Prends soin de tes finances aujourd’hui !'
+      };
+    } catch (error) {
+      logger.error(`Failed to generate AI advice for user ${userId}: ${error}`);
+      return {
+        title: 'Conseil Kauri 💡',
+        body: 'Prends soin de tes finances aujourd’hui !'
+      };
+    }
   }
 }

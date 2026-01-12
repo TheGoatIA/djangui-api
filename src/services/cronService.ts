@@ -10,6 +10,7 @@ import { ReportService } from './reportService';
 import { EmailService } from './emailService';
 import { ArchiveService } from './archiveService';
 import { ForecastService } from './ai/forecastService';
+import { CoachService } from './ai/coachService';
 import SavingGoal from '../models/SavingGoal';
 
 export class CronService {
@@ -70,6 +71,11 @@ export class CronService {
     // Daily at 08:00 AM: Goal Progress Reminder
     cron.schedule('0 8 * * *', () => {
       this.sendDailyGoalProgress();
+    });
+
+    // Daily at 11:00 AM: Personal AI Financial Advice
+    cron.schedule('0 11 * * *', () => {
+      this.sendDailyAIAdvice();
     });
 
     logger.info('Cron jobs initialized successfully');
@@ -431,6 +437,32 @@ export class CronService {
       logger.info(`Overdraft prevention job completed for ${premiumUsers.length} premium users`);
     } catch (error: any) {
       logger.error(`Error in runOverdraftPrevention job: ${error.message}`);
+    }
+  }
+
+  /**
+   * Generate and send daily AI-powered financial advice
+   */
+  private static async sendDailyAIAdvice() {
+    try {
+      const users = await User.find({ isActive: true });
+      logger.info(`Starting daily AI advice generation for ${users.length} users`);
+
+      for (const user of users) {
+        try {
+          const advice = await CoachService.generateDailyAdvice(user._id.toString());
+          await NotificationService.sendToUser(user._id.toString(), {
+            title: advice.title,
+            body: advice.body,
+            data: { type: 'DAILY_AI_ADVICE' },
+          });
+        } catch (err: any) {
+          logger.error(`Failed to send daily advice to user ${user._id}: ${err.message}`);
+        }
+      }
+      logger.info('Daily AI advice job completed');
+    } catch (error: any) {
+      logger.error(`Error in sendDailyAIAdvice job: ${error.message}`);
     }
   }
 }

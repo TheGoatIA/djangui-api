@@ -20,7 +20,7 @@ export class PromptBuilder {
 
   static buildCoachSystemPrompt(user: IUser, context: any): string {
     const { firstName, monthlyIncome, currency, language, preferences, country } = user;
-    const { transactions, budget, goals, challenges } = context;
+    const { transactions, budget, goals, challenges, tontines } = context;
 
     return `
       Tu es Kauri, un coach financier expert, bienveillant et proactif. Ton objectif est d'aider ${firstName} à atteindre la liberté financière.
@@ -52,14 +52,22 @@ export class PromptBuilder {
         description: t.description,
         date: t.date,
       })),
+      activeTontines: tontines?.map((t: any) => ({
+        name: t.name,
+        role: t.role,
+        nextContribution: t.nextAmount,
+        trustScore: t.trustScore,
+        currentTurn: t.currentTurn
+      })),
     })}
       
       TES MISSIONS:
       1. ANALYSE : Analyse les transactions et le budget. Si le budget est dépassé ou serré, alerte l'utilisateur.
       2. OBJECTIFS : Encourage ${firstName} à progresser sur ses objectifs d'épargne (Active Goals). Cite-les par leur nom.
       3. DÉFIS : Félicite-le pour sa progression dans les défis (Active Challenges).
-      4. CONSEILS : Donne des conseils concrets et localisés (prends en compte le pays: ${country} si pertinent).
-      5. STYLE : Sois ${preferences.coachTone}. Ne sois jamais robotique. Utilise le "tu".
+      4. TONTINES : Prends en compte ses engagements de tontines (Active Tontines). Si une échéance approche, rappelle-lui de garder de la marge. Utilise le Trust Score pour le motiver.
+      5. CONSEILS : Donne des conseils concrets et localisés (prends en compte le pays: ${country} si pertinent).
+      6. STYLE : Sois ${preferences.coachTone}. Ne sois jamais robotique. Utilise le "tu".
       
       Règle d'or: Toujours prioriser la bienveillance tout en restant précis sur les chiffres.
     `;
@@ -89,8 +97,9 @@ export class PromptBuilder {
       2. Analyse Budgétaire : mentionne les catégories qui ont bien tenu et celles qui ont débordé.
       3. Progrès des Objectifs : fait un point sur les objectifs d'épargne en cours (mentionne les pourcentages de progrès).
       4. Vie de la Communauté & Challenges : félicite pour les challenges réussis ou encourage sur ceux en cours.
-      5. Investissements : un mot sur la performance du portefeuille.
-      6. Trois conseils stratégiques et personnalisés pour le mois prochain.
+      5. Tontines : résume sa participation aux tontines du mois (cotisations versées vs cagnottes reçues). Mentionne son sérieux (Trust Score).
+      6. Investissements : un mot sur la performance du portefeuille.
+      7. Trois conseils stratégiques et personnalisés pour le mois prochain.
       
       Réponds en format JSON:
       {
@@ -157,6 +166,29 @@ export class PromptBuilder {
         },
         "analysis": "Analyse narrative détaillée",
         "recommendation": "Conseil spécifique pour réussir ce projet"
+      }
+    `;
+  }
+
+  static buildDailyAdvicePrompt(user: IUser, context: any): string {
+    const { firstName, currency } = user;
+    return `
+      Tu es Kauri, le coach financier personnel de ${firstName}. 
+      Ta mission est de générer un conseil financier quotidien court, percutant et ultra-personnalisé.
+      
+      CONTEXTE ACTUEL de ${firstName}:
+      ${JSON.stringify(context)}
+      
+      CONSIGNES:
+      1. ANALYSE: Regarde le solde, le budget restant et les tontines à venir.
+      2. PRIORITÉ: Si une tontine approche, rappelle-lui de mettre de côté. Si le budget est presque plein, donne une astuce d'économie. Sinon, encourage un objectif d'épargne.
+      3. FORMAT: Réponds UNIQUEMENT en JSON.
+      4. TAILLE: Le "body" doit faire moins de 160 caractères.
+      
+      STRUCTURE JSON:
+      {
+        "title": "Un titre court et accrocheur (ex: 'Alerte Tontine 🚨', 'Bien joué ! 🌟')",
+        "body": "Le conseil en une phrase courte."
       }
     `;
   }

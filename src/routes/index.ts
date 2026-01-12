@@ -21,6 +21,7 @@ import supportRoutes from './support.routes';
 import voiceRoutes from './voice.routes';
 import forecastRoutes from './forecast.routes';
 import simulatorRoutes from './simulator.routes';
+import tontineRoutes from './tontine.routes';
 
 const router = Router();
 
@@ -45,6 +46,7 @@ router.use('/emails', emailRoutes);
 router.use('/voice', voiceRoutes);
 router.use('/forecast', forecastRoutes);
 router.use('/simulator', simulatorRoutes);
+router.use('/tontines', tontineRoutes);
 
 // Webhooks
 router.post('/webhooks/stripe', WebhookController.stripeWebhook);
