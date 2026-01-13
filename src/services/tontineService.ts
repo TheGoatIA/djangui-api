@@ -10,6 +10,7 @@ import { AppError } from '../middleware/errorHandler';
 import { Parser } from 'json2csv';
 import { CurrencyService } from './currencyService';
 import { NotificationService } from './notificationService';
+import { SlackService } from './slackService';
 // import logger from '../utils/logger'; // Unused for now
 
 export class TontineService {
@@ -292,6 +293,9 @@ export class TontineService {
             });
         }
 
+        // Notify Slack
+        SlackService.sendNotification(`🚀 *Tontine Started*\n*Name*: ${tontine.name}\n*Members*: ${members.length}\n*Total Parts*: ${tontine.totalParts}`);
+
         return tontine;
     }
 
@@ -344,6 +348,9 @@ export class TontineService {
         tontine.currentTurn += 1;
         if (tontine.currentTurn > tontine.totalParts) {
             tontine.status = 'completed';
+
+            // Notify Slack
+            SlackService.sendNotification(`🎉 *Tontine Completed Successfully*\n*Name*: ${tontine.name}\n*Total Parts*: ${tontine.totalParts}\n*Creator ID*: ${tontine.creatorId}`);
 
             // Gérer la reconduction automatique
             if (tontine.autoRenew) {
