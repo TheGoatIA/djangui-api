@@ -80,8 +80,8 @@ export class EmailService {
    * Send Verification Email
    */
   static async sendVerificationEmail(to: string, token: string) {
-    const apiUrl = process.env.API_URL || 'http://localhost:3000/api/v1';
-    const verificationUrl = `${apiUrl}/auth/verify-email?token=${token}`;
+    const apiUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const verificationUrl = `${apiUrl}/api/v1/auth/verify-email?token=${token}`;
     const subject = 'Verifiez votre compte';
 
     const body = `
