@@ -68,6 +68,9 @@ router.get('/connections', AdminController.getConnectionLogs);
 router.get('/ai/stats', AdminController.getAIUsageStats);
 router.get('/ai/logs', AdminController.getAIUsageLogs);
 
+// App Analytics
+router.get('/analytics/dashboard', AdminController.getAnalyticsDashboard);
+
 // Support & Tickets
 import * as SupportController from '../controllers/supportController';
 router.get('/support/tickets', SupportController.getAllTickets);

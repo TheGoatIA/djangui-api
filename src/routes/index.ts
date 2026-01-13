@@ -23,10 +23,12 @@ import forecastRoutes from './forecast.routes';
 import simulatorRoutes from './simulator.routes';
 import tontineRoutes from './tontine.routes';
 import subscriptionRoutes from './subscription.routes';
+import analyticsRoutes from './analytics.routes';
 
 const router = Router();
 
 router.use('/auth', authRoutes);
+router.use('/analytics', analyticsRoutes);
 router.use('/system', systemRoutes);
 router.use('/admin', adminRoutes); // Admin routes
 router.use('/notifications', notificationRoutes);

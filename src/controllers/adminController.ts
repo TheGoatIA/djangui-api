@@ -8,6 +8,8 @@ import SystemSetting from '../models/SystemSetting';
 import AIUsage from '../models/AIUsage';
 import Tontine from '../models/Tontine';
 import Subscription from '../models/Subscription';
+import UserActivity from '../models/UserActivity';
+import SessionLog from '../models/SessionLog';
 import { NotificationService } from '../services/notificationService';
 import { AppError } from '../middleware/errorHandler';
 import { exec } from 'child_process';
@@ -1135,6 +1137,60 @@ export class AdminController {
       if (!subscription) return next(new AppError('No subscription found with that ID', 404));
 
       res.status(200).json({ status: 'success', data: subscription });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // --- APP ANALYTICS DASHBOARD ---
+  static async getAnalyticsDashboard(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { period } = req.query; // 'day', 'week', 'month', 'year'
+
+      let startDate = new Date();
+      if (period === 'day') startDate.setDate(startDate.getDate() - 1);
+      else if (period === 'week') startDate.setDate(startDate.getDate() - 7);
+      else if (period === 'month') startDate.setMonth(startDate.getMonth() - 1);
+      else if (period === 'year') startDate.setFullYear(startDate.getFullYear() - 1);
+      else startDate.setDate(startDate.getDate() - 30); // Default 30 days
+
+      // 1. Most Used Features
+      const topFeatures = await UserActivity.aggregate([
+        { $match: { createdAt: { $gte: startDate } } },
+        { $group: { _id: '$feature', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 10 }
+      ]);
+
+      // 2. Session Stats
+      const sessionStats = await SessionLog.aggregate([
+        { $match: { startTime: { $gte: startDate } } },
+        {
+          $group: {
+            _id: null,
+            avgDuration: { $avg: '$durationSeconds' },
+            totalSessions: { $sum: 1 },
+            uniqueUsers: { $addToSet: '$userId' }
+          }
+        },
+        { $project: { avgDuration: 1, totalSessions: 1, uniqueUsers: { $size: '$uniqueUsers' } } }
+      ]);
+
+      // 3. Platform Distribution (active instances)
+      const platformStats = await SessionLog.aggregate([
+        { $match: { startTime: { $gte: startDate } } },
+        { $group: { _id: '$platform', count: { $sum: 1 } } }
+      ]);
+
+      res.status(200).json({
+        status: 'success',
+        data: {
+          period,
+          topFeatures,
+          sessionStats: sessionStats[0] || { avgDuration: 0, totalSessions: 0, uniqueUsers: 0 },
+          platformStats
+        }
+      });
     } catch (error) {
       next(error);
     }

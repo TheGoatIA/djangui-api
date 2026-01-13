@@ -831,6 +831,70 @@
                     }
                 }
             },
+            "UserActivity": {
+                "type": "object",
+                "required": [
+                    "feature",
+                    "action"
+                ],
+                "properties": {
+                    "feature": {
+                        "type": "string",
+                        "example": "Tontine"
+                    },
+                    "action": {
+                        "type": "string",
+                        "example": "create"
+                    },
+                    "details": {
+                        "type": "object"
+                    },
+                    "platform": {
+                        "type": "string",
+                        "enum": [
+                            "android",
+                            "ios",
+                            "web"
+                        ]
+                    },
+                    "appVersion": {
+                        "type": "string"
+                    }
+                }
+            },
+            "SessionLog": {
+                "type": "object",
+                "properties": {
+                    "deviceId": {
+                        "type": "string"
+                    },
+                    "platform": {
+                        "type": "string",
+                        "enum": [
+                            "android",
+                            "ios",
+                            "web"
+                        ]
+                    },
+                    "appVersion": {
+                        "type": "string"
+                    },
+                    "startTime": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "endTime": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "durationSeconds": {
+                        "type": "number"
+                    },
+                    "isActive": {
+                        "type": "boolean"
+                    }
+                }
+            },
             "TontineMember": {
                 "type": "object",
                 "properties": {
@@ -997,6 +1061,170 @@
         }
     ],
     "paths": {
+        "/v1/analytics/events": {
+            "post": {
+                "tags": [
+                    "Analytics"
+                ],
+                "summary": "Track User Event (Feature Usage)",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UserActivity"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Event Tracked"
+                    }
+                }
+            }
+        },
+        "/v1/analytics/sessions/start": {
+            "post": {
+                "tags": [
+                    "Analytics"
+                ],
+                "summary": "Start a User Session",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "deviceId": {
+                                        "type": "string"
+                                    },
+                                    "platform": {
+                                        "type": "string"
+                                    },
+                                    "appVersion": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Session Started",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "success",
+                                    "data": {
+                                        "sessionId": "60d5ec..."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/analytics/sessions/end": {
+            "post": {
+                "tags": [
+                    "Analytics"
+                ],
+                "summary": "End a User Session",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "sessionId"
+                                ],
+                                "properties": {
+                                    "sessionId": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Session Ended",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "success",
+                                    "data": {
+                                        "durationSeconds": 300
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/admin/analytics/dashboard": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Get App Analytics Dashboard",
+                "parameters": [
+                    {
+                        "name": "period",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "day",
+                                "week",
+                                "month",
+                                "year"
+                            ],
+                            "default": "month"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Dashboard Data",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "success",
+                                    "data": {
+                                        "period": "month",
+                                        "topFeatures": [
+                                            {
+                                                "_id": "Tontine",
+                                                "count": 150
+                                            }
+                                        ],
+                                        "sessionStats": {
+                                            "avgDuration": 450,
+                                            "totalSessions": 1200,
+                                            "uniqueUsers": 300
+                                        },
+                                        "platformStats": [
+                                            {
+                                                "_id": "android",
+                                                "count": 800
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/subscriptions": {
             "get": {
                 "tags": [
