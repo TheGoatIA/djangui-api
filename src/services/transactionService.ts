@@ -10,6 +10,7 @@ import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import mongoose from 'mongoose';
 import User from '../models/User';
+import { SlackService } from './slackService';
 
 export class TransactionService {
   static async createTransaction(userId: string, data: any) {
@@ -36,6 +37,11 @@ export class TransactionService {
       });
 
       await transaction.save({ session });
+
+      // Alert Slack for large transactions (> 500,000)
+      if (transaction.amount > 500000) {
+        SlackService.sendNotification(`💰 *Large Transaction Alert*\n*User ID*: ${userId}\n*Amount*: ${transaction.amount}\n*Type*: ${transaction.type}\n*Description*: ${transaction.description}`);
+      }
 
       // Update User Wallet Balance
       if (data.type === 'income') {

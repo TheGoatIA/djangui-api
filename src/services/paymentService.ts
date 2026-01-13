@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger';
 import { NotificationService } from './notificationService';
 import { AuditService } from './auditService';
+import { SlackService } from './slackService';
 
 export class PaymentService {
   /**
@@ -214,6 +215,11 @@ export class PaymentService {
       metadata: { type: payment.type, amount: payment.amount },
     });
 
+    // Notify Slack
+    SlackService.sendNotification(
+      `💰 *Payment Completed*\n*User ID*: ${payment.userId}\n*Amount*: ${payment.amount} ${payment.currency}\n*Type*: ${payment.type}\n*Reference*: ${reference}`,
+    );
+
     return payment;
   }
 
@@ -284,6 +290,9 @@ export class PaymentService {
     user.subscription.status = 'cancelled';
     user.subscription.autoRenew = false;
     await user.save();
+
+    // Notify Slack
+    SlackService.sendNotification(`📉 *Subscription Cancelled*\n*User ID*: ${userId}\n*Email*: ${user.email}\n*Plan*: ${user.subscription.plan}`);
 
     // Audit Log for subscription cancellation
     AuditService.record({

@@ -4,6 +4,7 @@ import fs from 'fs';
 import { promisify } from 'util';
 import logger from '../utils/logger';
 import { EmailService } from './emailService';
+import { SlackService } from './slackService';
 import mongoose from 'mongoose';
 
 const execPromise = promisify(exec);
@@ -55,6 +56,9 @@ export class DbBackupService {
          ${statsHtml}`,
       );
 
+      // Notify Slack
+      await SlackService.sendNotification(`📦 *DB Backup Success*\n*File*: ${path.basename(archivePath)}\n*Status*: Completed and saved.`);
+
       return { success: true, path: archivePath, stats };
     } catch (error: any) {
       logger.error(`Database backup failed: ${error.message}`);
@@ -63,6 +67,10 @@ export class DbBackupService {
         '🚨 ÉCHEC de la sauvegarde BD',
         `L'erreur suivante est survenue lors de la sauvegarde : ${error.message}`,
       );
+
+      // Notify Slack
+      await SlackService.sendNotification(`🚨 *DB Backup FAILED*\n*Error*: ${error.message}`);
+
       throw error;
     }
   }
