@@ -33,18 +33,39 @@ export class GoalService {
     goal.contributions.push({ amount, date: new Date(), note });
     goal.currentAmount += amount;
 
-    const wasAlreadyCompleted = goal.progress >= 100;
+    const wasAlreadyHalfway = ((goal.currentAmount - amount) / goal.targetAmount) * 100 >= 50;
+    const wasAlreadyCompleted = ((goal.currentAmount - amount) / goal.targetAmount) * 100 >= 100;
+
     await (goal as any).save();
 
+    await this.checkMilestones(userId, goal, wasAlreadyHalfway, wasAlreadyCompleted);
+
+    return goal;
+  }
+
+  /**
+   * Check for milestones (50%, 100%) and send notifications
+   */
+  static async checkMilestones(
+    userId: string,
+    goal: any,
+    wasAlreadyHalfway: boolean,
+    wasAlreadyCompleted: boolean,
+  ) {
     if (!wasAlreadyCompleted && goal.progress >= 100) {
       NotificationService.sendToUser(userId, {
         title: 'Félicitations ! 🎯',
         body: `Tu as atteint ton objectif d'épargne : ${goal.name} !`,
         data: { type: 'goal_completed', goalId: goal._id.toString() },
       });
+    } else if (!wasAlreadyHalfway && goal.progress >= 50) {
+      // Milestone: 50%
+      NotificationService.sendToUser(userId, {
+        title: 'Mi-parcours ! ⭐️',
+        body: `Déjà 50% de fait pour ton objectif : ${goal.name}. Continue comme ça !`,
+        data: { type: 'goal_milestone', goalId: goal._id.toString(), progress: '50' },
+      });
     }
-
-    return goal;
   }
 
   static async updateGoal(id: string, userId: string, data: any) {

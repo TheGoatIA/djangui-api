@@ -12,6 +12,7 @@ router.post('/login', validate(loginSchema), AuthController.login);
 router.post('/refresh', validate(refreshTokenSchema), AuthController.refresh);
 router.post('/firebase', AuthController.firebaseAuth);
 router.post('/google', AuthController.firebaseAuth); // Alias for backward compatibility
+router.post('/apple', AuthController.firebaseAuth); // Alias for Apple
 
 router.post('/forgot-password', AuthController.forgotPassword);
 router.patch('/reset-password/:token', AuthController.resetPassword);

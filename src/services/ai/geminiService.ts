@@ -37,7 +37,8 @@ export class GeminiService {
         model: modelId,
         generationConfig: {
           temperature: 0.7,
-          maxOutputTokens: 2048,
+          maxOutputTokens: 4096,
+          responseMimeType: 'application/json',
         },
       });
     } catch (error) {
@@ -118,20 +119,94 @@ export class GeminiService {
       this.saveUsage(modelName, context, response.usageMetadata, duration, 'success');
 
       const text = response.text();
-
-      // Clean potential markdown or extra text around JSON
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error('Invalid AI response format');
-      }
-
-      return JSON.parse(jsonMatch[0]);
+      return this.parseJSON(text);
     } catch (error: any) {
       const duration = Date.now() - startTime;
       this.saveUsage(modelName, context, {}, duration, 'failure', error.message);
 
       logger.error(`Gemini generateJSON error: ${error.message}`);
       throw new AppError('AI Analysis failed', 503);
+    }
+  }
+
+  private static parseJSON(text: string): any {
+    try {
+      // 1. Try to find JSON in markdown code blocks
+      const markdownMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
+      if (markdownMatch) {
+        return JSON.parse(markdownMatch[1]);
+      }
+
+      // 2. Try to find anything between the first { and the last }
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error('Invalid AI response format: No JSON object found');
+      }
+
+      // Cleanup: remove any trailing characters after the last } if necessary
+      let jsonStr = jsonMatch[0];
+      try {
+        return JSON.parse(jsonStr);
+      } catch (e) {
+        // If it fails, maybe there's text after the JSON bracket
+        // Let's try to find the last closing brace that balances the first opening one
+        let balance = 0;
+        let lastIndex = -1;
+        for (let i = 0; i < jsonStr.length; i++) {
+          if (jsonStr[i] === '{') balance++;
+          if (jsonStr[i] === '}') {
+            balance--;
+            if (balance === 0) {
+              lastIndex = i;
+              break;
+            }
+          }
+        }
+        if (lastIndex !== -1) {
+          return JSON.parse(jsonStr.substring(0, lastIndex + 1));
+        }
+        throw e;
+      }
+    } catch (error: any) {
+      logger.error(`Failed to parse JSON from AI response: ${error.message}`);
+      logger.debug(`Raw response: ${text}`);
+      throw new Error('Invalid AI response format');
+    }
+  }
+
+  static async analyzeAudio(
+    audioBuffer: Buffer,
+    mimeType: string,
+    prompt: string,
+    context: string = 'voice-analysis',
+  ): Promise<any> {
+    const startTime = Date.now();
+    let modelName = 'unknown';
+    try {
+      const model = await this.getModel();
+      modelName = model.model;
+
+      const result = await model.generateContent([
+        {
+          inlineData: {
+            data: audioBuffer.toString('base64'),
+            mimeType,
+          },
+        },
+        { text: prompt },
+      ]);
+
+      const response = await result.response;
+      const duration = Date.now() - startTime;
+      this.saveUsage(modelName, context, response.usageMetadata, duration, 'success');
+
+      const text = response.text();
+      return this.parseJSON(text);
+    } catch (error: any) {
+      const duration = Date.now() - startTime;
+      this.saveUsage(modelName, context, {}, duration, 'failure', error.message);
+      logger.error(`Gemini analyzeAudio error: ${error.message}`);
+      throw new AppError('Voice analysis failed', 503);
     }
   }
 

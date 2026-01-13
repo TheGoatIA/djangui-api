@@ -42,6 +42,16 @@ router.patch('/country-requests/:id/process', CountryRequestController.processRe
 router.get('/goals', AdminController.getAllGoals);
 router.delete('/goals/:id', AdminController.deleteGoal);
 
+// Tontines Management
+router.get('/tontines', AdminController.getAllTontines);
+router.get('/tontines/:id', AdminController.getTontineDetails);
+router.patch('/tontines/:id', AdminController.updateTontine);
+
+// Subscriptions Management
+router.get('/subscriptions', AdminController.getAllSubscriptions);
+router.get('/subscriptions/:id', AdminController.getSubscriptionDetails);
+router.patch('/subscriptions/:id', AdminController.updateSubscription);
+
 // System Management
 router.get('/health', AdminController.getSystemHealth);
 router.get('/db/stats', AdminController.getDatabaseStats);
@@ -57,6 +67,9 @@ router.get('/connections', AdminController.getConnectionLogs);
 // AI Analytics
 router.get('/ai/stats', AdminController.getAIUsageStats);
 router.get('/ai/logs', AdminController.getAIUsageLogs);
+
+// App Analytics
+router.get('/analytics/dashboard', AdminController.getAnalyticsDashboard);
 
 // Support & Tickets
 import * as SupportController from '../controllers/supportController';

@@ -74,7 +74,9 @@ export class ChallengeService {
 
     const target = userChallenge.challengeId.targetAmount || 0;
     if (target > 0) {
+      const oldProgress = userChallenge.progress;
       userChallenge.progress = Math.min(100, (userChallenge.currentValue / target) * 100);
+
       if (userChallenge.progress >= 100) {
         userChallenge.status = 'completed';
         userChallenge.completedAt = new Date();
@@ -84,6 +86,17 @@ export class ChallengeService {
           title: 'Challenge Réussi ! 🏆',
           body: `Bravo ! Tu as terminé le challenge : ${userChallenge.challengeId.title}`,
           data: { type: 'challenge_completed', userChallengeId: userChallenge._id.toString() },
+        });
+      } else if (userChallenge.progress >= 50 && oldProgress < 50) {
+        // Milestone: 50%
+        NotificationService.sendToUser(userChallenge.userId.toString(), {
+          title: 'Mi-parcours Challenge ! ⭐️',
+          body: `Déjà 50% parcouru pour le challenge : ${userChallenge.challengeId.title}. Lâchez rien !`,
+          data: {
+            type: 'challenge_milestone',
+            userChallengeId: userChallenge._id.toString(),
+            progress: '50',
+          },
         });
       }
     }

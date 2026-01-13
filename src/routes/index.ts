@@ -18,10 +18,17 @@ import adminRoutes from './admin.routes';
 import systemRoutes from './system.routes';
 import notificationRoutes from './notification.routes';
 import supportRoutes from './support.routes';
+import voiceRoutes from './voice.routes';
+import forecastRoutes from './forecast.routes';
+import simulatorRoutes from './simulator.routes';
+import tontineRoutes from './tontine.routes';
+import subscriptionRoutes from './subscription.routes';
+import analyticsRoutes from './analytics.routes';
 
 const router = Router();
 
 router.use('/auth', authRoutes);
+router.use('/analytics', analyticsRoutes);
 router.use('/system', systemRoutes);
 router.use('/admin', adminRoutes); // Admin routes
 router.use('/notifications', notificationRoutes);
@@ -39,6 +46,11 @@ router.use('/reports', reportRoutes);
 router.use('/upload', uploadRoutes);
 router.use('/investments', investmentRoutes);
 router.use('/emails', emailRoutes);
+router.use('/voice', voiceRoutes);
+router.use('/forecast', forecastRoutes);
+router.use('/simulator', simulatorRoutes);
+router.use('/tontines', tontineRoutes);
+router.use('/subscriptions', subscriptionRoutes);
 
 // Webhooks
 router.post('/webhooks/stripe', WebhookController.stripeWebhook);

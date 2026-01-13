@@ -2,7 +2,7 @@ global:
   scrape_interval: 15s
 
 scrape_configs:
-  - job_name: 'djangui-api'
+  - job_name: 'kauri-api'
     static_configs:
       - targets: ['api:5000']
     metrics_path: '/metrics'

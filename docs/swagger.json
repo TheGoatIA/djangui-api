@@ -635,6 +635,361 @@
                     }
                 }
             },
+            "Tontine": {
+                "type": "object",
+                "required": [
+                    "name",
+                    "frequency",
+                    "contributionAmount",
+                    "totalParts",
+                    "currency"
+                ],
+                "properties": {
+                    "_id": {
+                        "type": "string",
+                        "example": "65a00b1234..."
+                    },
+                    "name": {
+                        "type": "string",
+                        "example": "Tontine Amis 2026",
+                        "description": "Nom de la tontine"
+                    },
+                    "frequency": {
+                        "type": "string",
+                        "enum": [
+                            "weekly",
+                            "bi-weekly",
+                            "monthly"
+                        ],
+                        "description": "Fréquence des tours de cotisation"
+                    },
+                    "contributionAmount": {
+                        "type": "number",
+                        "example": 50000,
+                        "description": "Montant par part"
+                    },
+                    "totalParts": {
+                        "type": "integer",
+                        "example": 10,
+                        "description": "Nombre total de noms/parts"
+                    },
+                    "currency": {
+                        "type": "string",
+                        "example": "XAF",
+                        "description": "Devise de référence (ex: XAF, XOF, EUR)"
+                    },
+                    "rotationMode": {
+                        "type": "string",
+                        "enum": [
+                            "fixed",
+                            "random",
+                            "auction"
+                        ],
+                        "description": "Mode d'attribution de la cagnotte"
+                    },
+                    "validationMode": {
+                        "type": "string",
+                        "enum": [
+                            "ia_only",
+                            "ia_plus_manual"
+                        ],
+                        "description": "Mode de validation des preuves de paiement"
+                    },
+                    "sanctions": {
+                        "type": "object",
+                        "properties": {
+                            "lateFee": {
+                                "type": "number",
+                                "example": 500,
+                                "description": "Amende par tour de retard"
+                            },
+                            "gracePeriodHours": {
+                                "type": "integer",
+                                "example": 24,
+                                "description": "Heures de grâce avant amende"
+                            }
+                        }
+                    },
+                    "escrowDetails": {
+                        "type": "object",
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "OM",
+                                    "MOMO",
+                                    "BANK"
+                                ],
+                                "example": "OM"
+                            },
+                            "number": {
+                                "type": "string",
+                                "example": "699000000"
+                            },
+                            "accountHolderName": {
+                                "type": "string",
+                                "example": "Jean Dupont"
+                            }
+                        }
+                    },
+                    "socialFund": {
+                        "type": "number",
+                        "example": 2000,
+                        "description": "Cotisation unique fonds de secours"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "pending",
+                            "active",
+                            "completed",
+                            "suspended",
+                            "suspended_premium_required"
+                        ],
+                        "example": "active"
+                    },
+                    "inviteCode": {
+                        "type": "string",
+                        "example": "KAURI-XYZ-123"
+                    },
+                    "currentTurn": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "creatorId": {
+                        "type": "string",
+                        "example": "user_id_123"
+                    }
+                }
+            },
+            "Subscription": {
+                "type": "object",
+                "required": [
+                    "name",
+                    "amount",
+                    "currency",
+                    "frequency",
+                    "nextBillingDate"
+                ],
+                "properties": {
+                    "_id": {
+                        "type": "string",
+                        "example": "65a00b5678..."
+                    },
+                    "name": {
+                        "type": "string",
+                        "example": "Netflix Premium"
+                    },
+                    "provider": {
+                        "type": "string",
+                        "example": "Netflix"
+                    },
+                    "amount": {
+                        "type": "number",
+                        "example": 10.99
+                    },
+                    "currency": {
+                        "type": "string",
+                        "example": "EUR"
+                    },
+                    "frequency": {
+                        "type": "string",
+                        "enum": [
+                            "weekly",
+                            "monthly",
+                            "yearly"
+                        ],
+                        "example": "monthly"
+                    },
+                    "category": {
+                        "type": "string",
+                        "example": "Streaming"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "active",
+                            "paused",
+                            "cancelled",
+                            "expired"
+                        ],
+                        "example": "active"
+                    },
+                    "nextBillingDate": {
+                        "type": "string",
+                        "format": "date-time",
+                        "example": "2026-02-13T10:00:00Z"
+                    },
+                    "trialEndDate": {
+                        "type": "string",
+                        "format": "date-time",
+                        "example": "2026-01-20T10:00:00Z"
+                    },
+                    "remindMe": {
+                        "type": "boolean",
+                        "example": true
+                    }
+                }
+            },
+            "UserActivity": {
+                "type": "object",
+                "required": [
+                    "feature",
+                    "action"
+                ],
+                "properties": {
+                    "feature": {
+                        "type": "string",
+                        "example": "Tontine"
+                    },
+                    "action": {
+                        "type": "string",
+                        "example": "create"
+                    },
+                    "details": {
+                        "type": "object"
+                    },
+                    "platform": {
+                        "type": "string",
+                        "enum": [
+                            "android",
+                            "ios",
+                            "web"
+                        ]
+                    },
+                    "appVersion": {
+                        "type": "string"
+                    }
+                }
+            },
+            "SessionLog": {
+                "type": "object",
+                "properties": {
+                    "deviceId": {
+                        "type": "string"
+                    },
+                    "platform": {
+                        "type": "string",
+                        "enum": [
+                            "android",
+                            "ios",
+                            "web"
+                        ]
+                    },
+                    "appVersion": {
+                        "type": "string"
+                    },
+                    "startTime": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "endTime": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "durationSeconds": {
+                        "type": "number"
+                    },
+                    "isActive": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "TontineMember": {
+                "type": "object",
+                "properties": {
+                    "_id": {
+                        "type": "string"
+                    },
+                    "userId": {
+                        "$ref": "#/components/schemas/User"
+                    },
+                    "displayName": {
+                        "type": "string",
+                        "example": "Maman Marie"
+                    },
+                    "parts": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "trustScore": {
+                        "type": "number",
+                        "example": 95,
+                        "description": "Score de fiabilité (0-100)"
+                    },
+                    "hasPaidSocialFund": {
+                        "type": "boolean",
+                        "example": true
+                    }
+                }
+            },
+            "TontineContribution": {
+                "type": "object",
+                "properties": {
+                    "_id": {
+                        "type": "string"
+                    },
+                    "turnIndex": {
+                        "type": "integer",
+                        "example": 2
+                    },
+                    "amountPaid": {
+                        "type": "number",
+                        "example": 50000
+                    },
+                    "validationStatus": {
+                        "type": "string",
+                        "enum": [
+                            "pending",
+                            "ai_validated",
+                            "manual_pending",
+                            "completed",
+                            "rejected"
+                        ]
+                    },
+                    "proofImage": {
+                        "type": "string",
+                        "description": "URL de l'image du reçu"
+                    },
+                    "aiAnalysis": {
+                        "type": "object",
+                        "properties": {
+                            "detectedRef": {
+                                "type": "string"
+                            },
+                            "detectedAmount": {
+                                "type": "number"
+                            },
+                            "detectedDate": {
+                                "type": "string",
+                                "format": "date-time"
+                            },
+                            "confidence": {
+                                "type": "number"
+                            }
+                        }
+                    }
+                }
+            },
+            "TontineMessage": {
+                "type": "object",
+                "properties": {
+                    "_id": {
+                        "type": "string"
+                    },
+                    "senderId": {
+                        "$ref": "#/components/schemas/User"
+                    },
+                    "content": {
+                        "type": "string",
+                        "example": "Bonjour le groupe !"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
             "CountryChangeRequest": {
                 "type": "object",
                 "properties": {
@@ -677,6 +1032,27 @@
                     }
                 }
             }
+        },
+        "TurnSummary": {
+            "type": "object",
+            "properties": {
+                "collectedAmount": {
+                    "type": "number",
+                    "example": 450000
+                },
+                "expectedAmount": {
+                    "type": "number",
+                    "example": 500000
+                },
+                "contributorsCount": {
+                    "type": "integer",
+                    "example": 9
+                },
+                "totalMembers": {
+                    "type": "integer",
+                    "example": 10
+                }
+            }
         }
     },
     "security": [
@@ -685,6 +1061,994 @@
         }
     ],
     "paths": {
+        "/v1/analytics/events": {
+            "post": {
+                "tags": [
+                    "Analytics"
+                ],
+                "summary": "Track User Event (Feature Usage)",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UserActivity"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Event Tracked"
+                    }
+                }
+            }
+        },
+        "/v1/analytics/sessions/start": {
+            "post": {
+                "tags": [
+                    "Analytics"
+                ],
+                "summary": "Start a User Session",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "deviceId": {
+                                        "type": "string"
+                                    },
+                                    "platform": {
+                                        "type": "string"
+                                    },
+                                    "appVersion": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Session Started",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "success",
+                                    "data": {
+                                        "sessionId": "60d5ec..."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/analytics/sessions/end": {
+            "post": {
+                "tags": [
+                    "Analytics"
+                ],
+                "summary": "End a User Session",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "sessionId"
+                                ],
+                                "properties": {
+                                    "sessionId": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Session Ended",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "success",
+                                    "data": {
+                                        "durationSeconds": 300
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/admin/analytics/dashboard": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Get App Analytics Dashboard",
+                "parameters": [
+                    {
+                        "name": "period",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "day",
+                                "week",
+                                "month",
+                                "year"
+                            ],
+                            "default": "month"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Dashboard Data",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "success",
+                                    "data": {
+                                        "period": "month",
+                                        "topFeatures": [
+                                            {
+                                                "_id": "Tontine",
+                                                "count": 150
+                                            }
+                                        ],
+                                        "sessionStats": {
+                                            "avgDuration": 450,
+                                            "totalSessions": 1200,
+                                            "uniqueUsers": 300
+                                        },
+                                        "platformStats": [
+                                            {
+                                                "_id": "android",
+                                                "count": 800
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/subscriptions": {
+            "get": {
+                "tags": [
+                    "Subscriptions"
+                ],
+                "summary": "List User Subscriptions",
+                "responses": {
+                    "200": {
+                        "description": "Liste récupérée",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Subscription"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Subscriptions"
+                ],
+                "summary": "Add a New Subscription",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Subscription"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Abonnement créé"
+                    }
+                }
+            }
+        },
+        "/v1/subscriptions/{id}": {
+            "get": {
+                "tags": [
+                    "Subscriptions"
+                ],
+                "summary": "Get Subscription Details",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Détails de l'abonnement",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Subscription"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "tags": [
+                    "Subscriptions"
+                ],
+                "summary": "Update a Subscription",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Subscription"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Abonnement mis à jour"
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Subscriptions"
+                ],
+                "summary": "Delete a Subscription",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Abonnement supprimé"
+                    }
+                }
+            }
+        },
+        "/v1/subscriptions/detect": {
+            "post": {
+                "tags": [
+                    "Subscriptions"
+                ],
+                "summary": "Detect Subscriptions from Transactions",
+                "responses": {
+                    "200": {
+                        "description": "Liste de suggestions d'abonnements",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "name": {
+                                                "type": "string"
+                                            },
+                                            "amount": {
+                                                "type": "number"
+                                            },
+                                            "frequency": {
+                                                "type": "string"
+                                            },
+                                            "confidence": {
+                                                "type": "number"
+                                            },
+                                            "detectedFrom": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/tontines": {
+            "post": {
+                "tags": [
+                    "Tontines"
+                ],
+                "summary": "Créer une nouvelle tontine",
+                "description": "Initialise une tontine. Note: Les utilisateurs non-premium sont limités à une seule tontine active.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Tontine"
+                            },
+                            "example": {
+                                "name": "Tontine Amis 2026",
+                                "frequency": "monthly",
+                                "contributionAmount": 50000,
+                                "totalParts": 10,
+                                "currency": "XAF",
+                                "rotationMode": "random",
+                                "validationMode": "ia_only",
+                                "sanctions": {
+                                    "lateFee": 500,
+                                    "gracePeriodHours": 24
+                                },
+                                "escrowDetails": {
+                                    "type": "OM",
+                                    "number": "699000000",
+                                    "accountHolderName": "Jean Dupont"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Tontine créée avec succès",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/Tontine"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Limite de tontines atteinte (Premium requis)"
+                    }
+                }
+            }
+        },
+        "/v1/tontines/{id}": {
+            "get": {
+                "tags": [
+                    "Tontines"
+                ],
+                "summary": "Détails d'une tontine",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Détails de la tontine avec résumé du tour",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/Tontine"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "turnSummary": {
+                                                    "$ref": "#/components/schemas/TurnSummary"
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "tags": [
+                    "Tontines"
+                ],
+                "summary": "Modifier les paramètres d'une tontine",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Tontine"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Tontine modifiée"
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Tontines"
+                ],
+                "summary": "Supprimer (si pending) ou Clôturer (si active) une tontine",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Tontine supprimée ou clôturée"
+                    }
+                }
+            }
+        },
+        "/v1/tontines/join": {
+            "post": {
+                "tags": [
+                    "Tontines"
+                ],
+                "summary": "Rejoindre une tontine via code d'invitation",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "inviteCode",
+                                    "displayName",
+                                    "parts"
+                                ],
+                                "properties": {
+                                    "inviteCode": {
+                                        "type": "string",
+                                        "example": "KAURI-XYZ-123"
+                                    },
+                                    "displayName": {
+                                        "type": "string",
+                                        "example": "Maman Marie"
+                                    },
+                                    "parts": {
+                                        "type": "integer",
+                                        "example": 1
+                                    },
+                                    "payoutDetails": {
+                                        "type": "object"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Adhésion réussie",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/TontineMember"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Code invalide ou tontine fermée"
+                    },
+                    "403": {
+                        "description": "Tontine suspendue (Premium requis)"
+                    }
+                }
+            }
+        },
+        "/v1/tontines/{id}/members/{memberId}": {
+            "delete": {
+                "tags": [
+                    "Tontines"
+                ],
+                "summary": "Exclure un membre (Tontine en attente uniquement)",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "memberId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Membre retiré"
+                    }
+                }
+            }
+        },
+        "/v1/tontines/contribute": {
+            "post": {
+                "tags": [
+                    "Tontines"
+                ],
+                "summary": "Soumettre un reçu de cotisation (Validation IA)",
+                "description": "Envoie une image de reçu pour analyse automatique par l'IA. Si la tontine est en mode `ia_only`, le montant doit correspondre exactement au montant attendu.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "tontineId",
+                                    "receipt"
+                                ],
+                                "properties": {
+                                    "tontineId": {
+                                        "type": "string",
+                                        "example": "65a00b1234..."
+                                    },
+                                    "receipt": {
+                                        "type": "string",
+                                        "format": "binary",
+                                        "description": "Image du reçu (JPEG, PNG)"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Analyse terminée avec succès",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Contribution validée par IA"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/TontineContribution"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Montant insuffisant détecté ou reçu illisible"
+                    },
+                    "403": {
+                        "description": "Tontine suspendue ou accès refusé"
+                    }
+                }
+            }
+        },
+        "/v1/tontines/{id}/export": {
+            "get": {
+                "tags": [
+                    "Tontines"
+                ],
+                "summary": "Exporter le rapport de tontine (CSV)",
+                "description": "Génère un fichier CSV récapitulant les cotisations. Peut être filtré par tour index.",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "turn",
+                        "in": "query",
+                        "description": "Index du tour spécifique à exporter (0 pour le premier tour)",
+                        "schema": {
+                            "type": "integer",
+                            "example": 0
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Fichier CSV téléchargé",
+                        "content": {
+                            "text/csv": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/tontines/{id}/start": {
+            "post": {
+                "tags": [
+                    "Tontines"
+                ],
+                "summary": "Démarrer la tontine (Créateur uniquement)",
+                "description": "Passe le statut de 'pending' à 'active'. Nécessite au moins 2 membres.",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Tontine démarrée"
+                    }
+                }
+            }
+        },
+        "/v1/tontines/{id}/members": {
+            "get": {
+                "tags": [
+                    "Tontines"
+                ],
+                "summary": "Liste des membres de la tontine",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Liste des membres"
+                    }
+                }
+            }
+        },
+        "/v1/tontines/{id}/contributions": {
+            "get": {
+                "tags": [
+                    "Tontines"
+                ],
+                "summary": "Consulter tous les reçus de paiement (Créateur uniquement)",
+                "description": "Permet au créateur de la tontine de voir tous les reçus uploadés pour le suivi financier.",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Liste des cotisations avec preuve d'image",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/TontineContribution"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/tontines/{id}/messages": {
+            "get": {
+                "tags": [
+                    "Tontines"
+                ],
+                "summary": "Récupérer les messages du chat",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Liste des messages",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/TontineMessage"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Tontines"
+                ],
+                "summary": "Envoyer un message au groupe",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "content": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Message envoyé"
+                    }
+                }
+            }
+        },
+        "/v1/tontines/{id}/votes": {
+            "post": {
+                "tags": [
+                    "Tontines"
+                ],
+                "summary": "Créer un vote (Gouvernance)",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Vote créé"
+                    }
+                }
+            }
+        },
+        "/v1/tontines/{id}/votes/{voteId}": {
+            "post": {
+                "tags": [
+                    "Tontines"
+                ],
+                "summary": "Voter pour une option",
+                "description": "Envoie un vote pour une option spécifique d'un scrutin de gouvernance.",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "voteId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "optionIndex"
+                                ],
+                                "properties": {
+                                    "optionIndex": {
+                                        "type": "integer",
+                                        "example": 0
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Vote enregistré avec succès"
+                    },
+                    "403": {
+                        "description": "Déjà voté ou vote clôturé"
+                    }
+                }
+            }
+        },
+        "/v1/tontines/admin/stats": {
+            "get": {
+                "tags": [
+                    "Admin Tontines"
+                ],
+                "summary": "Statistiques globales (Admin uniquement)",
+                "responses": {
+                    "200": {
+                        "description": "Volume total, tontines actives et alertes de fraude",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "totalVolume": {
+                                                    "type": "number",
+                                                    "example": 12500000
+                                                },
+                                                "activeTontinesCount": {
+                                                    "type": "integer",
+                                                    "example": 142
+                                                },
+                                                "fraudAlerts": {
+                                                    "type": "integer",
+                                                    "example": 3
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/tontines/admin/all": {
+            "get": {
+                "tags": [
+                    "Admin Tontines"
+                ],
+                "summary": "Liste de toutes les tontines (Admin uniquement)",
+                "responses": {
+                    "200": {
+                        "description": "Liste complète"
+                    }
+                }
+            }
+        },
         "/v1/notifications": {
             "get": {
                 "tags": [
@@ -2010,6 +3374,218 @@
                 }
             }
         },
+        "/v1/admin/tontines": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "List all Tontines (Admin)",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Tontine"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/admin/tontines/{id}": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Get Tontine Details (Admin)",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Tontine"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Update Tontine (Admin)",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Tontine"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/admin/subscriptions": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "List all Subscriptions (Admin)",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Subscription"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/admin/subscriptions/{id}": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Get Subscription Details (Admin)",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Subscription"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Update Subscription (Admin)",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Subscription"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
         "/health": {
             "get": {
                 "tags": [
@@ -2183,6 +3759,53 @@
                                         "user": {
                                             "_id": "695a3...",
                                             "email": "google@gmail.com"
+                                        },
+                                        "tokens": {
+                                            "accessToken": "..."
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/apple": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Apple Auth (Alias)",
+                "security": [],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "idToken"
+                                ],
+                                "properties": {
+                                    "idToken": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "user": {
+                                            "_id": "apple_user_id...",
+                                            "email": "apple@email.com"
                                         },
                                         "tokens": {
                                             "accessToken": "..."
@@ -3498,6 +5121,56 @@
                 }
             }
         },
+        "/v1/voice/process": {
+            "post": {
+                "tags": [
+                    "AI Tools"
+                ],
+                "summary": "Kauri Voice (Gemini 2.0)",
+                "description": "Process an audio message to extract financial transaction data. Requires Premium subscription.",
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "audio": {
+                                        "type": "string",
+                                        "format": "binary",
+                                        "description": "Audio file (mp3, m4a, wav, webm...)"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "amount": 5000,
+                                        "category": "Transport",
+                                        "description": "Plein d'essence Toyota",
+                                        "type": "expense",
+                                        "date": "2026-01-10T15:00:00Z"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (No file or invalid format)"
+                    },
+                    "403": {
+                        "description": "Premium Only"
+                    }
+                }
+            }
+        },
         "/v1/sms/parse": {
             "post": {
                 "tags": [
@@ -3561,17 +5234,125 @@
                         }
                     },
                     "responses": {
-                        "201": {
-                            "description": "Created",
+                        "200": {
+                            "description": "OK",
                             "content": {
                                 "application/json": {
                                     "example": {
                                         "success": true,
-                                        "data": {
-                                            "processed": 10,
-                                            "imported": 8,
-                                            "failed": 2
-                                        }
+                                        "data": [
+                                            {
+                                                "content": "Transfert de 5000 XAF reçu.",
+                                                "success": true,
+                                                "transaction": {
+                                                    "_id": "60d5ec...",
+                                                    "amount": 5000
+                                                }
+                                            },
+                                            {
+                                                "content": "Message non financier",
+                                                "success": false,
+                                                "reason": "Parsing failed"
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/forecast/balance": {
+            "get": {
+                "tags": [
+                    "AI Tools"
+                ],
+                "summary": "Cashflow Forecast (Premium)",
+                "description": "30-day balance projection based on spending patterns. Premium only.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "forecast": [
+                                            {
+                                                "date": "2026-01-11",
+                                                "balance": 150000
+                                            },
+                                            {
+                                                "date": "2026-01-12",
+                                                "balance": 145000
+                                            }
+                                        ],
+                                        "insights": [
+                                            "Votre solde tend à diminuer plus vite le weekend."
+                                        ],
+                                        "criticalAlert": null
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Premium Only"
+                    }
+                }
+            }
+        },
+        "/v1/simulator/what-if": {
+            "post": {
+                "tags": [
+                    "AI Tools"
+                ],
+                "summary": "What If? Simulator (Premium)",
+                "description": "Simulate financial decisions (buying a car, etc.). Premium only.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "scenario": {
+                                        "type": "string",
+                                        "example": "Acheter une voiture de 5M avec un prêt."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "data": {
+                                        "scenarioName": "Prêt Auto",
+                                        "immediateImpact": -500000,
+                                        "monthlyImpact": -75000,
+                                        "comparison": {
+                                            "savingsRate": {
+                                                "before": 25,
+                                                "after": 10
+                                            }
+                                        },
+                                        "analysis": "C'est un projet ambitieux qui réduira votre épargne mensuelle de 60%..."
                                     }
                                 }
                             }
@@ -3775,9 +5556,18 @@
                                 "example": {
                                     "success": true,
                                     "data": {
-                                        "title": "Analyse Janvier",
-                                        "summary": "Bien joué.",
-                                        "health_score": 85
+                                        "title": "Bilan de Janvier : Une belle progression !",
+                                        "summary": "Ce mois-ci, vous avez bien géré votre budget alimentation avec une économie de 10%. Cependant, attention aux loisirs.",
+                                        "topInsights": [
+                                            "Budget Alimentation maîtrisé",
+                                            "Objectif 'Voyage' avancé de 15%"
+                                        ],
+                                        "recommendations": [
+                                            "Augmentez votre épargne de 5% ce mois-ci",
+                                            "Réduisez les commandes Uber Eats",
+                                            "Vérifiez vos abonnements inutiles"
+                                        ],
+                                        "tone": "Encourageant"
                                     }
                                 }
                             }

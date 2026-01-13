@@ -23,10 +23,10 @@ export class AuthController {
 
   static async firebaseAuth(req: Request, res: Response, next: NextFunction) {
     try {
-      const { idToken } = req.body;
+      const { idToken, country, currency } = req.body;
       if (!idToken) throw new AppError('Firebase ID token is required', 400);
 
-      const result = await AuthService.firebaseAuth(idToken);
+      const result = await AuthService.firebaseAuth(idToken, { country, currency });
       res.status(200).json({
         status: 'success',
         ...result,

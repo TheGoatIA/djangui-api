@@ -17,7 +17,14 @@ const app = express();
 
 app.use(
   cors({
-    origin: ['http://localhost:5173', 'http://localhost:4200', 'http://localhost:8100'],
+    origin: [
+      'https://kauri-app.com',
+      'https://api.kauri-app.com',
+      'https://admin.kauri-app.com',
+      'http://localhost:3000',
+      'http://localhost:5000',
+      'http://localhost:5173',
+    ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],

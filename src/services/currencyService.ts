@@ -15,6 +15,7 @@ export class CurrencyService {
   private static readonly EXCHANGE_RATES: Record<string, number> = {
     XAF: 1,
     XOF: 1,
+    FCFA: 1, // Alias for XAF/XOF
     EUR: 655.957,
     USD: 600,
     CAD: 450,
