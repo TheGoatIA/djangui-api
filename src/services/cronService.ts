@@ -17,6 +17,8 @@ import TontineMember from '../models/TontineMember';
 import TontineContribution from '../models/TontineContribution';
 import { TontineService } from './tontineService';
 import Subscription from '../models/Subscription';
+import { SlackService } from './slackService';
+
 
 export class CronService {
   /**
@@ -259,6 +261,10 @@ export class CronService {
         'Votre rapport quotidien est prêt.',
         html,
       );
+
+      // Notify Slack
+      await SlackService.sendNotification(`📊 *Daily Activity Report Ready*\n*Period*: ${stats.period.start.toLocaleDateString()}\n*New Users*: ${stats.users.new}\n*Active Users*: ${stats.users.active}\n*Income Volume*: ${stats.transactions.income.volume}\n*Expense Volume*: ${stats.transactions.expense.volume}`);
+
       logger.info('Daily admin report sent');
     } catch (error: any) {
       logger.error(`Error in sendDailyAdminReport job: ${error.message}`);

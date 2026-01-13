@@ -1,5 +1,7 @@
 import { GeminiService } from './ai/geminiService';
 import logger from '../utils/logger';
+import { SlackService } from './slackService';
+
 
 export interface ParsedSMS {
   amount: number;
@@ -122,7 +124,11 @@ export class SmsParsingService {
       }
     } catch (err: any) {
       logger.error(`Gemini SMS parsing failed: ${err.message}`);
+      SlackService.sendNotification(`⚠️ *SMS Parsing Error (AI)*\n*Error*: ${err.message}\n*Content*: \`${content}\``);
     }
+
+    // Final fallback: if everything failed, send to Slack for manual review
+    SlackService.sendNotification(`❓ *SMS Parsing Failed (Manual Review Required)*\n*Content*: \`${content}\``);
 
     return null;
   }
