@@ -6,6 +6,8 @@ import Budget from '../models/Budget';
 import Challenge from '../models/Challenge';
 import SystemSetting from '../models/SystemSetting';
 import AIUsage from '../models/AIUsage';
+import Tontine from '../models/Tontine';
+import Subscription from '../models/Subscription';
 import { NotificationService } from '../services/notificationService';
 import { AppError } from '../middleware/errorHandler';
 import { exec } from 'child_process';
@@ -1001,6 +1003,138 @@ export class AdminController {
       res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
 
       res.status(200).send(JSON.stringify(exportData, null, 2));
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // --- TONTINE MANAGEMENT (ADMIN) ---
+  static async getAllTontines(req: Request, res: Response, next: NextFunction) {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const skip = (page - 1) * limit;
+
+      const queryObj: any = { ...req.query };
+      const excludedFields = ['page', 'sort', 'limit', 'fields', 'search'];
+      excludedFields.forEach((el) => delete queryObj[el]);
+
+      // Search functionality
+      if (req.query.search) {
+        queryObj['name'] = { $regex: req.query.search, $options: 'i' };
+      }
+
+      const tontines = await Tontine.find(queryObj)
+        .populate('creatorId', 'firstName lastName email')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit);
+
+      const total = await Tontine.countDocuments(queryObj);
+
+      res.status(200).json({
+        status: 'success',
+        results: tontines.length,
+        total,
+        page,
+        totalPages: Math.ceil(total / limit),
+        data: tontines,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getTontineDetails(req: Request, res: Response, next: NextFunction) {
+    try {
+      const tontine = await Tontine.findById(req.params.id)
+        .populate('creatorId', 'firstName lastName email')
+        .populate('members.userId', 'firstName lastName email avatar');
+
+      if (!tontine) return next(new AppError('No tontine found with that ID', 404));
+
+      res.status(200).json({ status: 'success', data: tontine });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async updateTontine(req: Request, res: Response, next: NextFunction) {
+    try {
+      // Admin can force update any field including status
+      const tontine = await Tontine.findByIdAndUpdate(req.params.id, req.body, {
+        new: true,
+        runValidators: true,
+      });
+
+      if (!tontine) return next(new AppError('No tontine found with that ID', 404));
+
+      res.status(200).json({ status: 'success', data: tontine });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // --- SUBSCRIPTION MANAGEMENT (ADMIN) ---
+  static async getAllSubscriptions(req: Request, res: Response, next: NextFunction) {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const skip = (page - 1) * limit;
+
+      const queryObj: any = { ...req.query };
+      const excludedFields = ['page', 'sort', 'limit', 'fields', 'search'];
+      excludedFields.forEach((el) => delete queryObj[el]);
+
+      // Search functionality
+      if (req.query.search) {
+        queryObj['name'] = { $regex: req.query.search, $options: 'i' };
+      }
+
+      const subscriptions = await Subscription.find(queryObj)
+        .populate('userId', 'firstName lastName email')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit);
+
+      const total = await Subscription.countDocuments(queryObj);
+
+      res.status(200).json({
+        status: 'success',
+        results: subscriptions.length,
+        total,
+        page,
+        totalPages: Math.ceil(total / limit),
+        data: subscriptions,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getSubscriptionDetails(req: Request, res: Response, next: NextFunction) {
+    try {
+      const subscription = await Subscription.findById(req.params.id)
+        .populate('userId', 'firstName lastName email');
+
+      if (!subscription) return next(new AppError('No subscription found with that ID', 404));
+
+      res.status(200).json({ status: 'success', data: subscription });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async updateSubscription(req: Request, res: Response, next: NextFunction) {
+    try {
+      const subscription = await Subscription.findByIdAndUpdate(req.params.id, req.body, {
+        new: true,
+        runValidators: true,
+      });
+
+      if (!subscription) return next(new AppError('No subscription found with that ID', 404));
+
+      res.status(200).json({ status: 'success', data: subscription });
     } catch (error) {
       next(error);
     }
