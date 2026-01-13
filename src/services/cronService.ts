@@ -12,6 +12,10 @@ import { ArchiveService } from './archiveService';
 import { ForecastService } from './ai/forecastService';
 import { CoachService } from './ai/coachService';
 import SavingGoal from '../models/SavingGoal';
+import Tontine from '../models/Tontine';
+import TontineMember from '../models/TontineMember';
+import TontineContribution from '../models/TontineContribution';
+import { TontineService } from './tontineService';
 
 export class CronService {
   /**
@@ -76,6 +80,11 @@ export class CronService {
     // Daily at 11:00 AM: Personal AI Financial Advice
     cron.schedule('0 11 * * *', () => {
       this.sendDailyAIAdvice();
+    });
+
+    // Daily at 10:00 AM: Tontine Payment Reminders
+    cron.schedule('0 10 * * *', () => {
+      this.sendTontineReminders();
     });
 
     logger.info('Cron jobs initialized successfully');
@@ -463,6 +472,50 @@ export class CronService {
       logger.info('Daily AI advice job completed');
     } catch (error: any) {
       logger.error(`Error in sendDailyAIAdvice job: ${error.message}`);
+    }
+  }
+
+  /**
+   * Send reminders for tontine payments 24h before deadline
+   */
+  private static async sendTontineReminders() {
+    try {
+      const activeTontines = await Tontine.find({ status: 'active' });
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      for (const tontine of activeTontines) {
+        // Calculate deadline for current turn
+        const deadline = TontineService.getTurnDeadline(tontine.startDate, tontine.frequency, tontine.currentTurn);
+
+        // If deadline is tomorrow (within 24-48h window for once-a-day check)
+        const diffHours = (deadline.getTime() - new Date().getTime()) / 3600000;
+
+        if (diffHours > 0 && diffHours <= 24) {
+          // Find members who haven't paid for this turn
+          const members = await TontineMember.find({ tontineId: tontine._id, invitationStatus: 'accepted' });
+
+          for (const member of members) {
+            const hasPaid = await TontineContribution.findOne({
+              tontineId: tontine._id,
+              memberId: member._id,
+              turnIndex: tontine.currentTurn,
+              validationStatus: { $in: ['ai_validated', 'completed'] }
+            });
+
+            if (!hasPaid) {
+              await NotificationService.sendToUser(member.userId.toString(), {
+                title: 'Rappel Tontine 🔔',
+                body: `Demain est l'échéance pour le tour ${tontine.currentTurn} de "${tontine.name}". N'oubliez pas votre cotisation !`,
+                data: { tontineId: tontine._id.toString(), type: 'TONTINE_REMINDER' }
+              });
+            }
+          }
+        }
+      }
+      logger.info(`Tontine reminders check completed for ${activeTontines.length} active tontines`);
+    } catch (error: any) {
+      logger.error(`Error in sendTontineReminders job: ${error.message}`);
     }
   }
 }

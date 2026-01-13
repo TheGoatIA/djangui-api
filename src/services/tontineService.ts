@@ -9,6 +9,7 @@ import { AppError } from '../middleware/errorHandler';
 // import mongoose from 'mongoose'; // Unused for now
 import { Parser } from 'json2csv';
 import { CurrencyService } from './currencyService';
+import { NotificationService } from './notificationService';
 // import logger from '../utils/logger'; // Unused for now
 
 export class TontineService {
@@ -81,6 +82,13 @@ export class TontineService {
             payoutDetails: data.payoutDetails,
             invitationStatus: 'accepted',
             joinedAt: new Date(),
+        });
+
+        // Notification au créateur
+        await NotificationService.sendToUser(tontine.creatorId.toString(), {
+            title: 'Nouveau membre ! 🤝',
+            body: `${data.displayName} a rejoint votre tontine "${tontine.name}".`,
+            data: { tontineId: tontine._id.toString(), type: 'TONTINE_JOIN' }
         });
 
         return member;
@@ -275,6 +283,15 @@ export class TontineService {
         tontine.startDate = new Date();
         await tontine.save();
 
+        // Notification à tous les membres
+        for (const m of members) {
+            await NotificationService.sendToUser(m.userId.toString(), {
+                title: 'Tontine lancée ! 🚀',
+                body: `La tontine "${tontine.name}" a démarré. Préparez vos cotisations !`,
+                data: { tontineId: tontine._id.toString(), type: 'TONTINE_STARTED' }
+            });
+        }
+
         return tontine;
     }
 
@@ -335,6 +352,19 @@ export class TontineService {
         }
 
         await tontine.save();
+
+        // Notification à tous les membres pour le nouveau tour
+        const members = await TontineMember.find({ tontineId, invitationStatus: 'accepted' });
+        for (const m of members) {
+            await NotificationService.sendToUser(m.userId.toString(), {
+                title: tontine.status === 'completed' ? 'Tontine terminée ! 🎉' : `Nouveau Tour : ${tontine.currentTurn} 🔄`,
+                body: tontine.status === 'completed'
+                    ? `La tontine "${tontine.name}" est arrivée à son terme.`
+                    : `Le tour précédent est clos. C'est parti pour le tour ${tontine.currentTurn} !`,
+                data: { tontineId: tontine._id.toString(), type: 'TONTINE_ROTATION' }
+            });
+        }
+
         return tontine;
     }
 

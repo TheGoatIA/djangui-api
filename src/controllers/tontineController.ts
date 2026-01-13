@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { TontineService } from '../services/tontineService';
 import { TontineAIService } from '../services/ai/tontineAIService';
+import { NotificationService } from '../services/notificationService';
 import TontineContribution from '../models/TontineContribution';
 import Tontine from '../models/Tontine';
 import TontineMember from '../models/TontineMember';
@@ -137,6 +138,13 @@ export class TontineController {
 
             // 5. Mise à jour du Trust Score
             await TontineService.updateTrustScore(member._id.toString(), isLate);
+
+            // 6. Notification de succès au membre
+            await NotificationService.sendToUser((req as any).user.id, {
+                title: 'Cotisation reçue ! ✅',
+                body: `Votre preuve de paiement pour le tour ${tontine.currentTurn} de "${tontine.name}" a été validée par IA.`,
+                data: { tontineId: tontineId, type: 'TONTINE_CONTRIBUTION_VALIDATED' }
+            });
 
             res.status(201).json({
                 status: 'success',
