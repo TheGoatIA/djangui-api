@@ -30,7 +30,10 @@ services:
 
   mongodb:
     image: mongo:7.0 # Version spécifique au lieu de latest
-    command: [ "--replSet", "rs0", "--bind_ip_all" ]
+    command: [ "--replSet", "rs0", "--bind_ip_all", "--auth" ]
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGODB_USER:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGODB_PASSWORD:-password}
     ports:
       - "${MONGODB_PORT:-27017}:27017"
     volumes:
@@ -38,7 +41,7 @@ services:
     networks:
       - kauri-network
     healthcheck:
-      test: echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]}) }" | mongosh --port 27017 --quiet
+      test: echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]}) }" | mongosh --port 27017 -u ${MONGODB_USER:-admin} -p ${MONGODB_PASSWORD:-password} --authenticationDatabase admin --quiet
       interval: 10s
       timeout: 30s
       retries: 5
@@ -114,7 +117,7 @@ services:
       - GRAYLOG_ROOT_PASSWORD_SHA2=8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918
       - GRAYLOG_HTTP_BIND_ADDRESS=0.0.0.0:9000
       - GRAYLOG_ELASTICSEARCH_HOSTS=http://opensearch:9200
-      - GRAYLOG_MONGODB_URI=mongodb://mongodb:27017/graylog
+      - GRAYLOG_MONGODB_URI=mongodb://${MONGODB_USER:-admin}:${MONGODB_PASSWORD:-password}@mongodb:27017/graylog?authSource=admin
     ports:
       - "${GRAYLOG_HTTP_PORT:-9000}:9000"
       - "${GRAYLOG_GELF_PORT:-12201}:12201/udp"
