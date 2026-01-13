@@ -5,6 +5,7 @@ import Budget from '../../models/Budget';
 import SavingGoal from '../../models/SavingGoal';
 import UserChallenge from '../../models/UserChallenge';
 import TontineMember from '../../models/TontineMember';
+import Subscription from '../../models/Subscription';
 import { GeminiService } from './geminiService';
 import { PromptBuilder } from './promptBuilder';
 import { AppError } from '../../middleware/errorHandler';
@@ -28,7 +29,7 @@ export class CoachService {
 
     // Get context (recent transactions, current budget, goals, challenges, tontines)
     const now = new Date();
-    const [transactions, budget, goals, userChallenges, tontineMembers] = await Promise.all([
+    const [transactions, budget, goals, userChallenges, tontineMembers, subscriptions] = await Promise.all([
       Transaction.find({ userId }).sort({ date: -1 }).limit(10).lean(),
       Budget.findOne({
         userId,
@@ -38,6 +39,7 @@ export class CoachService {
       SavingGoal.find({ userId, status: 'active' }).lean(),
       UserChallenge.find({ userId, status: 'active' }).populate('challengeId').lean(),
       TontineMember.find({ userId, invitationStatus: 'accepted' }).populate('tontineId').lean(),
+      Subscription.find({ userId, status: 'active' }).lean(),
     ]);
 
     const context = {
@@ -51,7 +53,8 @@ export class CoachService {
         nextAmount: m.tontineId.contributionAmount * m.parts,
         trustScore: m.trustScore,
         currentTurn: m.tontineId.currentTurn
-      }))
+      })),
+      subscriptions
     };
     const systemPrompt = PromptBuilder.buildCoachSystemPrompt(user, context);
 
@@ -97,7 +100,7 @@ export class CoachService {
     if (!user) throw new AppError('User not found', 404);
 
     const now = new Date();
-    const [transactions, budget, goals, userChallenges, tontineMembers] = await Promise.all([
+    const [transactions, budget, goals, userChallenges, tontineMembers, subscriptions] = await Promise.all([
       Transaction.find({ userId }).sort({ date: -1 }).limit(10).lean(),
       Budget.findOne({
         userId,
@@ -107,6 +110,7 @@ export class CoachService {
       SavingGoal.find({ userId, status: 'active' }).lean(),
       UserChallenge.find({ userId, status: 'active' }).populate('challengeId').lean(),
       TontineMember.find({ userId, invitationStatus: 'accepted' }).populate('tontineId').lean(),
+      Subscription.find({ userId, status: 'active' }).lean(),
     ]);
 
     const context = {
@@ -122,7 +126,8 @@ export class CoachService {
         trustScore: m.trustScore,
         currentTurn: m.tontineId.currentTurn,
         status: m.tontineId.status
-      }))
+      })),
+      subscriptions
     };
 
     const prompt = PromptBuilder.buildDailyAdvicePrompt(user as any, context);

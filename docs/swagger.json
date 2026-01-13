@@ -762,6 +762,75 @@
                     }
                 }
             },
+            "Subscription": {
+                "type": "object",
+                "required": [
+                    "name",
+                    "amount",
+                    "currency",
+                    "frequency",
+                    "nextBillingDate"
+                ],
+                "properties": {
+                    "_id": {
+                        "type": "string",
+                        "example": "65a00b5678..."
+                    },
+                    "name": {
+                        "type": "string",
+                        "example": "Netflix Premium"
+                    },
+                    "provider": {
+                        "type": "string",
+                        "example": "Netflix"
+                    },
+                    "amount": {
+                        "type": "number",
+                        "example": 10.99
+                    },
+                    "currency": {
+                        "type": "string",
+                        "example": "EUR"
+                    },
+                    "frequency": {
+                        "type": "string",
+                        "enum": [
+                            "weekly",
+                            "monthly",
+                            "yearly"
+                        ],
+                        "example": "monthly"
+                    },
+                    "category": {
+                        "type": "string",
+                        "example": "Streaming"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "active",
+                            "paused",
+                            "cancelled",
+                            "expired"
+                        ],
+                        "example": "active"
+                    },
+                    "nextBillingDate": {
+                        "type": "string",
+                        "format": "date-time",
+                        "example": "2026-02-13T10:00:00Z"
+                    },
+                    "trialEndDate": {
+                        "type": "string",
+                        "format": "date-time",
+                        "example": "2026-01-20T10:00:00Z"
+                    },
+                    "remindMe": {
+                        "type": "boolean",
+                        "example": true
+                    }
+                }
+            },
             "TontineMember": {
                 "type": "object",
                 "properties": {
@@ -928,6 +997,171 @@
         }
     ],
     "paths": {
+        "/v1/subscriptions": {
+            "get": {
+                "tags": [
+                    "Subscriptions"
+                ],
+                "summary": "List User Subscriptions",
+                "responses": {
+                    "200": {
+                        "description": "Liste récupérée",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Subscription"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Subscriptions"
+                ],
+                "summary": "Add a New Subscription",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Subscription"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Abonnement créé"
+                    }
+                }
+            }
+        },
+        "/v1/subscriptions/{id}": {
+            "get": {
+                "tags": [
+                    "Subscriptions"
+                ],
+                "summary": "Get Subscription Details",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Détails de l'abonnement",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Subscription"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "tags": [
+                    "Subscriptions"
+                ],
+                "summary": "Update a Subscription",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Subscription"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Abonnement mis à jour"
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Subscriptions"
+                ],
+                "summary": "Delete a Subscription",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Abonnement supprimé"
+                    }
+                }
+            }
+        },
+        "/v1/subscriptions/detect": {
+            "post": {
+                "tags": [
+                    "Subscriptions"
+                ],
+                "summary": "Detect Subscriptions from Transactions",
+                "responses": {
+                    "200": {
+                        "description": "Liste de suggestions d'abonnements",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "name": {
+                                                "type": "string"
+                                            },
+                                            "amount": {
+                                                "type": "number"
+                                            },
+                                            "frequency": {
+                                                "type": "string"
+                                            },
+                                            "confidence": {
+                                                "type": "number"
+                                            },
+                                            "detectedFrom": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/tontines": {
             "post": {
                 "tags": [

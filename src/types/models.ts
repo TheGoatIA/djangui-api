@@ -236,3 +236,20 @@ export interface ICountryChangeRequest {
   createdAt: Date;
   updatedAt: Date;
 }
+
+export interface ISubscription {
+  userId: mongoose.Types.ObjectId;
+  name: string;
+  provider?: string;
+  amount: number;
+  currency: string;
+  frequency: 'weekly' | 'monthly' | 'yearly';
+  category: string;
+  status: 'active' | 'paused' | 'cancelled';
+  nextBillingDate: Date;
+  trialEndDate?: Date;
+  remindMe: boolean;
+  notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}

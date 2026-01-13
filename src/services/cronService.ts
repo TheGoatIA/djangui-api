@@ -16,6 +16,7 @@ import Tontine from '../models/Tontine';
 import TontineMember from '../models/TontineMember';
 import TontineContribution from '../models/TontineContribution';
 import { TontineService } from './tontineService';
+import Subscription from '../models/Subscription';
 
 export class CronService {
   /**
@@ -85,6 +86,11 @@ export class CronService {
     // Daily at 10:00 AM: Tontine Payment Reminders
     cron.schedule('0 10 * * *', () => {
       this.sendTontineReminders();
+    });
+
+    // Daily at 09:00 AM: Subscription Reminders
+    cron.schedule('0 9 * * *', () => {
+      this.checkSubscriptionReminders();
     });
 
     logger.info('Cron jobs initialized successfully');
@@ -516,6 +522,58 @@ export class CronService {
       logger.info(`Tontine reminders check completed for ${activeTontines.length} active tontines`);
     } catch (error: any) {
       logger.error(`Error in sendTontineReminders job: ${error.message}`);
+    }
+  }
+
+  /**
+   * Check for upcoming subscriptions and trials ending
+   */
+  private static async checkSubscriptionReminders() {
+    try {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      const inTwoDays = new Date();
+      inTwoDays.setDate(inTwoDays.getDate() + 2);
+
+      // 1. Reminders for normal subscriptions (24h before)
+      const upcomingSubs = await Subscription.find({
+        status: 'active',
+        remindMe: true,
+        nextBillingDate: {
+          $gte: new Date(),
+          $lte: tomorrow
+        }
+      });
+
+      for (const sub of upcomingSubs) {
+        await NotificationService.sendToUser(sub.userId.toString(), {
+          title: `Rappel Abonnement 💳`,
+          body: `Demain, votre abonnement "${sub.name}" sera prélevé (${sub.amount} ${sub.currency}).`,
+          data: { type: 'SUBSCRIPTION_REMINDER', subscriptionId: sub._id.toString() }
+        });
+      }
+
+      // 2. Trial End Reminders (48h before - Revolutionary feature)
+      const trialEnds = await Subscription.find({
+        status: 'active',
+        trialEndDate: {
+          $gte: new Date(),
+          $lte: inTwoDays
+        }
+      });
+
+      for (const sub of trialEnds) {
+        await NotificationService.sendToUser(sub.userId.toString(), {
+          title: `Alerte Fin d'Essai ! 🚨`,
+          body: `Votre période d'essai pour "${sub.name}" se termine dans 48h. Pensez à l'annuler si vous ne souhaitez pas être prélevé.`,
+          data: { type: 'TRIAL_END_REMINDER', subscriptionId: sub._id.toString() }
+        });
+      }
+
+      logger.info(`Subscription reminders sent: ${upcomingSubs.length} subs, ${trialEnds.length} trials`);
+    } catch (error: any) {
+      logger.error(`Error in checkSubscriptionReminders job: ${error.message}`);
     }
   }
 }

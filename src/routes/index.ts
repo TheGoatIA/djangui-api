@@ -22,6 +22,7 @@ import voiceRoutes from './voice.routes';
 import forecastRoutes from './forecast.routes';
 import simulatorRoutes from './simulator.routes';
 import tontineRoutes from './tontine.routes';
+import subscriptionRoutes from './subscription.routes';
 
 const router = Router();
 
@@ -47,6 +48,7 @@ router.use('/voice', voiceRoutes);
 router.use('/forecast', forecastRoutes);
 router.use('/simulator', simulatorRoutes);
 router.use('/tontines', tontineRoutes);
+router.use('/subscriptions', subscriptionRoutes);
 
 // Webhooks
 router.post('/webhooks/stripe', WebhookController.stripeWebhook);
