@@ -7,6 +7,10 @@ import { GeminiService } from './ai/geminiService';
 import { PromptBuilder } from './ai/promptBuilder';
 import { RedisService } from './redisService';
 import Investment from '../models/Investment';
+import SavingGoal from '../models/SavingGoal';
+import UserChallenge from '../models/UserChallenge';
+import TontineMember from '../models/TontineMember';
+import TontineContribution from '../models/TontineContribution';
 import { AppError } from '../middleware/errorHandler';
 
 export class ReportService {
@@ -55,11 +59,11 @@ export class ReportService {
       savingsRate: Math.max(0, savingsRate),
       budgetHealth: budget
         ? {
-            totalAllocated: budget.totalAllocated,
-            totalSpent: budget.totalSpent,
-            status: budget.status,
-            percentageUsed: (budget.totalSpent / budget.totalAllocated) * 100,
-          }
+          totalAllocated: budget.totalAllocated,
+          totalSpent: budget.totalSpent,
+          status: budget.status,
+          percentageUsed: (budget.totalSpent / budget.totalAllocated) * 100,
+        }
         : null,
       currency: user?.currency || 'XAF',
     };
@@ -160,17 +164,27 @@ export class ReportService {
     const user = await User.findById(userId);
     if (!user) throw new AppError('User not found', 404);
 
-    const [summary, categoryAnalysis, investments] = await Promise.all([
+    const [summary, categoryAnalysis, investments, goals, challenges, tontineData] = await Promise.all([
       this.getDashboardSummary(userId),
       this.getSpendingAnalysis(userId, month, year),
       Investment.find({ userId, status: 'active' }),
+      SavingGoal.find({ userId, status: 'active' }),
+      UserChallenge.find({ userId, status: 'active' }).populate('challengeId'),
+      this.getTontineMonthSummary(userId, month, year),
     ]);
 
-    const investmentSummary = investments.map((inv) => ({
-      title: inv.title,
+    const investmentSummary = investments.map((inv: any) => ({
       type: inv.type,
-      performance: ((inv.currentValue - inv.initialAmount) / inv.initialAmount) * 100,
-      currentValue: inv.currentValue,
+      amount: inv.amount,
+      expectedReturn: inv.expectedReturn,
+      progress: inv.progress,
+    }));
+
+    const goalSummary = goals.map((g: any) => ({
+      name: g.name,
+      targetAmount: g.targetAmount,
+      currentAmount: g.currentAmount,
+      deadline: g.deadline,
     }));
 
     const reportData = {
@@ -179,6 +193,13 @@ export class ReportService {
       summary,
       categoryAnalysis,
       investmentSummary,
+      goals: goalSummary,
+      challenges: challenges.map((c: any) => ({
+        title: c.challengeId.title,
+        progress: c.progress,
+        type: c.challengeId.type,
+      })),
+      tontines: tontineData,
     };
 
     const prompt = PromptBuilder.buildNarrativeReportPrompt(user as any, reportData);
@@ -292,5 +313,43 @@ export class ReportService {
     }
 
     return anomalies;
+  }
+
+  /**
+   * Get tontine summary for a given month
+   */
+  static async getTontineMonthSummary(userId: string, month: number, year: number) {
+    const startOfMonth = new Date(year, month - 1, 1);
+    const endOfMonth = new Date(year, month, 0, 23, 59, 59);
+
+    const members = await TontineMember.find({ userId, invitationStatus: 'accepted' }).populate('tontineId');
+
+    let totalContributed = 0;
+    let totalReceived = 0;
+    const details = [];
+
+    for (const member of members) {
+      const contributions = await TontineContribution.find({
+        memberId: member._id,
+        paidAt: { $gte: startOfMonth, $lte: endOfMonth },
+        validationStatus: 'completed'
+      });
+
+      const contributed = contributions.reduce((acc, curr) => acc + curr.amountPaid, 0);
+      totalContributed += contributed;
+
+      details.push({
+        tontineName: (member.tontineId as any).name,
+        contributed,
+        received: 0, // Logic to be added for cagnottes received
+        trustScore: member.trustScore
+      });
+    }
+
+    return {
+      totalContributed,
+      totalReceived,
+      details
+    };
   }
 }

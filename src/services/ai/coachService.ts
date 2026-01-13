@@ -2,10 +2,15 @@ import Conversation, { IConversation } from '../../models/Conversation';
 import User from '../../models/User';
 import Transaction from '../../models/Transaction';
 import Budget from '../../models/Budget';
+import SavingGoal from '../../models/SavingGoal';
+import UserChallenge from '../../models/UserChallenge';
+import TontineMember from '../../models/TontineMember';
+import Subscription from '../../models/Subscription';
 import { GeminiService } from './geminiService';
 import { PromptBuilder } from './promptBuilder';
 import { AppError } from '../../middleware/errorHandler';
 import mongoose from 'mongoose';
+import logger from '../../utils/logger';
 
 export class CoachService {
   static async getOrCreateConversation(userId: string): Promise<IConversation> {
@@ -22,16 +27,35 @@ export class CoachService {
 
     const conversation = await this.getOrCreateConversation(userId);
 
-    // Get context (recent transactions, current budget)
+    // Get context (recent transactions, current budget, goals, challenges, tontines)
     const now = new Date();
-    const transactions = await Transaction.find({ userId }).sort({ date: -1 }).limit(5).lean();
-    const budget = await Budget.findOne({
-      userId,
-      'period.month': now.getMonth() + 1,
-      'period.year': now.getFullYear(),
-    }).lean();
+    const [transactions, budget, goals, userChallenges, tontineMembers, subscriptions] = await Promise.all([
+      Transaction.find({ userId }).sort({ date: -1 }).limit(10).lean(),
+      Budget.findOne({
+        userId,
+        'period.month': now.getMonth() + 1,
+        'period.year': now.getFullYear(),
+      }).lean(),
+      SavingGoal.find({ userId, status: 'active' }).lean(),
+      UserChallenge.find({ userId, status: 'active' }).populate('challengeId').lean(),
+      TontineMember.find({ userId, invitationStatus: 'accepted' }).populate('tontineId').lean(),
+      Subscription.find({ userId, status: 'active' }).lean(),
+    ]);
 
-    const context = { transactions, budget };
+    const context = {
+      transactions,
+      budget,
+      goals,
+      challenges: userChallenges,
+      tontines: tontineMembers.map((m: any) => ({
+        name: m.tontineId.name,
+        role: m.tontineId.creatorId.toString() === userId ? 'Créateur' : 'Membre',
+        nextAmount: m.tontineId.contributionAmount * m.parts,
+        trustScore: m.trustScore,
+        currentTurn: m.tontineId.currentTurn
+      })),
+      subscriptions
+    };
     const systemPrompt = PromptBuilder.buildCoachSystemPrompt(user, context);
 
     // Prepare history for Gemini
@@ -69,5 +93,57 @@ export class CoachService {
     await (conversation as any).save();
 
     return aiResponse;
+  }
+
+  static async generateDailyAdvice(userId: string): Promise<{ title: string; body: string }> {
+    const user = await User.findById(userId);
+    if (!user) throw new AppError('User not found', 404);
+
+    const now = new Date();
+    const [transactions, budget, goals, userChallenges, tontineMembers, subscriptions] = await Promise.all([
+      Transaction.find({ userId }).sort({ date: -1 }).limit(10).lean(),
+      Budget.findOne({
+        userId,
+        'period.month': now.getMonth() + 1,
+        'period.year': now.getFullYear(),
+      }).lean(),
+      SavingGoal.find({ userId, status: 'active' }).lean(),
+      UserChallenge.find({ userId, status: 'active' }).populate('challengeId').lean(),
+      TontineMember.find({ userId, invitationStatus: 'accepted' }).populate('tontineId').lean(),
+      Subscription.find({ userId, status: 'active' }).lean(),
+    ]);
+
+    const context = {
+      walletBalance: user.walletBalance,
+      transactions,
+      budget,
+      goals,
+      challenges: userChallenges,
+      tontines: tontineMembers.map((m: any) => ({
+        name: m.tontineId.name,
+        role: m.tontineId.creatorId.toString() === userId ? 'Créateur' : 'Membre',
+        nextAmount: m.tontineId.contributionAmount * m.parts,
+        trustScore: m.trustScore,
+        currentTurn: m.tontineId.currentTurn,
+        status: m.tontineId.status
+      })),
+      subscriptions
+    };
+
+    const prompt = PromptBuilder.buildDailyAdvicePrompt(user as any, context);
+
+    try {
+      const data = await GeminiService.generateJSON(prompt, 'daily-advice');
+      return {
+        title: data.title || 'Conseil Kauri 💡',
+        body: data.body || 'Prends soin de tes finances aujourd’hui !'
+      };
+    } catch (error) {
+      logger.error(`Failed to generate AI advice for user ${userId}: ${error}`);
+      return {
+        title: 'Conseil Kauri 💡',
+        body: 'Prends soin de tes finances aujourd’hui !'
+      };
+    }
   }
 }

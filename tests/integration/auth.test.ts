@@ -12,7 +12,7 @@ describe('Authentication Integration Tests', () => {
     };
 
     beforeAll(async () => {
-        const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/djangui_test';
+        const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/kauri_test';
         await mongoose.connect(mongoURI);
     });
 

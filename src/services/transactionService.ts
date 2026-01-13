@@ -4,6 +4,7 @@ import SavingGoal from '../models/SavingGoal';
 import UserChallenge from '../models/UserChallenge';
 import { CategorizationService } from './ai/categorizationService';
 import { ChallengeService } from './challengeService';
+import { GoalService } from './goalService';
 import { NotificationService } from './notificationService';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
@@ -73,16 +74,23 @@ export class TransactionService {
             budget.categories[categoryIndex].spent += transaction.amount;
             budget.totalSpent += transaction.amount;
 
-            if (
-              budget.categories[categoryIndex].spent > budget.categories[categoryIndex].allocated
-            ) {
-              budget.status = 'exceeded';
+            const usagePercentage =
+              (budget.categories[categoryIndex].spent / budget.categories[categoryIndex].allocated) *
+              100;
 
-              // Send notification
+            if (usagePercentage >= 100 && budget.status !== 'exceeded') {
+              budget.status = 'exceeded';
               NotificationService.sendToUser(userId, {
                 title: 'Budget Dépassé ! ⚠️',
                 body: `Tu as dépassé ton budget pour la catégorie ${budget.categories[categoryIndex].name}.`,
                 data: { type: 'budget_exceeded', category: budget.categories[categoryIndex].name },
+              }).catch((err) => logger.error(`Notification error: ${err.message}`));
+            } else if (usagePercentage >= 80 && usagePercentage < 100) {
+              // Alert at 80%
+              NotificationService.sendToUser(userId, {
+                title: 'Attention Budget (80%) 📊',
+                body: `Tu as utilisé 80% de ton budget pour ${budget.categories[categoryIndex].name}. Fais attention !`,
+                data: { type: 'budget_warning', category: budget.categories[categoryIndex].name },
               }).catch((err) => logger.error(`Notification error: ${err.message}`));
             }
             await (budget as any).save({ session });
@@ -99,7 +107,13 @@ export class TransactionService {
           } else {
             goal.currentAmount -= transaction.amount;
           }
+          const wasAlreadyHalfway = ((goal.currentAmount - transaction.amount) / goal.targetAmount) * 100 >= 50;
+          const wasAlreadyCompleted = ((goal.currentAmount - transaction.amount) / goal.targetAmount) * 100 >= 100;
+
           await (goal as any).save({ session });
+
+          // Check for milestones
+          await GoalService.checkMilestones(userId, goal, wasAlreadyHalfway, wasAlreadyCompleted);
         }
       }
 
@@ -284,19 +298,17 @@ export class TransactionService {
       const remainder = threshold - (amount % threshold);
       const roundupAmount = remainder === threshold ? 0 : remainder;
 
-      if (roundupAmount > 0) {
-        roundupGoal.currentAmount += roundupAmount;
-        roundupGoal.contributions.push({
-          amount: roundupAmount,
-          date: new Date(),
-          note: `Arrondi automatique (Roundup) - Transaction: ${transaction.description}`,
-        });
-        await (roundupGoal as any).save({ session });
+      const wasAlreadyHalfway = ((roundupGoal.currentAmount - roundupAmount) / roundupGoal.targetAmount) * 100 >= 50;
+      const wasAlreadyCompleted = ((roundupGoal.currentAmount - roundupAmount) / roundupGoal.targetAmount) * 100 >= 100;
 
-        logger.info(
-          `Roundup strategy applied for user ${userId}: ${roundupAmount} added to goal ${roundupGoal.name}`,
-        );
-      }
+      await (roundupGoal as any).save({ session });
+
+      // Check for milestones
+      await GoalService.checkMilestones(userId, roundupGoal, wasAlreadyHalfway, wasAlreadyCompleted);
+
+      logger.info(
+        `Roundup strategy applied for user ${userId}: ${roundupAmount} added to goal ${roundupGoal.name}`,
+      );
     }
   }
 
