@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import mongoose from 'mongoose';
 dotenv.config();
 
 import connectDB from './config/database';
@@ -27,9 +28,50 @@ const startServer = async () => {
     // Initialize Cron Jobs
     CronService.init();
 
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       logger.info(`Server is running on port ${PORT} in ${process.env.NODE_ENV} mode`);
     });
+
+    // --- HIGH CONCURRENCY & STABILITY OPTIMIZATIONS ---
+
+    // 1. Fix intermittent "Connection reset by peer"
+    // Must be higher than reverse proxy (Nginx) timeout (default 65s)
+    server.keepAliveTimeout = 65000;
+    server.headersTimeout = 66000;
+
+    // 2. Optimization for low latency / high throughput
+    server.on('connection', (socket) => {
+      socket.setNoDelay(true); // Disable Nagle's algorithm for faster small packet delivery
+    });
+
+    // 3. Graceful Shutdown (Essential for stability during deployments)
+    const shutdown = (signal: string) => {
+      logger.info(`${signal} received. Starting graceful shutdown...`);
+      server.close(() => {
+        logger.info('HTTP server closed. Cleaning up resources...');
+        // Close DB, Redis, etc.
+        Promise.all([
+          mongoose.connection.close(),
+          redis.quit()
+        ]).then(() => {
+          logger.info('Clean shutdown complete. Exiting.');
+          process.exit(0);
+        }).catch((err) => {
+          logger.error('Error during shutdown:', err);
+          process.exit(1);
+        });
+      });
+
+      // Force shutdown after 20s if it takes too long
+      setTimeout(() => {
+        logger.error('Could not close connections in time, forceful shutdown.');
+        process.exit(1);
+      }, 20000);
+    };
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
+
   } catch (error) {
     logger.error('Failed to start server:', error);
     process.exit(1);
@@ -37,3 +79,4 @@ const startServer = async () => {
 };
 
 startServer();
+
