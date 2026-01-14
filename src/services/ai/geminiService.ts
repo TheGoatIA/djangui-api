@@ -129,7 +129,7 @@ export class GeminiService {
     }
   }
 
-  private static parseJSON(text: string): any {
+  static parseJSON(text: string): any {
     try {
       // 1. Try to find JSON in markdown code blocks
       const markdownMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
