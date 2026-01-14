@@ -10,6 +10,11 @@ services:
       - NODE_ENV=${NODE_ENV:-production}
       - MONGODB_URI=${MONGODB_URI:-mongodb://${MONGODB_USER:-admin}:${MONGODB_PASSWORD:-password}@mongodb:27017/kauri?authSource=admin&replicaSet=rs0}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - NODE_OPTIONS=--max-old-space-size=1843 # Allocate ~90% of RAM to V8 heap
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     depends_on:
       mongodb:
         condition: service_healthy
@@ -23,10 +28,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2G
-          cpus: '1.0'
+          memory: 2G # Sufficient for a few thousand connections
+          cpus: '2.0' # Increased to handle concurrent computation (parsing/crypto)
         reservations:
-          memory: 500M
+          memory: 1G
 
   mongodb:
     image: mongo:7.0
