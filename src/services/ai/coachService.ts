@@ -84,15 +84,33 @@ export class CoachService {
     ]);
 
     const result = await chat.sendMessage(userMessage);
-    const aiResponse = result.response.text();
+    const rawAiResponse = result.response.text();
+
+    let text = rawAiResponse;
+    let actions = [];
+
+    try {
+      // Attempt to parse JSON even if it's currently a string
+      // (GeminiService.getModel sets responseMimeType to application/json)
+      const parsed = GeminiService.parseJSON(rawAiResponse);
+      text = parsed.text || rawAiResponse;
+      actions = parsed.actions || [];
+    } catch (e) {
+      logger.warn(`Failed to parse AI coach response as JSON: ${e}. Using raw text.`);
+    }
 
     // Update conversation
     conversation.messages.push({ role: 'user', content: userMessage, timestamp: new Date() });
-    conversation.messages.push({ role: 'model', content: aiResponse, timestamp: new Date() });
+    conversation.messages.push({
+      role: 'model',
+      content: text,
+      actions: actions.length > 0 ? actions : undefined,
+      timestamp: new Date()
+    });
     conversation.lastMessageAt = new Date();
     await (conversation as any).save();
 
-    return aiResponse;
+    return rawAiResponse; // Return raw JSON so the client can decide how to handle it
   }
 
   static async generateDailyAdvice(userId: string): Promise<{ title: string; body: string }> {
