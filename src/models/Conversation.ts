@@ -4,6 +4,8 @@ export interface IMessage {
   role: 'user' | 'model';
   content: string;
   timestamp: Date;
+  actions?: any[];
+  metadata?: any;
 }
 
 export interface IConversation extends Document {
@@ -19,6 +21,8 @@ const messageSchema = new Schema<IMessage>({
   role: { type: String, enum: ['user', 'model'], required: true },
   content: { type: String, required: true },
   timestamp: { type: Date, default: Date.now },
+  actions: { type: [Schema.Types.Mixed], default: undefined },
+  metadata: { type: Schema.Types.Mixed, default: undefined },
 });
 
 const conversationSchema = new Schema<IConversation>(
