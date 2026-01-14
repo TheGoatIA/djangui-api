@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
+import logger from '../utils/logger';
 import User from '../models/User';
 import Transaction from '../models/Transaction';
 import Budget from '../models/Budget';
@@ -232,6 +233,34 @@ export class AdminController {
       res.status(200).json({
         status: 'success',
         data: fileStats.sort((a, b) => b.modified.getTime() - a.modified.getTime()),
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // 3b. Create Client Log (from Frontend/Mobile)
+  static async createLog(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { level, message, context, stack, metadata } = req.body;
+
+      if (!message) {
+        return next(new AppError('Log message is required', 400));
+      }
+
+      const logMethod = (logger as any)[level] || logger.info;
+      logMethod.call(logger, {
+        message: `[CLIENT] ${message}`,
+        level: level || 'info',
+        context: context || 'ClientLog',
+        stack,
+        ...metadata,
+        userId: (req as any).user?._id,
+      });
+
+      res.status(201).json({
+        status: 'success',
+        message: 'Log recorded successfully',
       });
     } catch (error) {
       next(error);

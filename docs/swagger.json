@@ -3254,6 +3254,60 @@
                         "description": "OK"
                     }
                 }
+            },
+            "post": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Create Client Log",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "message"
+                                ],
+                                "properties": {
+                                    "level": {
+                                        "type": "string",
+                                        "enum": [
+                                            "error",
+                                            "warn",
+                                            "info",
+                                            "http",
+                                            "debug"
+                                        ],
+                                        "example": "error"
+                                    },
+                                    "message": {
+                                        "type": "string",
+                                        "example": "Failed to load resource"
+                                    },
+                                    "context": {
+                                        "type": "string",
+                                        "example": "FrontendApp"
+                                    },
+                                    "stack": {
+                                        "type": "string"
+                                    },
+                                    "metadata": {
+                                        "type": "object"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Log recorded successfully"
+                    },
+                    "400": {
+                        "description": "Log message is required"
+                    }
+                }
             }
         },
         "/v1/admin/logs/{filename}": {
