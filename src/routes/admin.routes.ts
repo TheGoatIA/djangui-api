@@ -58,6 +58,7 @@ router.get('/db/stats', AdminController.getDatabaseStats);
 router.get('/db/export', AdminController.exportDatabase);
 router.get('/db/backup', AdminController.backupDatabase);
 router.get('/logs', AdminController.getLogs);
+router.post('/logs', AdminController.createLog);
 router.get('/logs/:filename', AdminController.downloadLog);
 router.get('/analytics/financials', AdminController.getFinancialAnalytics);
 router.get('/resources', AdminController.getServerResources);
