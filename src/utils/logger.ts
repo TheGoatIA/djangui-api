@@ -41,8 +41,7 @@ const consoleFormat = winston.format.combine(
   winston.format.colorize({ all: true }),
   winston.format.printf(
     (info) =>
-      `${info.timestamp} ${info.level}: ${info.message}${
-        info.userId ? ` [User: ${info.userId}]` : ''
+      `${info.timestamp} ${info.level}: ${info.message}${info.userId ? ` [User: ${info.userId}]` : ''
       }${info.context ? ` [Context: ${info.context}]` : ''}`,
   ),
 );
@@ -110,7 +109,7 @@ class EmailAlertTransport extends Transport {
         // In a real scenario, we'd use a dedicated alerting service (like Sentry or a simple webhook).
 
         const adminEmail = process.env.ADMIN_EMAIL || 'me@borisgauty.com';
-        const slackWebhook = process.env.SLACK_WEBHOOK_URL;
+        const slackWebhook = process.env.SLACK_ERROR_WEBHOOK_URL || process.env.SLACK_WEBHOOK_URL;
 
         if (slackWebhook) {
           try {
