@@ -40,6 +40,35 @@ export class GamificationService {
   }
 
   /**
+   * Deduct XP from a user (punishment)
+   */
+  static async deductXP(userId: string, amount: number, reason: string) {
+    try {
+      const user = await User.findById(userId);
+      if (!user) return;
+
+      const oldXP = user.xp;
+      user.xp = Math.max(0, user.xp - amount);
+      const lostXP = oldXP - user.xp;
+
+      // Recalculate level if necessary (though usually we don't level down, 
+      // but let's keep it consistent if desired. Here we just deduct)
+
+      NotificationService.sendToUser(userId, {
+        title: 'Pénalité de Points ! ⚠️',
+        body: `Tu as perdu ${lostXP} XP. Raison : ${reason}`,
+        data: { type: 'xp_deduction', amount: String(lostXP), reason },
+      }).catch((err) => logger.error(`XP deduction notification error: ${err.message}`));
+
+      await user.save();
+      return { xp: user.xp, level: user.level };
+    } catch (error: any) {
+      logger.error(`Error deducting XP: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
    * Award a badge to a user
    */
   static async awardBadge(userId: string, badgeName: string, icon: string) {

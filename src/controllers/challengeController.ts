@@ -43,10 +43,13 @@ export class ChallengeController {
   static async validateWeek(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const { userChallengeId, weekNumber, amount } = req.body;
+      const proofFilePath = req.file?.path;
+
       const userChallenge = await ChallengeService.validateWeek(
         userChallengeId,
-        weekNumber,
-        amount,
+        Number(weekNumber),
+        Number(amount),
+        proofFilePath,
       );
       res.status(200).json({
         success: true,
