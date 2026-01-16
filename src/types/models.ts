@@ -97,8 +97,13 @@ export interface IUserChallenge {
     weekNumber: number;
     targetAmount: number;
     savedAmount: number;
-    status: 'pending' | 'completed' | 'late' | 'skipped' | 'postponed';
+    status: 'pending' | 'completed' | 'late' | 'skipped' | 'postponed' | 'rejected';
     validatedAt?: Date;
+    proofImageUrl?: string;
+    transactionId?: string;
+    transactionDate?: Date;
+    verificationStatus?: 'pending' | 'verified' | 'rejected';
+    verificationNote?: string;
   }[];
   flexibility: {
     skipsUsed: number;

@@ -2,7 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 import { IUserChallenge } from '../types/models';
 
-export interface IUserChallengeDocument extends IUserChallenge, Document {}
+export interface IUserChallengeDocument extends IUserChallenge, Document { }
 
 const userChallengeSchema = new Schema<IUserChallenge>(
   {
@@ -25,10 +25,18 @@ const userChallengeSchema = new Schema<IUserChallenge>(
         savedAmount: { type: Number, default: 0 },
         status: {
           type: String,
-          enum: ['pending', 'completed', 'late', 'skipped', 'postponed'],
+          enum: ['pending', 'completed', 'late', 'skipped', 'postponed', 'rejected'],
           default: 'pending',
         },
         validatedAt: Date,
+        proofImageUrl: String,
+        transactionId: { type: String, index: true },
+        transactionDate: Date,
+        verificationStatus: {
+          type: String,
+          enum: ['pending', 'verified', 'rejected'],
+        },
+        verificationNote: String,
       },
     ],
     flexibility: {

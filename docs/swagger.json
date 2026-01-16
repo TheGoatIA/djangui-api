@@ -389,7 +389,41 @@
                     "weeks": {
                         "type": "array",
                         "items": {
-                            "type": "object"
+                            "type": "object",
+                            "properties": {
+                                "weekNumber": {
+                                    "type": "integer"
+                                },
+                                "targetAmount": {
+                                    "type": "number"
+                                },
+                                "savedAmount": {
+                                    "type": "number"
+                                },
+                                "status": {
+                                    "type": "string"
+                                },
+                                "validatedAt": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                "proofImageUrl": {
+                                    "type": "string"
+                                },
+                                "transactionId": {
+                                    "type": "string"
+                                },
+                                "transactionDate": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                "verificationStatus": {
+                                    "type": "string"
+                                },
+                                "verificationNote": {
+                                    "type": "string"
+                                }
+                            }
                         }
                     },
                     "flexibility": {
@@ -5900,18 +5934,26 @@
                 "summary": "Validate Week",
                 "requestBody": {
                     "content": {
-                        "application/json": {
+                        "multipart/form-data": {
                             "schema": {
                                 "type": "object",
                                 "properties": {
                                     "userChallengeId": {
-                                        "type": "string"
+                                        "type": "string",
+                                        "description": "ID of the user challenge participation"
                                     },
                                     "weekNumber": {
-                                        "type": "integer"
+                                        "type": "integer",
+                                        "description": "The week number to validate"
                                     },
                                     "amount": {
-                                        "type": "number"
+                                        "type": "number",
+                                        "description": "The amount being saved"
+                                    },
+                                    "proof": {
+                                        "type": "string",
+                                        "format": "binary",
+                                        "description": "Screenshot of the MoMo/Orange Money transaction receipt"
                                     }
                                 }
                             }
