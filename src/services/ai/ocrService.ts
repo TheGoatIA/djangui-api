@@ -55,4 +55,56 @@ export class OCRService {
       throw new Error("Erreur lors de l'analyse du reçu par l'IA.");
     }
   }
+
+  /**
+   * Specifically verify a challenge proof (MoMo/Orange Money screenshot)
+   */
+  static async verifyChallengeProof(filePath: string): Promise<OCRResult & { isReceipt: boolean; fees: number; transactionId?: string }> {
+    try {
+      const fileData = fs.readFileSync(filePath);
+      const base64Data = fileData.toString('base64');
+
+      const prompt = `
+        Analyze this image and determine if it is a Mobile Money (MoMo) or Orange Money transaction receipt.
+        
+        Extract the following information in JSON format:
+        - isReceipt: boolean, true if it's a valid transaction confirmation screenshot
+        - merchant: name of the service or receiver
+        - amount: the MAIN transaction amount as a number (excluding fees)
+        - fees: any transaction fees shown as a number (0 if not found)
+        - transactionId: the unique transaction reference or ID
+        - date: transaction date and time in ISO format
+        - description: short summary
+        
+        If it's NOT a receipt (e.g. a random photo, text, etc.), set isReceipt to false.
+        Extract the date and time as accurately as possible.
+        Return ONLY the JSON.
+      `;
+
+      const parsed = await GeminiService.generateJSON([
+        prompt,
+        {
+          inlineData: {
+            data: base64Data,
+            mimeType: 'image/jpeg',
+          },
+        },
+      ]);
+
+      return {
+        isReceipt: !!parsed.isReceipt,
+        merchant: parsed.merchant || 'Inconnu',
+        amount: Number(parsed.amount) || 0,
+        fees: Number(parsed.fees) || 0,
+        transactionId: parsed.transactionId,
+        date: parsed.date ? new Date(parsed.date) : new Date(),
+        category: 'Challenge',
+        description: parsed.description || 'Preuve de challenge',
+        confidence: parsed.isReceipt ? 0.95 : 0.2,
+      };
+    } catch (error: any) {
+      logger.error(`Challenge OCR verification failed: ${error.message}`);
+      throw new Error("Impossible d'analyser la preuve de paiement.");
+    }
+  }
 }

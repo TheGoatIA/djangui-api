@@ -4,6 +4,7 @@ import UserChallenge from '../models/UserChallenge';
 import { NotificationService } from './notificationService';
 import { GamificationService } from './gamificationService';
 import { AppError } from '../middleware/errorHandler';
+import { OCRService } from './ai/ocrService';
 import logger from '../utils/logger';
 
 export class ChallengeService {
@@ -33,31 +34,41 @@ export class ChallengeService {
       endDate,
     });
 
-    // If it's a 52-week style challenge (detected by duration or custom flag)
-    if (challenge.durationDays >= 364) {
-      // Determine level (100, 200, 500, 1000) from title or metadata
-      let increment = 100;
+    // Generate weeks for ALL challenges
+    const totalWeeks = Math.max(1, Math.ceil(challenge.durationDays / 7));
+    const weeks = [];
+
+    // If it is a 52-week style challenge (long duration)
+    const isIncremental = challenge.durationDays >= 364;
+    let increment = 0;
+    if (isIncremental) {
+      increment = 100;
       if (challenge.title.includes('200')) increment = 200;
       if (challenge.title.includes('500')) increment = 500;
       if (challenge.title.includes('1000')) increment = 1000;
-
-      const weeks = [];
-      for (let i = 1; i <= 52; i++) {
-        weeks.push({
-          weekNumber: i,
-          targetAmount: i * increment,
-          savedAmount: 0,
-          status: 'pending',
-        });
-      }
-      userChallenge.weeks = weeks as any;
-      userChallenge.flexibility = {
-        skipsUsed: 0,
-        skipsMax: 3,
-        postponementsUsed: 0,
-        postponementsMax: 2,
-      };
     }
+
+    const weeklyTarget = challenge.targetAmount
+      ? Math.floor(challenge.targetAmount / totalWeeks)
+      : 0;
+
+    for (let i = 1; i <= totalWeeks; i++) {
+      weeks.push({
+        weekNumber: i,
+        targetAmount: isIncremental ? i * increment : weeklyTarget,
+        savedAmount: 0,
+        status: 'pending',
+      });
+    }
+    userChallenge.weeks = weeks as any;
+
+    // Set flexibility
+    userChallenge.flexibility = {
+      skipsUsed: 0,
+      skipsMax: isIncremental ? 3 : 1,
+      postponementsUsed: 0,
+      postponementsMax: isIncremental ? 2 : 1,
+    };
 
     await userChallenge.save();
     return userChallenge;
@@ -114,22 +125,98 @@ export class ChallengeService {
     return userChallenge;
   }
 
-  static async validateWeek(userChallengeId: string, weekNumber: number, amount: number) {
+  static async validateWeek(userChallengeId: string, weekNumber: number, amount: number, proofFilePath?: string) {
     const userChallenge = await UserChallenge.findById(userChallengeId).populate<{
       challengeId: IChallenge;
     }>('challengeId');
     if (!userChallenge) throw new AppError('Participation non trouvée', 404);
+
+    // Lazy initialization of weeks for older participations
+    if (userChallenge.weeks.length === 0) {
+      const totalWeeks = Math.max(1, Math.ceil(userChallenge.challengeId.durationDays / 7));
+      const weeklyTarget = userChallenge.challengeId.targetAmount
+        ? Math.floor(userChallenge.challengeId.targetAmount / totalWeeks)
+        : 0;
+
+      for (let i = 1; i <= totalWeeks; i++) {
+        userChallenge.weeks.push({
+          weekNumber: i,
+          targetAmount: weeklyTarget,
+          savedAmount: 0,
+          status: 'pending',
+        } as any);
+      }
+      await userChallenge.save();
+    }
 
     const week = userChallenge.weeks.find((w) => w.weekNumber === weekNumber);
     if (!week) throw new AppError('Semaine non trouvée', 404);
 
     if (week.status === 'completed') throw new AppError('Semaine déjà validée', 400);
 
-    week.savedAmount = amount;
+    let finalAmount = amount;
+
+    // AI Verification if proof is provided
+    if (proofFilePath) {
+      const ocrResult = await OCRService.verifyChallengeProof(proofFilePath);
+
+      // 0. Is it a receipt?
+      if (!ocrResult.isReceipt) {
+        await GamificationService.deductXP(
+          userChallenge.userId.toString(),
+          50,
+          'Tentative de validation avec une image invalide.',
+        );
+        throw new AppError(
+          "L'image fournie n'est pas reconnue comme un reçu de transaction valide.",
+          400,
+        );
+      }
+
+      // 1. Transaction Uniqueness
+      if (ocrResult.transactionId) {
+        const existingTransaction = await UserChallenge.findOne({
+          'weeks.transactionId': ocrResult.transactionId,
+        });
+        if (existingTransaction) {
+          await GamificationService.deductXP(
+            userChallenge.userId.toString(),
+            100,
+            "Tentative de fraude (réutilisation d'un ID de transaction).",
+          );
+          throw new AppError('Cette transaction a déjà été utilisée comme preuve.', 400);
+        }
+      }
+
+      // 2. Amount Check (Fuzzy)
+      const target = week.targetAmount;
+      if (ocrResult.amount < target) {
+        throw new AppError(
+          `Le montant détecté (${ocrResult.amount} XAF) est inférieur au montant cible (${target} XAF).`,
+          400,
+        );
+      }
+
+      // 3. Date check (Simple: not more than 10 days old)
+      const now = new Date();
+      const transDate = ocrResult.date || now;
+      const diffDays = Math.abs(now.getTime() - transDate.getTime()) / (1000 * 3600 * 24);
+      if (diffDays > 10) {
+        throw new AppError('La transaction est trop ancienne pour valider cette semaine.', 400);
+      }
+
+      finalAmount = ocrResult.amount;
+      week.proofImageUrl = proofFilePath;
+      week.transactionId = ocrResult.transactionId;
+      week.transactionDate = ocrResult.date;
+      week.verificationStatus = 'verified';
+    }
+
+    week.savedAmount = finalAmount;
     week.status = 'completed';
     week.validatedAt = new Date();
 
-    userChallenge.currentValue += amount;
+    userChallenge.currentValue += finalAmount;
     const target = userChallenge.challengeId.targetAmount || 0;
     if (target > 0) {
       userChallenge.progress = Math.min(100, (userChallenge.currentValue / target) * 100);
