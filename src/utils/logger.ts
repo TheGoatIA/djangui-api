@@ -41,7 +41,8 @@ const consoleFormat = winston.format.combine(
   winston.format.colorize({ all: true }),
   winston.format.printf(
     (info) =>
-      `${info.timestamp} ${info.level}: ${info.message}${info.userId ? ` [User: ${info.userId}]` : ''
+      `${info.timestamp} ${info.level}: ${info.message}${
+        info.userId ? ` [User: ${info.userId}]` : ''
       }${info.context ? ` [Context: ${info.context}]` : ''}`,
   ),
 );

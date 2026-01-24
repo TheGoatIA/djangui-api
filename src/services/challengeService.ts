@@ -125,7 +125,12 @@ export class ChallengeService {
     return userChallenge;
   }
 
-  static async validateWeek(userChallengeId: string, weekNumber: number, amount: number, proofFilePath?: string) {
+  static async validateWeek(
+    userChallengeId: string,
+    weekNumber: number,
+    amount: number,
+    proofFilePath?: string,
+  ) {
     const userChallenge = await UserChallenge.findById(userChallengeId).populate<{
       challengeId: IChallenge;
     }>('challengeId');

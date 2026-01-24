@@ -57,6 +57,7 @@ router.get('/health', AdminController.getSystemHealth);
 router.get('/db/stats', AdminController.getDatabaseStats);
 router.get('/db/export', AdminController.exportDatabase);
 router.get('/db/backup', AdminController.backupDatabase);
+router.post('/db/restore/:filename', AdminController.restoreDatabase);
 router.get('/logs', AdminController.getLogs);
 router.post('/logs', AdminController.createLog);
 router.get('/logs/:filename', AdminController.downloadLog);

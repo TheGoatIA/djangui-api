@@ -2,7 +2,6 @@ import { GeminiService } from './ai/geminiService';
 import logger from '../utils/logger';
 import { SlackService } from './slackService';
 
-
 export interface ParsedSMS {
   amount: number;
   type: 'income' | 'expense';
@@ -29,7 +28,8 @@ export class SmsParsingService {
     {
       name: 'Orange Money (P2P Transfert)',
       // Pattern: Transfert de ... vers ... reussi. ID transaction: PP260109.1316.A84182, Montant Transaction: 36000 FCFA
-      regex: /Transfert de .* vers .* reussi\. ID transaction: [A-Z]{2}(\d{6})\.(\d{4})\.[A-Z0-9]+, Montant Transaction: (\d+) FCFA/,
+      regex:
+        /Transfert de .* vers .* reussi\. ID transaction: [A-Z]{2}(\d{6})\.(\d{4})\.[A-Z0-9]+, Montant Transaction: (\d+) FCFA/,
       type: 'expense',
       groups: { dateStr: 1, timeStr: 2, amount: 3 },
     },
@@ -124,11 +124,15 @@ export class SmsParsingService {
       }
     } catch (err: any) {
       logger.error(`Gemini SMS parsing failed: ${err.message}`);
-      SlackService.sendNotification(`⚠️ *SMS Parsing Error (AI)*\n*Error*: ${err.message}\n*Content*: \`${content}\``);
+      SlackService.sendNotification(
+        `⚠️ *SMS Parsing Error (AI)*\n*Error*: ${err.message}\n*Content*: \`${content}\``,
+      );
     }
 
     // Final fallback: if everything failed, send to Slack for manual review
-    SlackService.sendNotification(`❓ *SMS Parsing Failed (Manual Review Required)*\n*Content*: \`${content}\``);
+    SlackService.sendNotification(
+      `❓ *SMS Parsing Failed (Manual Review Required)*\n*Content*: \`${content}\``,
+    );
 
     return null;
   }

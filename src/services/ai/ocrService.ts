@@ -59,7 +59,9 @@ export class OCRService {
   /**
    * Specifically verify a challenge proof (MoMo/Orange Money screenshot)
    */
-  static async verifyChallengeProof(filePath: string): Promise<OCRResult & { isReceipt: boolean; fees: number; transactionId?: string }> {
+  static async verifyChallengeProof(
+    filePath: string,
+  ): Promise<OCRResult & { isReceipt: boolean; fees: number; transactionId?: string }> {
     try {
       const fileData = fs.readFileSync(filePath);
       const base64Data = fileData.toString('base64');

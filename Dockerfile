@@ -12,6 +12,9 @@ RUN npm run build
 # Production stage
 FROM node:20-alpine
 
+# Install MongoDB tools (including mongodump)
+RUN apk add --no-cache mongodb-tools
+
 WORKDIR /app
 
 COPY package*.json ./

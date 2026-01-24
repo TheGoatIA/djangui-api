@@ -3277,6 +3277,30 @@
                 }
             }
         },
+        "/v1/admin/db/restore/{filename}": {
+            "post": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Restore DB from Backup",
+                "parameters": [
+                    {
+                        "name": "filename",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "The name of the backup file to restore"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Database restored successfully"
+                    }
+                }
+            }
+        },
         "/v1/admin/logs": {
             "get": {
                 "tags": [
