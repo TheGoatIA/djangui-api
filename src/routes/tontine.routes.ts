@@ -32,5 +32,6 @@ router.post('/:id/votes/:voteId', TontineController.castVote);
 // --- Routes Admin ---
 router.get('/admin/stats', restrictTo('admin'), TontineController.getAdminStats);
 router.get('/admin/all', restrictTo('admin'), TontineController.getAllTontines);
+router.get('/admin/all/:id', restrictTo('admin'), TontineController.getAdminTontineDetails);
 
 export default router;

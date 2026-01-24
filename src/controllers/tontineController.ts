@@ -237,6 +237,18 @@ export class TontineController {
   }
 
   /**
+   * Rechercher les détails complets d'une tontine (Admin seulement)
+   */
+  static async getAdminTontineDetails(req: Request, res: Response, next: NextFunction) {
+    try {
+      const details = await TontineService.getAdminTontineDetails(req.params.id);
+      res.json({ status: 'success', data: details });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Envoyer un message (Tchat)
    */
   static async postMessage(req: Request, res: Response, next: NextFunction) {

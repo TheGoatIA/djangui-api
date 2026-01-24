@@ -522,6 +522,34 @@ export class TontineService {
   }
 
   /**
+   * Obtenir les détails complets d'une tontine pour l'administration
+   */
+  static async getAdminTontineDetails(tontineId: string): Promise<any> {
+    const tontine = await Tontine.findById(tontineId).populate(
+      'creatorId',
+      'firstName lastName email',
+    );
+    if (!tontine) throw new AppError('Tontine non trouvée', 404);
+
+    const [members, contributions, messages, votes, auctions] = await Promise.all([
+      TontineMember.find({ tontineId }).populate('userId', 'firstName lastName email'),
+      TontineContribution.find({ tontineId }).sort({ createdAt: -1 }),
+      TontineMessage.find({ tontineId }).populate('senderId', 'firstName lastName').sort({ createdAt: 1 }),
+      TontineVote.find({ tontineId }).sort({ createdAt: -1 }),
+      TontineAuction.find({ tontineId }).sort({ createdAt: -1 }),
+    ]);
+
+    return {
+      tontine,
+      members,
+      contributions,
+      messages,
+      votes,
+      auctions,
+    };
+  }
+
+  /**
    * Envoyer un message dans le tchat de la tontine
    */
   static async sendMessage(
