@@ -534,7 +534,9 @@ export class TontineService {
     const [members, contributions, messages, votes, auctions] = await Promise.all([
       TontineMember.find({ tontineId }).populate('userId', 'firstName lastName email'),
       TontineContribution.find({ tontineId }).sort({ createdAt: -1 }),
-      TontineMessage.find({ tontineId }).populate('senderId', 'firstName lastName').sort({ createdAt: 1 }),
+      TontineMessage.find({ tontineId })
+        .populate('senderId', 'firstName lastName')
+        .sort({ createdAt: 1 }),
       TontineVote.find({ tontineId }).sort({ createdAt: -1 }),
       TontineAuction.find({ tontineId }).sort({ createdAt: -1 }),
     ]);
