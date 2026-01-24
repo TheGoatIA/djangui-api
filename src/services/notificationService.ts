@@ -3,12 +3,15 @@ import User from '../models/User';
 import Notification from '../models/Notification';
 import logger from '../utils/logger';
 import { messaging } from 'firebase-admin';
+import { I18nService } from './i18nService';
 
 export interface NotificationPayload {
   title: string;
   body: string;
   data?: Record<string, string>;
   imageUrl?: string;
+  translationKey?: string;
+  translationData?: Record<string, any>;
 }
 
 export class NotificationService {
@@ -17,18 +20,30 @@ export class NotificationService {
    */
   static async sendToUser(userId: string, payload: NotificationPayload) {
     try {
-      // 1. Persist notification in database
+      // 1. Send via FCM
+      const user = await User.findById(userId).select('fcmTokens language');
+      if (!user) return;
+
+      // 2. Handle localization if key is provided
+      if (payload.translationKey) {
+        const { title, body } = I18nService.translateNotification(
+          user.language || 'fr',
+          payload.translationKey,
+          payload.translationData || {},
+        );
+        payload.title = title;
+        payload.body = body;
+      }
+
+      // 3. Persist notification in database
       await Notification.create({
         userId,
         title: payload.title,
         body: payload.body,
         data: payload.data,
-        // TODO: Add imageUrl field to Notification model if we want to retrieve it later in history
       });
 
-      // 2. Send via FCM
-      const user = await User.findById(userId).select('fcmTokens');
-      if (!user || !user.fcmTokens || user.fcmTokens.length === 0) {
+      if (!user.fcmTokens || user.fcmTokens.length === 0) {
         logger.info(
           `No FCM tokens found for user ${userId}. Push skiped, but saved to history: ${payload.title}`,
         );
@@ -39,7 +54,7 @@ export class NotificationService {
         notification: {
           title: payload.title,
           body: payload.body,
-          imageUrl: payload.imageUrl, // Add image URL support
+          imageUrl: payload.imageUrl,
         },
         data: payload.data,
         tokens: user.fcmTokens,

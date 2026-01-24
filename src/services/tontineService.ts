@@ -103,8 +103,10 @@ export class TontineService {
 
     // Notification au créateur
     await NotificationService.sendToUser(tontine.creatorId.toString(), {
-      title: 'Nouveau membre ! 🤝',
-      body: `${data.displayName} a rejoint votre tontine "${tontine.name}".`,
+      title: '',
+      body: '',
+      translationKey: 'TONTINE_JOIN',
+      translationData: { name: data.displayName, tontineName: tontine.name },
       data: { tontineId: tontine._id.toString(), type: 'TONTINE_JOIN' },
     });
 
@@ -256,9 +258,7 @@ export class TontineService {
   /**
    * Calculer le résumé du tour actuel (Cumul récolté)
    */
-  static async getTurnSummary(
-    tontineId: string,
-  ): Promise<{
+  static async getTurnSummary(tontineId: string): Promise<{
     collectedAmount: number;
     expectedAmount: number;
     contributorsCount: number;
@@ -333,8 +333,10 @@ export class TontineService {
     // Notification à tous les membres
     for (const m of members) {
       await NotificationService.sendToUser(m.userId.toString(), {
-        title: 'Tontine lancée ! 🚀',
-        body: `La tontine "${tontine.name}" a démarré. Préparez vos cotisations !`,
+        title: '',
+        body: '',
+        translationKey: 'TONTINE_STARTED',
+        translationData: { tontineName: tontine.name },
         data: { tontineId: tontine._id.toString(), type: 'TONTINE_STARTED' },
       });
     }
@@ -413,17 +415,23 @@ export class TontineService {
     // Notification à tous les membres pour le nouveau tour
     const members = await TontineMember.find({ tontineId, invitationStatus: 'accepted' });
     for (const m of members) {
-      await NotificationService.sendToUser(m.userId.toString(), {
-        title:
-          tontine.status === 'completed'
-            ? 'Tontine terminée ! 🎉'
-            : `Nouveau Tour : ${tontine.currentTurn} 🔄`,
-        body:
-          tontine.status === 'completed'
-            ? `La tontine "${tontine.name}" est arrivée à son terme.`
-            : `Le tour précédent est clos. C'est parti pour le tour ${tontine.currentTurn} !`,
-        data: { tontineId: tontine._id.toString(), type: 'TONTINE_ROTATION' },
-      });
+      if (tontine.status === 'completed') {
+        await NotificationService.sendToUser(m.userId.toString(), {
+          title: '',
+          body: '',
+          translationKey: 'TONTINE_COMPLETED',
+          translationData: { tontineName: tontine.name },
+          data: { tontineId: tontine._id.toString(), type: 'TONTINE_ROTATION' },
+        });
+      } else {
+        await NotificationService.sendToUser(m.userId.toString(), {
+          title: '',
+          body: '',
+          translationKey: 'TONTINE_NEW_TURN',
+          translationData: { turn: tontine.currentTurn },
+          data: { tontineId: tontine._id.toString(), type: 'TONTINE_ROTATION' },
+        });
+      }
     }
 
     return tontine;
@@ -511,6 +519,36 @@ export class TontineService {
     return await Tontine.find()
       .populate('creatorId', 'firstName lastName email')
       .sort({ createdAt: -1 });
+  }
+
+  /**
+   * Obtenir les détails complets d'une tontine pour l'administration
+   */
+  static async getAdminTontineDetails(tontineId: string): Promise<any> {
+    const tontine = await Tontine.findById(tontineId).populate(
+      'creatorId',
+      'firstName lastName email',
+    );
+    if (!tontine) throw new AppError('Tontine non trouvée', 404);
+
+    const [members, contributions, messages, votes, auctions] = await Promise.all([
+      TontineMember.find({ tontineId }).populate('userId', 'firstName lastName email'),
+      TontineContribution.find({ tontineId }).sort({ createdAt: -1 }),
+      TontineMessage.find({ tontineId })
+        .populate('senderId', 'firstName lastName')
+        .sort({ createdAt: 1 }),
+      TontineVote.find({ tontineId }).sort({ createdAt: -1 }),
+      TontineAuction.find({ tontineId }).sort({ createdAt: -1 }),
+    ]);
+
+    return {
+      tontine,
+      members,
+      contributions,
+      messages,
+      votes,
+      auctions,
+    };
   }
 
   /**

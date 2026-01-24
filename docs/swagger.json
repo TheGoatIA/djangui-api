@@ -1095,6 +1095,53 @@
         }
     ],
     "paths": {
+        "/v1/auth/resend-verification": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Resend Verification Email",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "email"
+                                ],
+                                "properties": {
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "example": "user@example.com"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Email sent successfully",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "message": "Email de vérification envoyé avec succès."
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Email already verified or invalid"
+                    },
+                    "404": {
+                        "description": "User not found"
+                    }
+                }
+            }
+        },
         "/v1/analytics/events": {
             "post": {
                 "tags": [
@@ -2079,6 +2126,80 @@
                 "responses": {
                     "200": {
                         "description": "Liste complète"
+                    }
+                }
+            }
+        },
+        "/v1/tontines/admin/all/{id}": {
+            "get": {
+                "tags": [
+                    "Admin Tontines"
+                ],
+                "summary": "Obtenir les détails complets d'une tontine",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Détails complets récupérés",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "success"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "tontine": {
+                                                    "$ref": "#/components/schemas/Tontine"
+                                                },
+                                                "members": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/TontineMember"
+                                                    }
+                                                },
+                                                "contributions": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/TontineContribution"
+                                                    }
+                                                },
+                                                "messages": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/TontineMessage"
+                                                    }
+                                                },
+                                                "votes": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object"
+                                                    }
+                                                },
+                                                "auctions": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -4144,6 +4265,54 @@
                                 }
                             }
                         }
+                    }
+                }
+            }
+        },
+        "/v1/auth/language": {
+            "patch": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Update User Language Preference",
+                "description": "Updates the preferred language for notifications and AI responses.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "language"
+                                ],
+                                "properties": {
+                                    "language": {
+                                        "type": "string",
+                                        "enum": [
+                                            "fr",
+                                            "en"
+                                        ],
+                                        "example": "en"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Language preference updated",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "message": "Language preference updated to en"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid language code"
                     }
                 }
             }
