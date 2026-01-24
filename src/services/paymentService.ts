@@ -292,7 +292,9 @@ export class PaymentService {
     await user.save();
 
     // Notify Slack
-    SlackService.sendNotification(`📉 *Subscription Cancelled*\n*User ID*: ${userId}\n*Email*: ${user.email}\n*Plan*: ${user.subscription.plan}`);
+    SlackService.sendNotification(
+      `📉 *Subscription Cancelled*\n*User ID*: ${userId}\n*Email*: ${user.email}\n*Plan*: ${user.subscription.plan}`,
+    );
 
     // Audit Log for subscription cancellation
     AuditService.record({

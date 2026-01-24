@@ -20,6 +20,7 @@ import Redis from 'ioredis';
 import os from 'os';
 import { AuditService } from '../services/auditService';
 import { EmailService } from '../services/emailService';
+import { DbBackupService } from '../services/dbBackupService';
 
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 
@@ -135,46 +136,33 @@ export class AdminController {
   // 1. Database Backup (Mongodump)
   static async backupDatabase(req: Request, res: Response, next: NextFunction) {
     try {
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const filename = `backup-${timestamp}`;
-      const backupPath = path.join(__dirname, '../../backups', filename);
+      const result = await DbBackupService.runBackup();
 
-      // Ensure backups directory exists
-      if (!fs.existsSync(path.join(__dirname, '../../backups'))) {
-        fs.mkdirSync(path.join(__dirname, '../../backups'), { recursive: true });
+      res.status(200).json({
+        status: 'success',
+        message: 'Backup completed successfully',
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // 1b. Database Restore
+  static async restoreDatabase(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { filename } = req.params;
+
+      if (!filename) {
+        return next(new AppError('Backup filename is required', 400));
       }
 
-      // Command for mongodump (requires mongodump installed in system)
-      // Assuming localhost/27017 and typical connection string
-      // NOTE: For password protected DBs, need to add --username and --password
-      const command = `mongodump --uri="${process.env.MONGO_URI}" --out="${backupPath}"`;
+      await DbBackupService.restoreBackup(filename);
 
-      exec(command, (error, stdout, stderr) => {
-        if (error) {
-          console.error(`Backup error: ${error}`);
-          const isCommandNotFound =
-            error.message.includes('not recognized') || // Windows
-            error.message.includes('not found') || // Linux/Mac
-            error.code === 127;
-
-          if (isCommandNotFound) {
-            return next(
-              new AppError(
-                'Backup failed: mongodump tool not found on server. Please install MongoDB Database Tools and add to PATH.',
-                500,
-              ),
-            );
-          }
-          return next(new AppError(`Backup failed execution: ${error.message}`, 500));
-        }
-
-        // For simplicity, we define success if command runs.
-        // In a real scenario, we might zip the folder and return the stream.
-        res.status(200).json({
-          status: 'success',
-          message: 'Backup initiated successfully',
-          path: backupPath,
-        });
+      res.status(200).json({
+        status: 'success',
+        message: 'Database restored successfully',
+        file: filename,
       });
     } catch (error) {
       next(error);
@@ -1145,8 +1133,10 @@ export class AdminController {
 
   static async getSubscriptionDetails(req: Request, res: Response, next: NextFunction) {
     try {
-      const subscription = await Subscription.findById(req.params.id)
-        .populate('userId', 'firstName lastName email');
+      const subscription = await Subscription.findById(req.params.id).populate(
+        'userId',
+        'firstName lastName email',
+      );
 
       if (!subscription) return next(new AppError('No subscription found with that ID', 404));
 
@@ -1188,7 +1178,7 @@ export class AdminController {
         { $match: { createdAt: { $gte: startDate } } },
         { $group: { _id: '$feature', count: { $sum: 1 } } },
         { $sort: { count: -1 } },
-        { $limit: 10 }
+        { $limit: 10 },
       ]);
 
       // 2. Session Stats
@@ -1199,16 +1189,16 @@ export class AdminController {
             _id: null,
             avgDuration: { $avg: '$durationSeconds' },
             totalSessions: { $sum: 1 },
-            uniqueUsers: { $addToSet: '$userId' }
-          }
+            uniqueUsers: { $addToSet: '$userId' },
+          },
         },
-        { $project: { avgDuration: 1, totalSessions: 1, uniqueUsers: { $size: '$uniqueUsers' } } }
+        { $project: { avgDuration: 1, totalSessions: 1, uniqueUsers: { $size: '$uniqueUsers' } } },
       ]);
 
       // 3. Platform Distribution (active instances)
       const platformStats = await SessionLog.aggregate([
         { $match: { startTime: { $gte: startDate } } },
-        { $group: { _id: '$platform', count: { $sum: 1 } } }
+        { $group: { _id: '$platform', count: { $sum: 1 } } },
       ]);
 
       res.status(200).json({
@@ -1217,8 +1207,8 @@ export class AdminController {
           period,
           topFeatures,
           sessionStats: sessionStats[0] || { avgDuration: 0, totalSessions: 0, uniqueUsers: 0 },
-          platformStats
-        }
+          platformStats,
+        },
       });
     } catch (error) {
       next(error);

@@ -59,11 +59,11 @@ export class ReportService {
       savingsRate: Math.max(0, savingsRate),
       budgetHealth: budget
         ? {
-          totalAllocated: budget.totalAllocated,
-          totalSpent: budget.totalSpent,
-          status: budget.status,
-          percentageUsed: (budget.totalSpent / budget.totalAllocated) * 100,
-        }
+            totalAllocated: budget.totalAllocated,
+            totalSpent: budget.totalSpent,
+            status: budget.status,
+            percentageUsed: (budget.totalSpent / budget.totalAllocated) * 100,
+          }
         : null,
       currency: user?.currency || 'XAF',
     };
@@ -164,14 +164,15 @@ export class ReportService {
     const user = await User.findById(userId);
     if (!user) throw new AppError('User not found', 404);
 
-    const [summary, categoryAnalysis, investments, goals, challenges, tontineData] = await Promise.all([
-      this.getDashboardSummary(userId),
-      this.getSpendingAnalysis(userId, month, year),
-      Investment.find({ userId, status: 'active' }),
-      SavingGoal.find({ userId, status: 'active' }),
-      UserChallenge.find({ userId, status: 'active' }).populate('challengeId'),
-      this.getTontineMonthSummary(userId, month, year),
-    ]);
+    const [summary, categoryAnalysis, investments, goals, challenges, tontineData] =
+      await Promise.all([
+        this.getDashboardSummary(userId),
+        this.getSpendingAnalysis(userId, month, year),
+        Investment.find({ userId, status: 'active' }),
+        SavingGoal.find({ userId, status: 'active' }),
+        UserChallenge.find({ userId, status: 'active' }).populate('challengeId'),
+        this.getTontineMonthSummary(userId, month, year),
+      ]);
 
     const investmentSummary = investments.map((inv: any) => ({
       type: inv.type,
@@ -322,7 +323,9 @@ export class ReportService {
     const startOfMonth = new Date(year, month - 1, 1);
     const endOfMonth = new Date(year, month, 0, 23, 59, 59);
 
-    const members = await TontineMember.find({ userId, invitationStatus: 'accepted' }).populate('tontineId');
+    const members = await TontineMember.find({ userId, invitationStatus: 'accepted' }).populate(
+      'tontineId',
+    );
 
     let totalContributed = 0;
     let totalReceived = 0;
@@ -332,7 +335,7 @@ export class ReportService {
       const contributions = await TontineContribution.find({
         memberId: member._id,
         paidAt: { $gte: startOfMonth, $lte: endOfMonth },
-        validationStatus: 'completed'
+        validationStatus: 'completed',
       });
 
       const contributed = contributions.reduce((acc, curr) => acc + curr.amountPaid, 0);
@@ -342,14 +345,14 @@ export class ReportService {
         tontineName: (member.tontineId as any).name,
         contributed,
         received: 0, // Logic to be added for cagnottes received
-        trustScore: member.trustScore
+        trustScore: member.trustScore,
       });
     }
 
     return {
       totalContributed,
       totalReceived,
-      details
+      details,
     };
   }
 }

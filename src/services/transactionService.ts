@@ -40,7 +40,9 @@ export class TransactionService {
 
       // Alert Slack for large transactions (> 500,000)
       if (transaction.amount > 500000) {
-        SlackService.sendNotification(`💰 *Large Transaction Alert*\n*User ID*: ${userId}\n*Amount*: ${transaction.amount}\n*Type*: ${transaction.type}\n*Description*: ${transaction.description}`);
+        SlackService.sendNotification(
+          `💰 *Large Transaction Alert*\n*User ID*: ${userId}\n*Amount*: ${transaction.amount}\n*Type*: ${transaction.type}\n*Description*: ${transaction.description}`,
+        );
       }
 
       // Update User Wallet Balance
@@ -81,7 +83,8 @@ export class TransactionService {
             budget.totalSpent += transaction.amount;
 
             const usagePercentage =
-              (budget.categories[categoryIndex].spent / budget.categories[categoryIndex].allocated) *
+              (budget.categories[categoryIndex].spent /
+                budget.categories[categoryIndex].allocated) *
               100;
 
             if (usagePercentage >= 100 && budget.status !== 'exceeded') {
@@ -113,8 +116,10 @@ export class TransactionService {
           } else {
             goal.currentAmount -= transaction.amount;
           }
-          const wasAlreadyHalfway = ((goal.currentAmount - transaction.amount) / goal.targetAmount) * 100 >= 50;
-          const wasAlreadyCompleted = ((goal.currentAmount - transaction.amount) / goal.targetAmount) * 100 >= 100;
+          const wasAlreadyHalfway =
+            ((goal.currentAmount - transaction.amount) / goal.targetAmount) * 100 >= 50;
+          const wasAlreadyCompleted =
+            ((goal.currentAmount - transaction.amount) / goal.targetAmount) * 100 >= 100;
 
           await (goal as any).save({ session });
 
@@ -304,13 +309,20 @@ export class TransactionService {
       const remainder = threshold - (amount % threshold);
       const roundupAmount = remainder === threshold ? 0 : remainder;
 
-      const wasAlreadyHalfway = ((roundupGoal.currentAmount - roundupAmount) / roundupGoal.targetAmount) * 100 >= 50;
-      const wasAlreadyCompleted = ((roundupGoal.currentAmount - roundupAmount) / roundupGoal.targetAmount) * 100 >= 100;
+      const wasAlreadyHalfway =
+        ((roundupGoal.currentAmount - roundupAmount) / roundupGoal.targetAmount) * 100 >= 50;
+      const wasAlreadyCompleted =
+        ((roundupGoal.currentAmount - roundupAmount) / roundupGoal.targetAmount) * 100 >= 100;
 
       await (roundupGoal as any).save({ session });
 
       // Check for milestones
-      await GoalService.checkMilestones(userId, roundupGoal, wasAlreadyHalfway, wasAlreadyCompleted);
+      await GoalService.checkMilestones(
+        userId,
+        roundupGoal,
+        wasAlreadyHalfway,
+        wasAlreadyCompleted,
+      );
 
       logger.info(
         `Roundup strategy applied for user ${userId}: ${roundupAmount} added to goal ${roundupGoal.name}`,

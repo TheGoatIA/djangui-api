@@ -33,7 +33,10 @@ export class DbBackupService {
       logger.info(`Starting DB backup: ${backupName}`);
 
       // Command: mongodump --uri="<uri>" --archive="<path>" --gzip
-      await execPromise(`mongodump --uri="${uri}" --archive="${archivePath}" --gzip`);
+      const toolsPath = process.env.MONGODB_TOOLS_PATH
+        ? path.join(process.env.MONGODB_TOOLS_PATH, 'mongodump')
+        : 'mongodump';
+      await execPromise(`"${toolsPath}" --uri="${uri}" --archive="${archivePath}" --gzip`);
 
       logger.info(`Backup created successfully at ${archivePath}`);
 
@@ -57,7 +60,12 @@ export class DbBackupService {
       );
 
       // Notify Slack
-      await SlackService.sendNotification(`📦 *DB Backup Success*\n*File*: ${path.basename(archivePath)}\n*Status*: Completed and saved.`);
+      await SlackService.sendNotification(
+        `📦 *DB Backup Success*\n*File*: ${path.basename(archivePath)}\n*Status*: Completed and saved.`,
+      );
+
+      // 5. Cleanup old backups (15 days)
+      await this.cleanupOldBackups(15);
 
       return { success: true, path: archivePath, stats };
     } catch (error: any) {
@@ -72,6 +80,73 @@ export class DbBackupService {
       await SlackService.sendNotification(`🚨 *DB Backup FAILED*\n*Error*: ${error.message}`);
 
       throw error;
+    }
+  }
+
+  /**
+   * Restore database from a backup file
+   */
+  static async restoreBackup(filename: string) {
+    const backupPath = path.join(this.BACKUP_DIR, filename);
+
+    if (!fs.existsSync(backupPath)) {
+      throw new Error(`Backup file not found: ${filename}`);
+    }
+
+    try {
+      const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/kauri';
+      const toolsPath = process.env.MONGODB_TOOLS_PATH
+        ? path.join(process.env.MONGODB_TOOLS_PATH, 'mongorestore')
+        : 'mongorestore';
+
+      logger.warn(`STARTING DATABASE RESTORE from: ${filename}`);
+
+      // Command: mongorestore --uri="<uri>" --archive="<path>" --gzip --drop
+      // --drop is used to clear existing collections before restore
+      await execPromise(`"${toolsPath}" --uri="${uri}" --archive="${backupPath}" --gzip --drop`);
+
+      logger.info(`Database restored successfully from ${filename}`);
+
+      // Notify Slack
+      await SlackService.sendNotification(
+        `⚠️ *DB RESTORE SUCCESS*\n*File*: ${filename}\n*Status*: Database has been replaced by backup.`,
+      );
+
+      return { success: true, file: filename };
+    } catch (error: any) {
+      logger.error(`Database restore failed: ${error.message}`);
+      await SlackService.sendNotification(
+        `🚨 *DB RESTORE FAILED*\n*File*: ${filename}\n*Error*: ${error.message}`,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Remove backups older than X days
+   */
+  private static async cleanupOldBackups(days: number) {
+    try {
+      const files = fs.readdirSync(this.BACKUP_DIR);
+      const now = Date.now();
+      const expirationMs = days * 24 * 60 * 60 * 1000;
+
+      for (const file of files) {
+        if (!file.endsWith('.gz')) continue;
+
+        const filePath = path.join(this.BACKUP_DIR, file);
+        const stats = fs.statSync(filePath);
+        const ageMs = now - stats.mtimeMs;
+
+        if (ageMs > expirationMs) {
+          fs.unlinkSync(filePath);
+          logger.info(
+            `Deleted old backup: ${file} (Age: ${Math.round(ageMs / (24 * 3600000))} days)`,
+          );
+        }
+      }
+    } catch (error: any) {
+      logger.error(`Backup cleanup failed: ${error.message}`);
     }
   }
 

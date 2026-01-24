@@ -19,7 +19,6 @@ import { TontineService } from './tontineService';
 import Subscription from '../models/Subscription';
 import { SlackService } from './slackService';
 
-
 export class CronService {
   /**
    * Initialize all scheduled jobs
@@ -93,6 +92,11 @@ export class CronService {
     // Daily at 09:00 AM: Subscription Reminders
     cron.schedule('0 9 * * *', () => {
       this.checkSubscriptionReminders();
+    });
+
+    // Daily at 02:00 AM: Database Backup
+    cron.schedule('0 2 * * *', () => {
+      this.runDailyBackup();
     });
 
     logger.info('Cron jobs initialized successfully');
@@ -263,7 +267,9 @@ export class CronService {
       );
 
       // Notify Slack
-      await SlackService.sendNotification(`📊 *Daily Activity Report Ready*\n*Period*: ${stats.period.start.toLocaleDateString()}\n*New Users*: ${stats.users.new}\n*Active Users*: ${stats.users.active}\n*Income Volume*: ${stats.transactions.income.volume}\n*Expense Volume*: ${stats.transactions.expense.volume}`);
+      await SlackService.sendNotification(
+        `📊 *Daily Activity Report Ready*\n*Period*: ${stats.period.start.toLocaleDateString()}\n*New Users*: ${stats.users.new}\n*Active Users*: ${stats.users.active}\n*Income Volume*: ${stats.transactions.income.volume}\n*Expense Volume*: ${stats.transactions.expense.volume}`,
+      );
 
       logger.info('Daily admin report sent');
     } catch (error: any) {
@@ -305,8 +311,8 @@ export class CronService {
             </thead>
             <tbody>
               ${anomalies
-            .map(
-              (a) => `
+                .map(
+                  (a) => `
                 <tr>
                   <td style="padding: 8px; border: 1px solid #ddd;">${a.email}</td>
                   <td style="padding: 8px; border: 1px solid #ddd;">${a.walletBalance}</td>
@@ -314,8 +320,8 @@ export class CronService {
                   <td style="padding: 8px; border: 1px solid #ddd; color: red;">${a.diff.toFixed(2)}</td>
                 </tr>
               `,
-            )
-            .join('')}
+                )
+                .join('')}
             </tbody>
           </table>
         `;
@@ -402,7 +408,7 @@ export class CronService {
       for (const user of users) {
         await NotificationService.sendToUser(user._id.toString(), {
           title: 'Ton Bilan Mensuel est prêt ! 📊',
-          body: "Découvre ton rapport narratif IA pour voir comment tu as géré tes finances le mois dernier.",
+          body: 'Découvre ton rapport narratif IA pour voir comment tu as géré tes finances le mois dernier.',
           data: { type: 'MONTHLY_REPORT_REMINDER' },
         });
       }
@@ -498,28 +504,35 @@ export class CronService {
 
       for (const tontine of activeTontines) {
         // Calculate deadline for current turn
-        const deadline = TontineService.getTurnDeadline(tontine.startDate, tontine.frequency, tontine.currentTurn);
+        const deadline = TontineService.getTurnDeadline(
+          tontine.startDate,
+          tontine.frequency,
+          tontine.currentTurn,
+        );
 
         // If deadline is tomorrow (within 24-48h window for once-a-day check)
         const diffHours = (deadline.getTime() - new Date().getTime()) / 3600000;
 
         if (diffHours > 0 && diffHours <= 24) {
           // Find members who haven't paid for this turn
-          const members = await TontineMember.find({ tontineId: tontine._id, invitationStatus: 'accepted' });
+          const members = await TontineMember.find({
+            tontineId: tontine._id,
+            invitationStatus: 'accepted',
+          });
 
           for (const member of members) {
             const hasPaid = await TontineContribution.findOne({
               tontineId: tontine._id,
               memberId: member._id,
               turnIndex: tontine.currentTurn,
-              validationStatus: { $in: ['ai_validated', 'completed'] }
+              validationStatus: { $in: ['ai_validated', 'completed'] },
             });
 
             if (!hasPaid) {
               await NotificationService.sendToUser(member.userId.toString(), {
                 title: 'Rappel Tontine 🔔',
                 body: `Demain est l'échéance pour le tour ${tontine.currentTurn} de "${tontine.name}". N'oubliez pas votre cotisation !`,
-                data: { tontineId: tontine._id.toString(), type: 'TONTINE_REMINDER' }
+                data: { tontineId: tontine._id.toString(), type: 'TONTINE_REMINDER' },
               });
             }
           }
@@ -548,15 +561,15 @@ export class CronService {
         remindMe: true,
         nextBillingDate: {
           $gte: new Date(),
-          $lte: tomorrow
-        }
+          $lte: tomorrow,
+        },
       });
 
       for (const sub of upcomingSubs) {
         await NotificationService.sendToUser(sub.userId.toString(), {
           title: `Rappel Abonnement 💳`,
           body: `Demain, votre abonnement "${sub.name}" sera prélevé (${sub.amount} ${sub.currency}).`,
-          data: { type: 'SUBSCRIPTION_REMINDER', subscriptionId: sub._id.toString() }
+          data: { type: 'SUBSCRIPTION_REMINDER', subscriptionId: sub._id.toString() },
         });
       }
 
@@ -565,19 +578,21 @@ export class CronService {
         status: 'active',
         trialEndDate: {
           $gte: new Date(),
-          $lte: inTwoDays
-        }
+          $lte: inTwoDays,
+        },
       });
 
       for (const sub of trialEnds) {
         await NotificationService.sendToUser(sub.userId.toString(), {
           title: `Alerte Fin d'Essai ! 🚨`,
           body: `Votre période d'essai pour "${sub.name}" se termine dans 48h. Pensez à l'annuler si vous ne souhaitez pas être prélevé.`,
-          data: { type: 'TRIAL_END_REMINDER', subscriptionId: sub._id.toString() }
+          data: { type: 'TRIAL_END_REMINDER', subscriptionId: sub._id.toString() },
         });
       }
 
-      logger.info(`Subscription reminders sent: ${upcomingSubs.length} subs, ${trialEnds.length} trials`);
+      logger.info(
+        `Subscription reminders sent: ${upcomingSubs.length} subs, ${trialEnds.length} trials`,
+      );
     } catch (error: any) {
       logger.error(`Error in checkSubscriptionReminders job: ${error.message}`);
     }
