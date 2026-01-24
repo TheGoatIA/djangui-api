@@ -25,8 +25,10 @@ export class GamificationService {
 
         // Notify user of level up
         NotificationService.sendToUser(userId, {
-          title: 'Niveau Supérieur ! 🚀',
-          body: `Félicitations ! Tu es passé du niveau ${oldLevel} au niveau ${newLevel}.`,
+          title: '',
+          body: '',
+          translationKey: 'LEVEL_UP',
+          translationData: { oldLevel, newLevel },
           data: { type: 'level_up', level: String(newLevel) },
         }).catch((err) => logger.error(`Level up notification error: ${err.message}`));
       }
@@ -55,8 +57,10 @@ export class GamificationService {
       // but let's keep it consistent if desired. Here we just deduct)
 
       NotificationService.sendToUser(userId, {
-        title: 'Pénalité de Points ! ⚠️',
-        body: `Tu as perdu ${lostXP} XP. Raison : ${reason}`,
+        title: '',
+        body: '',
+        translationKey: 'XP_PENALTY',
+        translationData: { amount: lostXP, reason },
         data: { type: 'xp_deduction', amount: String(lostXP), reason },
       }).catch((err) => logger.error(`XP deduction notification error: ${err.message}`));
 
@@ -87,8 +91,10 @@ export class GamificationService {
       });
 
       NotificationService.sendToUser(userId, {
-        title: 'Nouveau Badge Obtenu ! 🏅',
-        body: `Tu as gagné le badge : ${badgeName} ${icon}`,
+        title: '',
+        body: '',
+        translationKey: 'BADGE_AWARDED',
+        translationData: { badgeName, icon },
         data: { type: 'badge_awarded', badgeName },
       }).catch((err) => logger.error(`Badge notification error: ${err.message}`));
 

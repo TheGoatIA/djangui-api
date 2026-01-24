@@ -94,15 +94,19 @@ export class ChallengeService {
 
         // Send notification
         NotificationService.sendToUser(userChallenge.userId.toString(), {
-          title: 'Challenge Réussi ! 🏆',
-          body: `Bravo ! Tu as terminé le challenge : ${userChallenge.challengeId.title}`,
+          title: '',
+          body: '',
+          translationKey: 'CHALLENGE_COMPLETED',
+          translationData: { challengeTitle: userChallenge.challengeId.title },
           data: { type: 'challenge_completed', userChallengeId: userChallenge._id.toString() },
         });
       } else if (userChallenge.progress >= 50 && oldProgress < 50) {
         // Milestone: 50%
         NotificationService.sendToUser(userChallenge.userId.toString(), {
-          title: 'Mi-parcours Challenge ! ⭐️',
-          body: `Déjà 50% parcouru pour le challenge : ${userChallenge.challengeId.title}. Lâchez rien !`,
+          title: '',
+          body: '',
+          translationKey: 'CHALLENGE_MILESTONE_50',
+          translationData: { challengeTitle: userChallenge.challengeId.title },
           data: {
             type: 'challenge_milestone',
             userChallengeId: userChallenge._id.toString(),
@@ -246,8 +250,10 @@ export class ChallengeService {
       );
 
       NotificationService.sendToUser(userChallenge.userId.toString(), {
-        title: 'Challenge Réussi ! 🏆',
-        body: `Bravo ! Tu as terminé le challenge : ${userChallenge.challengeId.title}`,
+        title: '',
+        body: '',
+        translationKey: 'CHALLENGE_COMPLETED',
+        translationData: { challengeTitle: userChallenge.challengeId.title },
         data: { type: 'challenge_completed', userChallengeId: userChallenge._id.toString() },
       });
     }

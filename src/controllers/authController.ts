@@ -184,6 +184,24 @@ export class AuthController {
     }
   }
 
+  static async updateLanguage(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const { language } = req.body;
+      if (!language || !['fr', 'en'].includes(language)) {
+        throw new AppError('Invalid language. Supported: fr, en', 400);
+      }
+
+      const user = await AuthService.updateMe(req.user._id, { language });
+      res.status(200).json({
+        success: true,
+        message: 'Language updated successfully',
+        data: { language: user.language },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
   static async getMe(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       res.status(200).json({
@@ -296,6 +314,18 @@ export class AuthController {
       res.status(200).json({
         success: true,
         message: 'Connection logged',
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+  static async resendVerificationEmail(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { email } = req.body;
+      await AuthService.resendVerificationEmail(email);
+      res.status(200).json({
+        success: true,
+        message: 'Email de vérification envoyé avec succès.',
       });
     } catch (err) {
       next(err);

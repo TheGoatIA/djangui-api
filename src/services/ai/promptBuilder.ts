@@ -30,8 +30,10 @@ export class PromptBuilder {
       - Revenu mensuel: ${monthlyIncome} ${currency}
       - Pays: ${country || 'Non spécifié'}
       - Devise: ${currency}
-      - Langue: ${language === 'fr' ? 'Français' : 'Anglais'}
+      - Langue de l'utilisateur: ${language === 'fr' ? 'Français' : 'Anglais'}
       - Ton souhaité: ${preferences.coachTone}
+      
+      RÈGLE CRITIQUE: Tu dois répondre EXCLUSIVEMENT en ${language === 'fr' ? 'Français' : 'Anglais'}.
       
       CONTEXTE FINANCIER:
       ${JSON.stringify({
@@ -125,8 +127,11 @@ export class PromptBuilder {
     `;
   }
   static buildNarrativeReportPrompt(user: IUser, reportData: any): string {
+    const langName = user.language === 'en' ? 'English' : 'French';
     return `
       En tant que coach financier Kauri, rédige un rapport mensuel narratif et motivant pour ${user.firstName}.
+      RÉPONDS UNIQUEMENT EN ${langName.toUpperCase()}.
+
       Données du mois: ${JSON.stringify(reportData)}
       
       Le rapport doit être une synthèse holistique incluant:
@@ -208,11 +213,15 @@ export class PromptBuilder {
   }
 
   static buildDailyAdvicePrompt(user: IUser, context: any): string {
-    const { firstName, currency } = user;
+    const { firstName, currency, language } = user;
+    const langName = language === 'en' ? 'English' : 'French';
     return `
       Tu es Kauri, le coach financier personnel de ${firstName}. 
       Ta mission est de générer un conseil financier quotidien court, percutant et ultra-personnalisé.
       
+      INFOS UTILISATEUR:
+      - Langue de réponse: ${langName} (Réponds UNIQUEMENT en ${langName})
+
       CONTEXTE ACTUEL de ${firstName}:
       ${JSON.stringify(context)}
       

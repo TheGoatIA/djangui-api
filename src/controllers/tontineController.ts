@@ -164,8 +164,10 @@ export class TontineController {
 
       // 6. Notification de succès au membre
       await NotificationService.sendToUser((req as any).user.id, {
-        title: 'Cotisation reçue ! ✅',
-        body: `Votre preuve de paiement pour le tour ${tontine.currentTurn} de "${tontine.name}" a été validée par IA.`,
+        title: '',
+        body: '',
+        translationKey: 'TONTINE_CONTRIBUTION_VALIDATED',
+        translationData: { turn: tontine.currentTurn, tontineName: tontine.name },
         data: { tontineId: tontineId, type: 'TONTINE_CONTRIBUTION_VALIDATED' },
       });
 
@@ -229,6 +231,18 @@ export class TontineController {
     try {
       const tontines = await TontineService.listAllTontines();
       res.json({ status: 'success', data: tontines });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Rechercher les détails complets d'une tontine (Admin seulement)
+   */
+  static async getAdminTontineDetails(req: Request, res: Response, next: NextFunction) {
+    try {
+      const details = await TontineService.getAdminTontineDetails(req.params.id);
+      res.json({ status: 'success', data: details });
     } catch (error) {
       next(error);
     }
