@@ -4,18 +4,18 @@ import logger from '../../utils/logger';
 import { AppError } from '../../middleware/errorHandler';
 
 export class KauriVoiceService {
-    /**
-     * Processes an audio file to extract transaction data using Gemini 2.0
-     * @param filePath Path to the uploaded audio file
-     * @param mimeType MIME type of the audio file
-     * @returns Extracted transaction data in JSON format
-     */
-    static async processVoiceTransaction(filePath: string, mimeType: string): Promise<any> {
-        try {
-            const audioBuffer = fs.readFileSync(filePath);
+  /**
+   * Processes an audio file to extract transaction data using Gemini 2.0
+   * @param filePath Path to the uploaded audio file
+   * @param mimeType MIME type of the audio file
+   * @returns Extracted transaction data in JSON format
+   */
+  static async processVoiceTransaction(filePath: string, mimeType: string): Promise<any> {
+    try {
+      const audioBuffer = fs.readFileSync(filePath);
 
-            const currentDate = new Date().toISOString();
-            const prompt = `
+      const currentDate = new Date().toISOString();
+      const prompt = `
         Analyze this audio recording of a user describing a financial transaction.
         Context: The current date is ${currentDate}.
         
@@ -41,17 +41,17 @@ export class KauriVoiceService {
         - Return ONLY the JSON object.
       `;
 
-            const result = await GeminiService.analyzeAudio(audioBuffer, mimeType, prompt, 'kauri-voice');
+      const result = await GeminiService.analyzeAudio(audioBuffer, mimeType, prompt, 'kauri-voice');
 
-            return result;
-        } catch (error: any) {
-            logger.error(`Error in KauriVoiceService: ${error.message}`);
-            throw new AppError('Failed to analyze voice transaction', 500);
-        } finally {
-            // Cleanup: remove the temporary file
-            if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath);
-            }
-        }
+      return result;
+    } catch (error: any) {
+      logger.error(`Error in KauriVoiceService: ${error.message}`);
+      throw new AppError('Failed to analyze voice transaction', 500);
+    } finally {
+      // Cleanup: remove the temporary file
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
     }
+  }
 }

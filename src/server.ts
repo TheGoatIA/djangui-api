@@ -50,16 +50,15 @@ const startServer = async () => {
       server.close(() => {
         logger.info('HTTP server closed. Cleaning up resources...');
         // Close DB, Redis, etc.
-        Promise.all([
-          mongoose.connection.close(),
-          redis.quit()
-        ]).then(() => {
-          logger.info('Clean shutdown complete. Exiting.');
-          process.exit(0);
-        }).catch((err) => {
-          logger.error('Error during shutdown:', err);
-          process.exit(1);
-        });
+        Promise.all([mongoose.connection.close(), redis.quit()])
+          .then(() => {
+            logger.info('Clean shutdown complete. Exiting.');
+            process.exit(0);
+          })
+          .catch((err) => {
+            logger.error('Error during shutdown:', err);
+            process.exit(1);
+          });
       });
 
       // Force shutdown after 20s if it takes too long
@@ -71,7 +70,6 @@ const startServer = async () => {
 
     process.on('SIGTERM', () => shutdown('SIGTERM'));
     process.on('SIGINT', () => shutdown('SIGINT'));
-
   } catch (error) {
     logger.error('Failed to start server:', error);
     process.exit(1);
@@ -79,4 +77,3 @@ const startServer = async () => {
 };
 
 startServer();
-

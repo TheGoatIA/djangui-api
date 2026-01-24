@@ -35,40 +35,40 @@ export class PromptBuilder {
       
       CONTEXTE FINANCIER:
       ${JSON.stringify({
-      budget,
-      activeGoals: goals?.map((g: any) => ({
-        name: g.name,
-        progress: `${g.progress}%`,
-        remaining: g.targetAmount - g.currentAmount,
-      })),
-      activeChallenges: challenges?.map((c: any) => ({
-        title: c.challengeId?.title,
-        progress: `${c.progress}%`,
-      })),
-      recentTransactions: transactions?.map((t: any) => ({
-        amount: t.amount,
-        type: t.type,
-        category: t.category,
-        description: t.description,
-        date: t.date,
-      })),
-      activeTontines: tontines?.map((t: any) => ({
-        name: t.name,
-        role: t.role,
-        nextContribution: t.nextAmount,
-        trustScore: t.trustScore,
-        currentTurn: t.currentTurn
-      })),
-      activeSubscriptions: subscriptions?.map((s: any) => ({
-        name: s.name,
-        amount: s.amount,
-        currency: s.currency,
-        frequency: s.frequency,
-        nextBilling: s.nextBillingDate,
-        trialEnds: s.trialEndDate,
-        status: s.status
-      })),
-    })}
+        budget,
+        activeGoals: goals?.map((g: any) => ({
+          name: g.name,
+          progress: `${g.progress}%`,
+          remaining: g.targetAmount - g.currentAmount,
+        })),
+        activeChallenges: challenges?.map((c: any) => ({
+          title: c.challengeId?.title,
+          progress: `${c.progress}%`,
+        })),
+        recentTransactions: transactions?.map((t: any) => ({
+          amount: t.amount,
+          type: t.type,
+          category: t.category,
+          description: t.description,
+          date: t.date,
+        })),
+        activeTontines: tontines?.map((t: any) => ({
+          name: t.name,
+          role: t.role,
+          nextContribution: t.nextAmount,
+          trustScore: t.trustScore,
+          currentTurn: t.currentTurn,
+        })),
+        activeSubscriptions: subscriptions?.map((s: any) => ({
+          name: s.name,
+          amount: s.amount,
+          currency: s.currency,
+          frequency: s.frequency,
+          nextBilling: s.nextBillingDate,
+          trialEnds: s.trialEndDate,
+          status: s.status,
+        })),
+      })}
       
       TES MISSIONS:
       1. ANALYSE : Analyse les transactions et le budget. Si le budget est dépassé ou serré, alerte l'utilisateur.

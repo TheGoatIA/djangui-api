@@ -51,7 +51,7 @@ export class GamificationService {
       user.xp = Math.max(0, user.xp - amount);
       const lostXP = oldXP - user.xp;
 
-      // Recalculate level if necessary (though usually we don't level down, 
+      // Recalculate level if necessary (though usually we don't level down,
       // but let's keep it consistent if desired. Here we just deduct)
 
       NotificationService.sendToUser(userId, {

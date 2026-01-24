@@ -3,7 +3,8 @@ import logger from '../utils/logger';
 
 export class SlackService {
   private static readonly WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL;
-  private static readonly ERROR_WEBHOOK_URL = process.env.SLACK_ERROR_WEBHOOK_URL || process.env.SLACK_WEBHOOK_URL;
+  private static readonly ERROR_WEBHOOK_URL =
+    process.env.SLACK_ERROR_WEBHOOK_URL || process.env.SLACK_WEBHOOK_URL;
 
   /**
    * Send a notification to Slack
@@ -43,7 +44,9 @@ export class SlackService {
       });
       logger.info(`Slack rich ${isError ? 'error ' : ''}notification sent successfully`);
     } catch (error: any) {
-      logger.error(`Failed to send Slack rich ${isError ? 'error ' : ''}notification: ${error.message}`);
+      logger.error(
+        `Failed to send Slack rich ${isError ? 'error ' : ''}notification: ${error.message}`,
+      );
     }
   }
 }

@@ -24,6 +24,7 @@ services:
       - kauri-network
     volumes:
       - ./uploads:/app/uploads
+      - ./backups:/app/backups
     restart: unless-stopped
     deploy:
       resources:

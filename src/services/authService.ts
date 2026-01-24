@@ -84,7 +84,9 @@ export class AuthService {
     });
 
     // Notify Slack
-    SlackService.sendNotification(`👤 *New User Registered*\n*Email*: ${newUser.email}\n*Country*: ${newUser.country}\n*Currency*: ${newUser.currency}`);
+    SlackService.sendNotification(
+      `👤 *New User Registered*\n*Email*: ${newUser.email}\n*Country*: ${newUser.country}\n*Currency*: ${newUser.currency}`,
+    );
 
     return { user: newUser, tokens };
   }
@@ -221,7 +223,9 @@ export class AuthService {
     const user = await User.findOne({ email }).select('+password');
     if (!user || !(await user.comparePassword(password))) {
       if (user) {
-        SlackService.sendNotification(`🔐 *Security Alert: Failed Login*\n*User*: ${email}\n*Reason*: Incorrect password\n*Time*: ${new Date().toISOString()}`);
+        SlackService.sendNotification(
+          `🔐 *Security Alert: Failed Login*\n*User*: ${email}\n*Reason*: Incorrect password\n*Time*: ${new Date().toISOString()}`,
+        );
       }
       throw new AppError('Incorrect email or password', 401);
     }

@@ -29,18 +29,19 @@ export class CoachService {
 
     // Get context (recent transactions, current budget, goals, challenges, tontines)
     const now = new Date();
-    const [transactions, budget, goals, userChallenges, tontineMembers, subscriptions] = await Promise.all([
-      Transaction.find({ userId }).sort({ date: -1 }).limit(10).lean(),
-      Budget.findOne({
-        userId,
-        'period.month': now.getMonth() + 1,
-        'period.year': now.getFullYear(),
-      }).lean(),
-      SavingGoal.find({ userId, status: 'active' }).lean(),
-      UserChallenge.find({ userId, status: 'active' }).populate('challengeId').lean(),
-      TontineMember.find({ userId, invitationStatus: 'accepted' }).populate('tontineId').lean(),
-      Subscription.find({ userId, status: 'active' }).lean(),
-    ]);
+    const [transactions, budget, goals, userChallenges, tontineMembers, subscriptions] =
+      await Promise.all([
+        Transaction.find({ userId }).sort({ date: -1 }).limit(10).lean(),
+        Budget.findOne({
+          userId,
+          'period.month': now.getMonth() + 1,
+          'period.year': now.getFullYear(),
+        }).lean(),
+        SavingGoal.find({ userId, status: 'active' }).lean(),
+        UserChallenge.find({ userId, status: 'active' }).populate('challengeId').lean(),
+        TontineMember.find({ userId, invitationStatus: 'accepted' }).populate('tontineId').lean(),
+        Subscription.find({ userId, status: 'active' }).lean(),
+      ]);
 
     const context = {
       transactions,
@@ -52,9 +53,9 @@ export class CoachService {
         role: m.tontineId.creatorId.toString() === userId ? 'Créateur' : 'Membre',
         nextAmount: m.tontineId.contributionAmount * m.parts,
         trustScore: m.trustScore,
-        currentTurn: m.tontineId.currentTurn
+        currentTurn: m.tontineId.currentTurn,
       })),
-      subscriptions
+      subscriptions,
     };
     const systemPrompt = PromptBuilder.buildCoachSystemPrompt(user, context);
 
@@ -105,7 +106,7 @@ export class CoachService {
       role: 'model',
       content: text,
       actions: actions.length > 0 ? actions : undefined,
-      timestamp: new Date()
+      timestamp: new Date(),
     });
     conversation.lastMessageAt = new Date();
     await (conversation as any).save();
@@ -118,18 +119,19 @@ export class CoachService {
     if (!user) throw new AppError('User not found', 404);
 
     const now = new Date();
-    const [transactions, budget, goals, userChallenges, tontineMembers, subscriptions] = await Promise.all([
-      Transaction.find({ userId }).sort({ date: -1 }).limit(10).lean(),
-      Budget.findOne({
-        userId,
-        'period.month': now.getMonth() + 1,
-        'period.year': now.getFullYear(),
-      }).lean(),
-      SavingGoal.find({ userId, status: 'active' }).lean(),
-      UserChallenge.find({ userId, status: 'active' }).populate('challengeId').lean(),
-      TontineMember.find({ userId, invitationStatus: 'accepted' }).populate('tontineId').lean(),
-      Subscription.find({ userId, status: 'active' }).lean(),
-    ]);
+    const [transactions, budget, goals, userChallenges, tontineMembers, subscriptions] =
+      await Promise.all([
+        Transaction.find({ userId }).sort({ date: -1 }).limit(10).lean(),
+        Budget.findOne({
+          userId,
+          'period.month': now.getMonth() + 1,
+          'period.year': now.getFullYear(),
+        }).lean(),
+        SavingGoal.find({ userId, status: 'active' }).lean(),
+        UserChallenge.find({ userId, status: 'active' }).populate('challengeId').lean(),
+        TontineMember.find({ userId, invitationStatus: 'accepted' }).populate('tontineId').lean(),
+        Subscription.find({ userId, status: 'active' }).lean(),
+      ]);
 
     const context = {
       walletBalance: user.walletBalance,
@@ -143,9 +145,9 @@ export class CoachService {
         nextAmount: m.tontineId.contributionAmount * m.parts,
         trustScore: m.trustScore,
         currentTurn: m.tontineId.currentTurn,
-        status: m.tontineId.status
+        status: m.tontineId.status,
       })),
-      subscriptions
+      subscriptions,
     };
 
     const prompt = PromptBuilder.buildDailyAdvicePrompt(user as any, context);
@@ -154,13 +156,13 @@ export class CoachService {
       const data = await GeminiService.generateJSON(prompt, 'daily-advice');
       return {
         title: data.title || 'Conseil Kauri 💡',
-        body: data.body || 'Prends soin de tes finances aujourd’hui !'
+        body: data.body || 'Prends soin de tes finances aujourd’hui !',
       };
     } catch (error) {
       logger.error(`Failed to generate AI advice for user ${userId}: ${error}`);
       return {
         title: 'Conseil Kauri 💡',
-        body: 'Prends soin de tes finances aujourd’hui !'
+        body: 'Prends soin de tes finances aujourd’hui !',
       };
     }
   }

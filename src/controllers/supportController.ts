@@ -2,7 +2,6 @@ import { Request, Response } from 'express';
 import SupportTicket from '../models/SupportTicket';
 import { SlackService } from '../services/slackService';
 
-
 // --- User Actions ---
 
 export const createTicket = async (req: Request, res: Response) => {
@@ -18,7 +17,9 @@ export const createTicket = async (req: Request, res: Response) => {
     });
 
     // Notify Slack
-    SlackService.sendNotification(`🎫 *New Support Ticket*\n*Subject*: ${subject}\n*Category*: ${category}\n*User Email*: ${(req as any).user.email}`);
+    SlackService.sendNotification(
+      `🎫 *New Support Ticket*\n*Subject*: ${subject}\n*Category*: ${category}\n*User Email*: ${(req as any).user.email}`,
+    );
 
     res.status(201).json({ success: true, data: ticket });
   } catch (error) {
