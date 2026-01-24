@@ -411,6 +411,33 @@ export class AuthService {
     return { user, tokens };
   }
 
+  /**
+   * Renvoyer l'email de vérification.
+   */
+  static async resendVerificationEmail(email: string) {
+    if (!email) throw new AppError('Email requis', 400);
+
+    const user = await User.findOne({ email });
+    if (!user) throw new AppError('Utilisateur non trouvé', 404);
+    if (user.isEmailVerified) throw new AppError('Ce compte est déjà vérifié', 400);
+
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto.createHash('sha256').update(verificationToken).digest('hex');
+
+    user.emailVerificationToken = hashedToken;
+    user.emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await (user as any).save({ validateBeforeSave: false });
+
+    try {
+      await EmailService.sendVerificationEmail(user.email, verificationToken);
+    } catch (err) {
+      user.emailVerificationToken = undefined;
+      user.emailVerificationExpires = undefined;
+      await (user as any).save({ validateBeforeSave: false });
+      throw new AppError("Erreur lors de l'envoi de l'email", 500);
+    }
+  }
+
   static async updateMe(userId: string, updateData: any) {
     const allowedFields = [
       'firstName',

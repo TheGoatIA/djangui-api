@@ -319,4 +319,16 @@ export class AuthController {
       next(err);
     }
   }
+  static async resendVerificationEmail(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { email } = req.body;
+      await AuthService.resendVerificationEmail(email);
+      res.status(200).json({
+        success: true,
+        message: 'Email de vérification envoyé avec succès.',
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
 }

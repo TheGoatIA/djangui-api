@@ -1095,6 +1095,53 @@
         }
     ],
     "paths": {
+        "/v1/auth/resend-verification": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Resend Verification Email",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "email"
+                                ],
+                                "properties": {
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "example": "user@example.com"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Email sent successfully",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "message": "Email de vérification envoyé avec succès."
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Email already verified or invalid"
+                    },
+                    "404": {
+                        "description": "User not found"
+                    }
+                }
+            }
+        },
         "/v1/analytics/events": {
             "post": {
                 "tags": [

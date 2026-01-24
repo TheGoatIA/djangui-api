@@ -16,7 +16,9 @@ router.post('/apple', AuthController.firebaseAuth); // Alias for Apple
 
 router.post('/forgot-password', AuthController.forgotPassword);
 router.patch('/reset-password/:token', AuthController.resetPassword);
+router.patch('/reset-password/:token', AuthController.resetPassword);
 router.get('/verify-email', AuthController.verifyEmail);
+router.post('/resend-verification', AuthController.resendVerificationEmail);
 
 // Protected routes
 router.use(protect);
