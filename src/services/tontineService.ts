@@ -258,9 +258,7 @@ export class TontineService {
   /**
    * Calculer le résumé du tour actuel (Cumul récolté)
    */
-  static async getTurnSummary(
-    tontineId: string,
-  ): Promise<{
+  static async getTurnSummary(tontineId: string): Promise<{
     collectedAmount: number;
     expectedAmount: number;
     contributorsCount: number;
