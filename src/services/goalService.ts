@@ -54,15 +54,19 @@ export class GoalService {
   ) {
     if (!wasAlreadyCompleted && goal.progress >= 100) {
       NotificationService.sendToUser(userId, {
-        title: 'Félicitations ! 🎯',
-        body: `Tu as atteint ton objectif d'épargne : ${goal.name} !`,
+        title: '',
+        body: '',
+        translationKey: 'GOAL_COMPLETED',
+        translationData: { goalName: goal.name },
         data: { type: 'goal_completed', goalId: goal._id.toString() },
       });
     } else if (!wasAlreadyHalfway && goal.progress >= 50) {
       // Milestone: 50%
       NotificationService.sendToUser(userId, {
-        title: 'Mi-parcours ! ⭐️',
-        body: `Déjà 50% de fait pour ton objectif : ${goal.name}. Continue comme ça !`,
+        title: '',
+        body: '',
+        translationKey: 'GOAL_MILESTONE_50',
+        translationData: { goalName: goal.name },
         data: { type: 'goal_milestone', goalId: goal._id.toString(), progress: '50' },
       });
     }

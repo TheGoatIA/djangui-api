@@ -30,45 +30,47 @@ export class PromptBuilder {
       - Revenu mensuel: ${monthlyIncome} ${currency}
       - Pays: ${country || 'Non spécifié'}
       - Devise: ${currency}
-      - Langue: ${language === 'fr' ? 'Français' : 'Anglais'}
+      - Langue de l'utilisateur: ${language === 'fr' ? 'Français' : 'Anglais'}
       - Ton souhaité: ${preferences.coachTone}
+      
+      RÈGLE CRITIQUE: Tu dois répondre EXCLUSIVEMENT en ${language === 'fr' ? 'Français' : 'Anglais'}.
       
       CONTEXTE FINANCIER:
       ${JSON.stringify({
-        budget,
-        activeGoals: goals?.map((g: any) => ({
-          name: g.name,
-          progress: `${g.progress}%`,
-          remaining: g.targetAmount - g.currentAmount,
-        })),
-        activeChallenges: challenges?.map((c: any) => ({
-          title: c.challengeId?.title,
-          progress: `${c.progress}%`,
-        })),
-        recentTransactions: transactions?.map((t: any) => ({
-          amount: t.amount,
-          type: t.type,
-          category: t.category,
-          description: t.description,
-          date: t.date,
-        })),
-        activeTontines: tontines?.map((t: any) => ({
-          name: t.name,
-          role: t.role,
-          nextContribution: t.nextAmount,
-          trustScore: t.trustScore,
-          currentTurn: t.currentTurn,
-        })),
-        activeSubscriptions: subscriptions?.map((s: any) => ({
-          name: s.name,
-          amount: s.amount,
-          currency: s.currency,
-          frequency: s.frequency,
-          nextBilling: s.nextBillingDate,
-          trialEnds: s.trialEndDate,
-          status: s.status,
-        })),
-      })}
+      budget,
+      activeGoals: goals?.map((g: any) => ({
+        name: g.name,
+        progress: `${g.progress}%`,
+        remaining: g.targetAmount - g.currentAmount,
+      })),
+      activeChallenges: challenges?.map((c: any) => ({
+        title: c.challengeId?.title,
+        progress: `${c.progress}%`,
+      })),
+      recentTransactions: transactions?.map((t: any) => ({
+        amount: t.amount,
+        type: t.type,
+        category: t.category,
+        description: t.description,
+        date: t.date,
+      })),
+      activeTontines: tontines?.map((t: any) => ({
+        name: t.name,
+        role: t.role,
+        nextContribution: t.nextAmount,
+        trustScore: t.trustScore,
+        currentTurn: t.currentTurn,
+      })),
+      activeSubscriptions: subscriptions?.map((s: any) => ({
+        name: s.name,
+        amount: s.amount,
+        currency: s.currency,
+        frequency: s.frequency,
+        nextBilling: s.nextBillingDate,
+        trialEnds: s.trialEndDate,
+        status: s.status,
+      })),
+    })}
       
       TES MISSIONS:
       1. ANALYSE : Analyse les transactions et le budget. Si le budget est dépassé ou serré, alerte l'utilisateur.
@@ -125,8 +127,11 @@ export class PromptBuilder {
     `;
   }
   static buildNarrativeReportPrompt(user: IUser, reportData: any): string {
+    const langName = user.language === 'en' ? 'English' : 'French';
     return `
       En tant que coach financier Kauri, rédige un rapport mensuel narratif et motivant pour ${user.firstName}.
+      RÉPONDS UNIQUEMENT EN ${langName.toUpperCase()}.
+
       Données du mois: ${JSON.stringify(reportData)}
       
       Le rapport doit être une synthèse holistique incluant:
@@ -208,11 +213,15 @@ export class PromptBuilder {
   }
 
   static buildDailyAdvicePrompt(user: IUser, context: any): string {
-    const { firstName, currency } = user;
+    const { firstName, currency, language } = user;
+    const langName = language === 'en' ? 'English' : 'French';
     return `
       Tu es Kauri, le coach financier personnel de ${firstName}. 
       Ta mission est de générer un conseil financier quotidien court, percutant et ultra-personnalisé.
       
+      INFOS UTILISATEUR:
+      - Langue de réponse: ${langName} (Réponds UNIQUEMENT en ${langName})
+
       CONTEXTE ACTUEL de ${firstName}:
       ${JSON.stringify(context)}
       

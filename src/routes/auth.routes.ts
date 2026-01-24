@@ -22,6 +22,7 @@ router.get('/verify-email', AuthController.verifyEmail);
 router.use(protect);
 router.get('/me', AuthController.getMe);
 router.patch('/me', AuthController.updateMe);
+router.patch('/language', AuthController.updateLanguage);
 router.patch('/change-password', AuthController.changePassword);
 router.delete('/delete-me', AuthController.deleteMe);
 router.get('/sessions', AuthController.getSessions);

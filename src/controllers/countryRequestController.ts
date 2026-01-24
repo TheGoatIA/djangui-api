@@ -74,8 +74,10 @@ export class CountryRequestController {
 
         // Notify User
         await NotificationService.sendToUser(user._id.toString(), {
-          title: 'Demande de changement de pays rejetée',
-          body: `Votre demande a été refusée. Raison: ${countryRequest.rejectionReason}`,
+          title: '',
+          body: '',
+          translationKey: 'COUNTRY_UPDATE_REJECTED',
+          translationData: { rejectionReason: countryRequest.rejectionReason },
         });
 
         return res.status(200).json({ success: true, message: 'Demande rejetée.' });
@@ -104,8 +106,10 @@ export class CountryRequestController {
 
       // 4. Notify User
       await NotificationService.sendToUser(user._id.toString(), {
-        title: 'Pays mis à jour !',
-        body: `Votre pays a été changé pour ${targetCountry.name}. Tous vos comptes ont été convertis en ${newCurrency}.`,
+        title: '',
+        body: '',
+        translationKey: 'COUNTRY_UPDATE_APPROVED',
+        translationData: { targetCountryName: targetCountry.name, currency: newCurrency },
         data: { type: 'country_update', reload: 'true' },
       });
 

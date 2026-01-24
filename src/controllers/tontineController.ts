@@ -164,8 +164,10 @@ export class TontineController {
 
       // 6. Notification de succès au membre
       await NotificationService.sendToUser((req as any).user.id, {
-        title: 'Cotisation reçue ! ✅',
-        body: `Votre preuve de paiement pour le tour ${tontine.currentTurn} de "${tontine.name}" a été validée par IA.`,
+        title: '',
+        body: '',
+        translationKey: 'TONTINE_CONTRIBUTION_VALIDATED',
+        translationData: { turn: tontine.currentTurn, tontineName: tontine.name },
         data: { tontineId: tontineId, type: 'TONTINE_CONTRIBUTION_VALIDATED' },
       });
 

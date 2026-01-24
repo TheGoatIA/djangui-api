@@ -177,8 +177,10 @@ export class PaymentService {
 
       // Notify
       await NotificationService.sendToUser(payment.userId.toString(), {
-        title: 'Recharge réussie 💰',
-        body: `Votre portefeuille a été crédité de ${payment.amount} ${payment.currency}.`,
+        title: '',
+        body: '',
+        translationKey: 'RECHARGE_SUCCESS',
+        translationData: { amount: payment.amount, currency: payment.currency },
         data: { type: 'payment', status: 'success', reference },
       });
     } else if (payment.type === 'subscription') {
@@ -199,8 +201,9 @@ export class PaymentService {
 
       // Notify
       await NotificationService.sendToUser(payment.userId.toString(), {
-        title: 'Abonnement activé 🌟',
-        body: 'Félicitations ! Vous êtes maintenant membre Premium.',
+        title: '',
+        body: '',
+        translationKey: 'SUBSCRIPTION_ACTIVATED',
         data: { type: 'payment', status: 'success', reference },
       });
     }

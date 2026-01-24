@@ -4148,6 +4148,54 @@
                 }
             }
         },
+        "/v1/auth/language": {
+            "patch": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Update User Language Preference",
+                "description": "Updates the preferred language for notifications and AI responses.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "language"
+                                ],
+                                "properties": {
+                                    "language": {
+                                        "type": "string",
+                                        "enum": [
+                                            "fr",
+                                            "en"
+                                        ],
+                                        "example": "en"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Language preference updated",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "success": true,
+                                    "message": "Language preference updated to en"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid language code"
+                    }
+                }
+            }
+        },
         "/v1/auth/link-phone": {
             "post": {
                 "tags": [

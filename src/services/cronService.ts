@@ -112,8 +112,10 @@ export class CronService {
 
       for (const user of users) {
         await NotificationService.sendToUser(user._id.toString(), {
-          title: 'Solde bas ⚠️',
-          body: `Votre solde actuel est de ${user.walletBalance} ${user.currency}. Pensez à recharger votre portefeuille.`,
+          title: '',
+          body: '',
+          translationKey: 'LOW_BALANCE',
+          translationData: { balance: user.walletBalance, currency: user.currency },
           data: { type: 'LOW_BALANCE' },
         });
       }
@@ -153,8 +155,10 @@ export class CronService {
         const totalSpent = stats.length > 0 ? stats[0].total : 0;
 
         await NotificationService.sendToUser(user._id.toString(), {
-          title: 'Votre résumé hebdo 📊',
-          body: `La semaine dernière, vous avez dépensé un total de ${totalSpent} ${user.currency}.`,
+          title: '',
+          body: '',
+          translationKey: 'WEEKLY_SUMMARY',
+          translationData: { amount: totalSpent, currency: user.currency },
           data: { type: 'WEEKLY_SUMMARY' },
         });
       }
@@ -311,8 +315,8 @@ export class CronService {
             </thead>
             <tbody>
               ${anomalies
-                .map(
-                  (a) => `
+            .map(
+              (a) => `
                 <tr>
                   <td style="padding: 8px; border: 1px solid #ddd;">${a.email}</td>
                   <td style="padding: 8px; border: 1px solid #ddd;">${a.walletBalance}</td>
@@ -320,8 +324,8 @@ export class CronService {
                   <td style="padding: 8px; border: 1px solid #ddd; color: red;">${a.diff.toFixed(2)}</td>
                 </tr>
               `,
-                )
-                .join('')}
+            )
+            .join('')}
             </tbody>
           </table>
         `;
@@ -359,8 +363,9 @@ export class CronService {
 
       for (const user of users) {
         await NotificationService.sendToUser(user._id.toString(), {
-          title: 'Pensée du soir 🌙',
-          body: 'As-tu noté toutes tes dépenses et revenus aujourd’hui ? Prends 1 minute pour garder tes finances à jour !',
+          title: '',
+          body: '',
+          translationKey: 'DAILY_REMINDER_TRANSACTION',
           data: { type: 'DAILY_REMINDER' },
         });
       }
@@ -387,8 +392,9 @@ export class CronService {
 
         if (!lastTransaction || lastTransaction.date < threeDaysAgo) {
           await NotificationService.sendToUser(user._id.toString(), {
-            title: 'Tu nous manques ! 👋',
-            body: "Ça fait 3 jours que tu n'as rien noté. Reviens faire un point sur tes finances !",
+            title: '',
+            body: '',
+            translationKey: 'INACTIVITY_REMINDER',
             data: { type: 'INACTIVITY_REMINDER' },
           });
         }
@@ -407,8 +413,9 @@ export class CronService {
       const users = await User.find({ isActive: true });
       for (const user of users) {
         await NotificationService.sendToUser(user._id.toString(), {
-          title: 'Ton Bilan Mensuel est prêt ! 📊',
-          body: 'Découvre ton rapport narratif IA pour voir comment tu as géré tes finances le mois dernier.',
+          title: '',
+          body: '',
+          translationKey: 'MONTHLY_REPORT_READY',
           data: { type: 'MONTHLY_REPORT_REMINDER' },
         });
       }
@@ -427,8 +434,10 @@ export class CronService {
 
       for (const goal of activeGoals) {
         await NotificationService.sendToUser(goal.userId.toString(), {
-          title: `Objectif : ${goal.name} 📈`,
-          body: `Tu es à ${goal.progress.toFixed(1)}% de ton objectif ! Un petit effort aujourd'hui ?`,
+          title: '',
+          body: '',
+          translationKey: 'GOAL_DAILY_PROGRESS',
+          translationData: { goalName: goal.name, progress: goal.progress.toFixed(1) },
           data: { type: 'GOAL_DAILY_PROGRESS', goalId: goal._id.toString() },
         });
       }
@@ -455,8 +464,10 @@ export class CronService {
 
         if (result && result.criticalAlert) {
           await NotificationService.sendToUser(user._id.toString(), {
-            title: 'Alerte Trésorerie ! ⚠️',
-            body: `Attention ${user.firstName}, une analyse montre un risque de solde négatif bientôt : ${result.criticalAlert}`,
+            title: '',
+            body: '',
+            translationKey: 'TREASURY_ALERT',
+            translationData: { firstName: user.firstName, alert: result.criticalAlert },
             data: { type: 'OVERDRAFT_PREVENTION' },
           });
         }
@@ -530,8 +541,10 @@ export class CronService {
 
             if (!hasPaid) {
               await NotificationService.sendToUser(member.userId.toString(), {
-                title: 'Rappel Tontine 🔔',
-                body: `Demain est l'échéance pour le tour ${tontine.currentTurn} de "${tontine.name}". N'oubliez pas votre cotisation !`,
+                title: '',
+                body: '',
+                translationKey: 'TONTINE_PAYMENT_REMINDER',
+                translationData: { turn: tontine.currentTurn, tontineName: tontine.name },
                 data: { tontineId: tontine._id.toString(), type: 'TONTINE_REMINDER' },
               });
             }
@@ -567,8 +580,10 @@ export class CronService {
 
       for (const sub of upcomingSubs) {
         await NotificationService.sendToUser(sub.userId.toString(), {
-          title: `Rappel Abonnement 💳`,
-          body: `Demain, votre abonnement "${sub.name}" sera prélevé (${sub.amount} ${sub.currency}).`,
+          title: '',
+          body: '',
+          translationKey: 'SUBSCRIPTION_REMINDER',
+          translationData: { name: sub.name, amount: sub.amount, currency: sub.currency },
           data: { type: 'SUBSCRIPTION_REMINDER', subscriptionId: sub._id.toString() },
         });
       }
@@ -584,8 +599,10 @@ export class CronService {
 
       for (const sub of trialEnds) {
         await NotificationService.sendToUser(sub.userId.toString(), {
-          title: `Alerte Fin d'Essai ! 🚨`,
-          body: `Votre période d'essai pour "${sub.name}" se termine dans 48h. Pensez à l'annuler si vous ne souhaitez pas être prélevé.`,
+          title: '',
+          body: '',
+          translationKey: 'TRIAL_END_REMINDER',
+          translationData: { name: sub.name },
           data: { type: 'TRIAL_END_REMINDER', subscriptionId: sub._id.toString() },
         });
       }
