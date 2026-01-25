@@ -799,12 +799,71 @@ export class AdminController {
     }
   }
 
+  // --- HELPER FOR DOCKER RESOURCE MONITORING ---
+  private static readCgroupValue(filePath: string): number | null {
+    try {
+      if (fs.existsSync(filePath)) {
+        const content = fs.readFileSync(filePath, 'utf8').trim();
+        const value = parseInt(content, 10);
+        return isNaN(value) || value <= 0 ? null : value;
+      }
+    } catch (error) {
+      // Ignore errors (fallback to OS module)
+    }
+    return null;
+  }
+
+  private static getDockerResources() {
+    // Memory (cgroup v1 / v2)
+    const memLimit =
+      AdminController.readCgroupValue('/sys/fs/cgroup/memory/memory.limit_in_bytes') || // v1
+      AdminController.readCgroupValue('/sys/fs/cgroup/memory.max'); // v2
+
+    const memUsage =
+      AdminController.readCgroupValue('/sys/fs/cgroup/memory/memory.usage_in_bytes') || // v1
+      AdminController.readCgroupValue('/sys/fs/cgroup/memory.current'); // v2
+
+    // CPU (cgroup v1 / v2)
+    let cpuCount: number | null = null;
+    const cpuQuota =
+      AdminController.readCgroupValue('/sys/fs/cgroup/cpu/cpu.cfs_quota_us') || // v1
+      AdminController.readCgroupValue('/sys/fs/cgroup/cpu.max'); // v2 (format: "quota period")
+
+    const cpuPeriod =
+      AdminController.readCgroupValue('/sys/fs/cgroup/cpu/cpu.cfs_period_us') || // v1
+      100000; // Default period
+
+    if (cpuQuota && cpuQuota > 0) {
+      cpuCount = cpuQuota / cpuPeriod;
+    }
+
+    // Special case for cgroup v2 cpu.max which can contain "max 100000"
+    try {
+      if (fs.existsSync('/sys/fs/cgroup/cpu.max')) {
+        const content = fs.readFileSync('/sys/fs/cgroup/cpu.max', 'utf8').trim().split(' ');
+        if (content[0] !== 'max') {
+          const quota = parseInt(content[0], 10);
+          const period = parseInt(content[1], 10) || 100000;
+          cpuCount = quota / period;
+        }
+      }
+    } catch (e) { }
+
+    return {
+      memoryLimit: memLimit,
+      memoryUsage: memUsage,
+      cpuCount: cpuCount,
+    };
+  }
+
   // 10. Server Resource Monitoring
   static async getServerResources(req: Request, res: Response, next: NextFunction) {
     try {
-      const totalMem = os.totalmem();
-      const freeMem = os.freemem();
-      const usedMem = totalMem - freeMem;
+      const docker = AdminController.getDockerResources();
+
+      const totalMem = docker.memoryLimit || os.totalmem();
+      const usedMem = docker.memoryUsage || os.totalmem() - os.freemem();
+      const freeMem = totalMem - usedMem;
 
       const resources = {
         memory: {
@@ -816,13 +875,14 @@ export class AdminController {
         processMemory: process.memoryUsage(),
         cpu: {
           model: os.cpus()[0].model,
-          count: os.cpus().length,
+          count: docker.cpuCount || os.cpus().length,
           loadAvg: os.loadavg(), // [1, 5, 15] mins
         },
         os: {
           platform: os.platform(),
           release: os.release(),
           uptime: `${(os.uptime() / 3600).toFixed(2)} hours`,
+          isDocker: !!(docker.memoryLimit || docker.cpuCount),
         },
         timestamp: new Date(),
       };
@@ -1201,6 +1261,77 @@ export class AdminController {
         { $group: { _id: '$platform', count: { $sum: 1 } } },
       ]);
 
+      // 4. Daily Trends (DAU, New Users, Transactions)
+      const dauTrend = await SessionLog.aggregate([
+        { $match: { startTime: { $gte: startDate } } },
+        {
+          $group: {
+            _id: { $dateToString: { format: '%Y-%m-%d', date: '$startTime' } },
+            uniqueUsers: { $addToSet: '$userId' },
+          },
+        },
+        {
+          $project: {
+            date: '$_id',
+            count: { $size: '$uniqueUsers' },
+            _id: 0,
+          },
+        },
+        { $sort: { date: 1 } },
+      ]);
+
+      const newUserTrend = await User.aggregate([
+        { $match: { createdAt: { $gte: startDate } } },
+        {
+          $group: {
+            _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+            count: { $sum: 1 },
+          },
+        },
+        {
+          $project: {
+            date: '$_id',
+            count: 1,
+            _id: 0,
+          },
+        },
+        { $sort: { date: 1 } },
+      ]);
+
+      const transactionTrend = await Transaction.aggregate([
+        { $match: { date: { $gte: startDate } } },
+        {
+          $group: {
+            _id: {
+              date: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+              type: '$type',
+            },
+            count: { $sum: 1 },
+            amount: { $sum: '$amount' },
+          },
+        },
+        {
+          $group: {
+            _id: '$_id.date',
+            types: {
+              $push: {
+                type: '$_id.type',
+                count: '$count',
+                amount: '$amount',
+              },
+            },
+          },
+        },
+        {
+          $project: {
+            date: '$_id',
+            types: 1,
+            _id: 0,
+          },
+        },
+        { $sort: { date: 1 } },
+      ]);
+
       res.status(200).json({
         status: 'success',
         data: {
@@ -1208,6 +1339,11 @@ export class AdminController {
           topFeatures,
           sessionStats: sessionStats[0] || { avgDuration: 0, totalSessions: 0, uniqueUsers: 0 },
           platformStats,
+          trends: {
+            dau: dauTrend,
+            newUsers: newUserTrend,
+            transactions: transactionTrend,
+          },
         },
       });
     } catch (error) {
