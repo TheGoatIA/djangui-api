@@ -14,6 +14,8 @@ import swaggerUi from 'swagger-ui-express';
 import swaggerDocument from '../docs/swagger.json';
 import { currencyMiddleware } from './middleware/currencyMiddleware';
 
+// Rate limiting using Redis
+
 const app = express();
 
 app.use(
@@ -71,11 +73,42 @@ app.use(currencyMiddleware);
 // Static files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
+import fs from 'fs';
+
 // Routes
 app.use('/api/v1', routes);
 
-// Swagger Documentation
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+// Serve raw Swagger JSON (for Postman Export)
+app.get('/api-docs/json', (req, res) => {
+  const swaggerFile = path.resolve(__dirname, '../docs/swagger.json');
+  try {
+    const swaggerContent = fs.readFileSync(swaggerFile, 'utf8');
+    res.header('Content-Type', 'application/json');
+    res.send(swaggerContent);
+  } catch (err) {
+    res.status(500).send('Error loading swagger file');
+  }
+});
+
+// Swagger UI (Dynamic load)
+app.use('/api-docs', swaggerUi.serve, (req: any, res: any, next: any) => {
+  try {
+    const swaggerFile = path.resolve(__dirname, '../docs/swagger.json');
+    const swaggerDoc = JSON.parse(fs.readFileSync(swaggerFile, 'utf8'));
+
+    // allow explorer so user can see the URL to the json
+    const options = {
+      explorer: true,
+      swaggerOptions: {
+        url: '/api-docs/json'
+      }
+    };
+
+    swaggerUi.setup(swaggerDoc, options)(req, res, next);
+  } catch (err) {
+    next(err);
+  }
+});
 
 app.get('/api/health', (req, res) => {
   res.status(200).json({

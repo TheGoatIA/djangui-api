@@ -27,6 +27,7 @@ export class GamificationService {
         NotificationService.sendToUser(userId, {
           title: '',
           body: '',
+          category: 'informational',
           translationKey: 'LEVEL_UP',
           translationData: { oldLevel, newLevel },
           data: { type: 'level_up', level: String(newLevel) },
@@ -59,6 +60,7 @@ export class GamificationService {
       NotificationService.sendToUser(userId, {
         title: '',
         body: '',
+        category: 'important',
         translationKey: 'XP_PENALTY',
         translationData: { amount: lostXP, reason },
         data: { type: 'xp_deduction', amount: String(lostXP), reason },
@@ -93,6 +95,7 @@ export class GamificationService {
       NotificationService.sendToUser(userId, {
         title: '',
         body: '',
+        category: 'informational',
         translationKey: 'BADGE_AWARDED',
         translationData: { badgeName, icon },
         data: { type: 'badge_awarded', badgeName },

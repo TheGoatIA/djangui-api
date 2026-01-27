@@ -6,6 +6,7 @@ import SavingGoal from '../../models/SavingGoal';
 import UserChallenge from '../../models/UserChallenge';
 import TontineMember from '../../models/TontineMember';
 import Subscription from '../../models/Subscription';
+import UserActivity from '../../models/UserActivity';
 import { GeminiService } from './geminiService';
 import { PromptBuilder } from './promptBuilder';
 import { AppError } from '../../middleware/errorHandler';
@@ -77,7 +78,7 @@ export class CoachService {
         role: 'model',
         parts: [
           {
-            text: "Compris. Bonjour, je suis Kauri, ton coach financier. Comment puis-je t'aider aujourd'hui ?",
+            text: "Compris. Bonjour, je suis Anne, ta coach financière. Comment puis-je t'aider aujourd'hui ?",
           },
         ],
       },
@@ -110,6 +111,14 @@ export class CoachService {
     });
     conversation.lastMessageAt = new Date();
     await (conversation as any).save();
+
+    // Track Activity
+    await UserActivity.create({
+      userId,
+      feature: 'AI_Coach',
+      action: 'ask_question',
+      details: { messageLength: userMessage.length }
+    }).catch(e => logger.warn(`Failed to log coach activity: ${e}`));
 
     return rawAiResponse; // Return raw JSON so the client can decide how to handle it
   }
@@ -154,14 +163,22 @@ export class CoachService {
 
     try {
       const data = await GeminiService.generateJSON(prompt, 'daily-advice');
+
+      // Track Activity
+      UserActivity.create({
+        userId,
+        feature: 'AI_Coach',
+        action: 'generate_daily_advice'
+      }).catch(e => logger.warn(`Failed to log advice activity: ${e}`));
+
       return {
-        title: data.title || 'Conseil Kauri 💡',
-        body: data.body || 'Prends soin de tes finances aujourd’hui !',
+        title: data.title || "Conseil d'Anne 💡",
+        body: data.body || "Prends soin de tes finances aujourd’hui !",
       };
     } catch (error) {
       logger.error(`Failed to generate AI advice for user ${userId}: ${error}`);
       return {
-        title: 'Conseil Kauri 💡',
+        title: "Conseil d'Anne 💡",
         body: 'Prends soin de tes finances aujourd’hui !',
       };
     }

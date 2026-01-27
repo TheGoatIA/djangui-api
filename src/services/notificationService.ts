@@ -8,6 +8,7 @@ import { I18nService } from './i18nService';
 export interface NotificationPayload {
   title: string;
   body: string;
+  category?: 'transactional' | 'important' | 'informational';
   data?: Record<string, string>;
   imageUrl?: string;
   translationKey?: string;
@@ -21,8 +22,10 @@ export class NotificationService {
   static async sendToUser(userId: string, payload: NotificationPayload) {
     try {
       // 1. Send via FCM
-      const user = await User.findById(userId).select('fcmTokens language');
+      const user = await User.findById(userId).select('fcmTokens language preferences');
       if (!user) return;
+
+      const category = payload.category || 'transactional';
 
       // 2. Handle localization if key is provided
       if (payload.translationKey) {
@@ -40,8 +43,26 @@ export class NotificationService {
         userId,
         title: payload.title,
         body: payload.body,
+        category,
         data: payload.data,
       });
+
+      // 4. Frequency Filtering Logic
+      const frequency = user.preferences?.notificationFrequency || 'medium';
+      let shouldPush = true;
+
+      if (category === 'important' && frequency === 'low') {
+        shouldPush = false;
+      } else if (category === 'informational' && frequency !== 'high') {
+        shouldPush = false;
+      }
+
+      if (!shouldPush) {
+        logger.info(
+          `Push notification skipped for user ${userId} due to frequency settings (${frequency}) and category (${category}): ${payload.title}`,
+        );
+        return;
+      }
 
       if (!user.fcmTokens || user.fcmTokens.length === 0) {
         logger.info(

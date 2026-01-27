@@ -439,6 +439,9 @@ export class AuthService {
   }
 
   static async updateMe(userId: string, updateData: any) {
+    const user = await User.findById(userId);
+    if (!user) throw new AppError('User not found', 404);
+
     const allowedFields = [
       'firstName',
       'lastName',
@@ -450,19 +453,36 @@ export class AuthService {
       'monthlyIncome',
     ];
 
-    const filteredUpdate: any = {};
-    Object.keys(updateData).forEach((key) => {
-      if (allowedFields.includes(key)) {
-        filteredUpdate[key] = updateData[key];
-      }
-    });
+    if (updateData.firstName) user.firstName = updateData.firstName;
+    if (updateData.lastName) user.lastName = updateData.lastName;
+    if (updateData.country) user.country = updateData.country;
+    if (updateData.currency) user.currency = updateData.currency;
+    if (updateData.language) user.language = updateData.language;
+    if (updateData.phone) user.phone = updateData.phone;
+    if (updateData.monthlyIncome !== undefined) user.monthlyIncome = updateData.monthlyIncome;
 
-    const user = await User.findByIdAndUpdate(userId, filteredUpdate, {
-      new: true,
-      runValidators: true,
-    });
+    if (updateData.preferences) {
+      // Get current values or defaults
+      const currentPrefs = user.preferences || {
+        coachTone: 'balanced',
+        notificationFrequency: 'medium',
+        budgetAlertThreshold: 80
+      };
 
-    if (!user) throw new AppError('User not found', 404);
+      // Merge only provided values
+      const newPrefs = {
+        coachTone: updateData.preferences.coachTone || currentPrefs.coachTone || 'balanced',
+        notificationFrequency: updateData.preferences.notificationFrequency || currentPrefs.notificationFrequency || 'medium',
+        budgetAlertThreshold: updateData.preferences.budgetAlertThreshold !== undefined
+          ? updateData.preferences.budgetAlertThreshold
+          : (currentPrefs.budgetAlertThreshold !== undefined ? currentPrefs.budgetAlertThreshold : 80),
+      };
+
+      user.preferences = newPrefs;
+      user.markModified('preferences');
+    }
+
+    await user.save({ validateBeforeSave: false });
     return user;
   }
 

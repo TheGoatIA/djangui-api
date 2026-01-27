@@ -14,7 +14,7 @@ export interface IUser {
   language: string;
   firebaseUid?: string;
   preferences: {
-    coachTone: 'encouraging' | 'firm' | 'balanced';
+    coachTone: 'encouraging' | 'firm' | 'balanced' | 'billionaire_mentor' | 'strict_accountant' | 'kind_auntie';
     notificationFrequency: 'high' | 'medium' | 'low';
     budgetAlertThreshold: number;
   };
@@ -257,4 +257,13 @@ export interface ISubscription {
   notes?: string;
   createdAt: Date;
   updatedAt: Date;
+}
+export interface INotification {
+  userId: mongoose.Types.ObjectId;
+  title: string;
+  body: string;
+  category: 'transactional' | 'important' | 'informational';
+  data?: Record<string, any>;
+  isRead: boolean;
+  createdAt: Date;
 }

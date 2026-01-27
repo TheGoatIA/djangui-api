@@ -31,7 +31,7 @@ export class GeminiService {
     try {
       // Fetch model ID from system settings, default to gemini-2.5-flash
       const setting = await SystemSetting.findOne({ key: 'gemini_model' });
-      const modelId = setting?.value || 'gemini-2.5-flash';
+      const modelId = setting?.value || 'gemini-1.5-flash';
 
       return genAI.getGenerativeModel({
         model: modelId,
@@ -169,7 +169,13 @@ export class GeminiService {
       }
     } catch (error: any) {
       logger.error(`Failed to parse JSON from AI response: ${error.message}`);
-      logger.debug(`Raw response: ${text}`);
+      // Show snippet around the error if possible
+      if (error.message.includes('position')) {
+        const pos = parseInt(error.message.match(/position (\d+)/)?.[1] || '0');
+        const snippet = text.substring(Math.max(0, pos - 50), Math.min(text.length, pos + 50));
+        logger.debug(`Error snippet: "...${snippet}..."`);
+      }
+      logger.debug(`Raw response length: ${text.length} chars`);
       throw new Error('Invalid AI response format');
     }
   }

@@ -19,6 +19,16 @@ export class CurrencyService {
   };
 
   /**
+   * Returns the exchange rate from source to target currency
+   */
+  static getRate(from: string, to: string): number {
+    if (from === to) return 1;
+    const rateFrom = this.exchangeRates[from] || 1;
+    const rateTo = this.exchangeRates[to] || 1;
+    return rateFrom / rateTo;
+  }
+
+  /**
    * Converts an amount from one currency to another
    */
   static convert(amount: number, from: string = 'XAF', to: string = 'XAF'): number {
@@ -66,5 +76,18 @@ export class CurrencyService {
 
   static getSymbol(currency: string): string {
     return this.symbols[currency] || currency;
+  }
+
+  /**
+   * Converts all financial data for a user when they change country
+   * (Placeholder for future implementation)
+   */
+  static async convertUserFinancialData(userId: string, oldCurrency: string, newCurrency: string): Promise<void> {
+    if (oldCurrency === newCurrency) return;
+
+    const rate = this.getRate(oldCurrency, newCurrency);
+    logger.info(`Converting financial data for user ${userId} from ${oldCurrency} to ${newCurrency} at rate ${rate}`);
+
+    // TODO: Implement bulk update of user's Transactions, Budgets, Goals, etc.
   }
 }
