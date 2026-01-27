@@ -1,113 +1,70 @@
-import User from '../models/User';
-import Transaction from '../models/Transaction';
-import Budget from '../models/Budget';
-import SavingGoal from '../models/SavingGoal';
-import Investment from '../models/Investment';
 import logger from '../utils/logger';
-import { AppError } from '../middleware/errorHandler';
 
 export class CurrencyService {
-  /**
-   * Fixed exchange rates for V1 launch.
-   * Rates are relative to XAF (Base currency for initial development).
-   * Example: 1 EUR = 655.957 XAF, 1 USD = ~600 XAF
-   */
-  private static readonly EXCHANGE_RATES: Record<string, number> = {
+  // Base currency is XAF
+  private static readonly exchangeRates: Record<string, number> = {
     XAF: 1,
-    XOF: 1,
-    FCFA: 1, // Alias for XAF/XOF
-    EUR: 655.957,
-    USD: 600,
-    CAD: 450,
+    XOF: 1, // Fixed parity
+    EUR: 655.957, // Fixed parity
+    CAD: 450, // Approximate
+    USD: 610, // Approximate
+  };
+
+  private static readonly symbols: Record<string, string> = {
+    XAF: 'FCFA',
+    XOF: 'FCFA',
+    EUR: '€',
+    CAD: '$',
+    USD: '$',
   };
 
   /**
-   * Get exchange rate between two currencies
+   * Converts an amount from one currency to another
    */
-  static getRate(from: string, to: string): number {
-    const fromRate = this.EXCHANGE_RATES[from.toUpperCase()];
-    const toRate = this.EXCHANGE_RATES[to.toUpperCase()];
+  static convert(amount: number, from: string = 'XAF', to: string = 'XAF'): number {
+    if (from === to) return amount;
 
-    if (!fromRate || !toRate) {
-      logger.error(`Exchange rate not found for ${from} or ${to}`);
-      // Fallback to 1 if not found to prevent crashes, but ideally log/alert
-      return 1;
-    }
+    // First convert to base (XAF)
+    const rateFrom = this.exchangeRates[from] || 1;
+    const amountInXaf = amount * rateFrom;
 
-    // Calculation: from XAF -> to XAF
-    // If from is EUR (655.957) and to is USD (600)
-    // 1 EUR = 655.957 XAF
-    // 655.957 XAF = (655.957 / 600) USD
-    return fromRate / toRate;
+    // Then convert to target
+    const rateTo = this.exchangeRates[to] || 1;
+    const convertedAmount = amountInXaf / rateTo;
+
+    return Math.round(convertedAmount * 100) / 100;
   }
 
   /**
-   * Massively convert all financial data for a user when country/currency changes
+   * Finds amounts in text and converts them
+   * Example: "Économise 50000FCFA" -> "Économise 111.11$" if target is CAD
    */
-  static async convertUserFinancialData(userId: string, oldCurrency: string, newCurrency: string) {
-    if (oldCurrency === newCurrency) return;
+  static convertText(text: string, targetCurrency: string, sourceCurrency: string = 'XAF'): string {
+    if (!text || targetCurrency === sourceCurrency) return text;
 
-    const rate = this.getRate(oldCurrency, newCurrency);
-    logger.info(
-      `Converting user ${userId} data from ${oldCurrency} to ${newCurrency} at rate ${rate}`,
-    );
+    // Regex to find patterns like "50000 FCFA", "50 000FCFA", "50000F", etc.
+    // Also captures just numbers if they are followed by common indicators or just in context
+    const currencySuffixes = ['FCFA', 'XAF', 'XOF', 'F', 'CFA'];
+    const suffixRegex = currencySuffixes.join('|');
 
-    try {
-      // 1. Convert Wallet Balance in User model
-      const user = await User.findById(userId);
-      if (user) {
-        user.walletBalance = Math.round(user.walletBalance * rate);
-        user.monthlyIncome = Math.round(user.monthlyIncome * rate);
-        user.currency = newCurrency;
-        await (user as any).save({ validateBeforeSave: false });
-      }
+    const regex = new RegExp(`(\\d+[\\d\\s.,]*)\\s*(${suffixRegex})`, 'gi');
 
-      // 2. Convert all Transactions
-      const transactions = await Transaction.find({ userId });
-      for (const tx of transactions) {
-        tx.amount = Math.round(tx.amount * rate);
-        await tx.save();
-      }
+    return text.replace(regex, (match, amountStr, suffix) => {
+      // Clean amount string (remove spaces)
+      const cleanAmountStr = amountStr.replace(/\s/g, '').replace(',', '.');
+      const amount = parseFloat(cleanAmountStr);
 
-      // 3. Convert all Budgets
-      const budgets = await Budget.find({ userId });
-      for (const budget of budgets) {
-        budget.totalAllocated = Math.round(budget.totalAllocated * rate);
-        budget.totalSpent = Math.round(budget.totalSpent * rate);
-        for (const cat of budget.categories) {
-          cat.allocated = Math.round(cat.allocated * rate);
-          cat.spent = Math.round(cat.spent * rate);
-        }
-        await budget.save();
-      }
+      if (isNaN(amount)) return match;
 
-      // 4. Convert all Saving Goals
-      const goals = await SavingGoal.find({ userId });
-      for (const goal of goals) {
-        goal.targetAmount = Math.round(goal.targetAmount * rate);
-        goal.currentAmount = Math.round(goal.currentAmount * rate);
-        for (const cont of goal.contributions) {
-          cont.amount = Math.round(cont.amount * rate);
-        }
-        await goal.save();
-      }
+      const converted = this.convert(amount, sourceCurrency, targetCurrency);
+      const symbol = this.symbols[targetCurrency] || targetCurrency;
 
-      // 5. Convert all Investments
-      const investments = await Investment.find({ userId });
-      for (const inv of investments) {
-        inv.initialAmount = Math.round(inv.initialAmount * rate);
-        inv.currentValue = Math.round(inv.currentValue * rate);
-        inv.currency = newCurrency;
-        for (const hit of inv.history) {
-          hit.value = Math.round(hit.value * rate);
-        }
-        await inv.save();
-      }
+      // format: 123.45 $ or 123.45 €
+      return `${converted.toLocaleString()}${symbol}`;
+    });
+  }
 
-      logger.info(`Successfully converted all data for user ${userId}`);
-    } catch (error: any) {
-      logger.error(`Massive conversion failed for user ${userId}: ${error.message}`);
-      throw new AppError('Conversion financière échouée lors du changement de pays.', 500);
-    }
+  static getSymbol(currency: string): string {
+    return this.symbols[currency] || currency;
   }
 }

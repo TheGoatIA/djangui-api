@@ -12,6 +12,7 @@ import { MonitoringService } from './services/monitoringService';
 import routes from './routes';
 import swaggerUi from 'swagger-ui-express';
 import swaggerDocument from '../docs/swagger.json';
+import { currencyMiddleware } from './middleware/currencyMiddleware';
 
 const app = express();
 
@@ -65,6 +66,7 @@ app.use(
   }),
 );
 app.use(express.urlencoded({ extended: true }));
+app.use(currencyMiddleware);
 
 // Static files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
