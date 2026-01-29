@@ -168,18 +168,19 @@ export class PromptBuilder {
       
       INSTRUCTIONS:
       1. Identifie les cycles (loyer, salaires, abonnements). Utilise les données d'abonnements explicites pour plus de précision : ${JSON.stringify(context.subscriptions || [])}.
-      2. Projette le solde jour après jour pour les 30 prochains jours (Série temporelle).
+      2. Projette le solde pour les 30 prochains jours. Donne uniquement 10 points (un tous les 3 jours) pour être rapide.
       3. Si le solde risque de devenir négatif, ajoute une alerte.
       
-      RÉPONDS UNIQUEMENT EN JSON:
+      RÉPONDS UNIQUEMENT EN JSON RESPECTANT CE SCHEMA :
       {
         "forecast": [
-          {"date": "YYYY-MM-DD", "balance": 125000},
-          ... (30 points)
+          {"date": "YYYY-MM-DD", "balance": Number}
         ],
-        "insights": ["tendance détectée"],
-        "criticalAlert": "Message si solde < 0 ou seuil critique" | null
+        "insights": ["String"],
+        "criticalAlert": "String" | null
       }
+      
+      CONTENU :
     `;
   }
 
@@ -294,32 +295,5 @@ export class PromptBuilder {
     `;
   }
 
-  static buildOraclePrompt(user: IUser, forecastData: any): string {
-    return `
-      Tu es L'Oracle d'Anne (alias L'Oracle), une IA divinatoire et prédictive spécialisée dans la finance.
-      Analyse ces prévisions pour ${user.firstName} et identifie les événements critiques à venir.
-      
-      DONNÉES DE PRÉVISION:
-      ${JSON.stringify(forecastData)}
-      
-      TES MISSIONS:
-      1. ANALYSE : Repère les moments où le solde descend dangereusement bas ou devient négatif.
-      2. TONTINES : Vérifie si les prochaines cotisations de tontines sont couvertes par le solde prévu.
-      3. ALERTES : Génère 3 alertes prédictives maximum, classées par sévérité (low, medium, high).
-      
-      RÉPONDS UNIQUEMENT EN JSON:
-      {
-        "alerts": [
-          {
-            "severity": "high",
-            "date": "YYYY-MM-DD",
-            "title": "Risque de découvert",
-            "message": "Attention, tes dépenses actuelles pointent vers un solde négatif le 15 du mois.",
-            "type": "cashflow_risk"
-          }
-        ],
-        "overallHealth": "Good" | "Stable" | "Critical"
-      }
-    `;
-  }
+
 }

@@ -9,7 +9,6 @@ router.use(protect);
 router.use(premiumOnly);
 
 router.post('/auto-budget', PremiumController.generateAutoBudget);
-router.get('/oracle', PremiumController.getOracleAlerts);
 router.get('/report', PremiumController.getMonthlyReport);
 
 export default router;

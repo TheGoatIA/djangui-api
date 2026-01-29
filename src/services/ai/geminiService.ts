@@ -1,4 +1,5 @@
 import { genAI } from '../../config/gemini';
+import { HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
 import logger from '../../utils/logger';
 import { AppError } from '../../middleware/errorHandler';
 import SystemSetting from '../../models/SystemSetting';
@@ -40,6 +41,12 @@ export class GeminiService {
           maxOutputTokens: 4096,
           responseMimeType: 'application/json',
         },
+        safetySettings: [
+          { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+        ],
       });
     } catch (error) {
       logger.warn(`Failed to fetch Gemini model setting, using default: ${error}`);
@@ -119,12 +126,23 @@ export class GeminiService {
       this.saveUsage(modelName, context, response.usageMetadata, duration, 'success');
 
       const text = response.text();
+
+      if (!text || text.trim().length === 0) {
+        const blockReason = response.promptFeedback?.blockReason;
+        const candidate = response.candidates?.[0];
+        logger.warn(`AI returned empty text. Block Reason: ${blockReason}, Finish Reason: ${candidate?.finishReason}`);
+
+        if (blockReason) {
+          throw new Error(`AI response blocked due to safety filters: ${blockReason}`);
+        }
+      }
+
       return this.parseJSON(text);
     } catch (error: any) {
       const duration = Date.now() - startTime;
       this.saveUsage(modelName, context, {}, duration, 'failure', error.message);
 
-      logger.error(`Gemini generateJSON error: ${error.message}`);
+      logger.error(`Gemini generateJSON error [Model: ${modelName}]: ${error.message}`);
       throw new AppError('AI Analysis failed', 503);
     }
   }
@@ -140,6 +158,7 @@ export class GeminiService {
       // 2. Try to find anything between the first { and the last }
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
+        logger.warn(`AI Response has no JSON: "${text.substring(0, 500)}..."`);
         throw new Error('Invalid AI response format: No JSON object found');
       }
 

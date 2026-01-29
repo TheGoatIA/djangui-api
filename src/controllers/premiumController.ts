@@ -1,7 +1,6 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { AutoBudgetService } from '../services/ai/autoBudgetService';
-import { OracleService } from '../services/ai/oracleService';
 import { ReportService } from '../services/ai/reportService';
 import UserActivity from '../models/UserActivity';
 
@@ -30,29 +29,7 @@ export class PremiumController {
         }
     }
 
-    /**
-     * Gets predictive AI alerts (L'Oracle)
-     */
-    static async getOracleAlerts(req: AuthRequest, res: Response, next: NextFunction) {
-        try {
-            const alerts = await OracleService.getAlerts(req.user._id);
 
-            // Track Activity
-            await UserActivity.create({
-                userId: req.user._id,
-                feature: 'AI_Premium',
-                action: 'get_oracle_alerts',
-                platform: req.headers['x-platform'] as any || 'android'
-            });
-
-            res.status(200).json({
-                success: true,
-                data: alerts,
-            });
-        } catch (err) {
-            next(err);
-        }
-    }
 
     /**
      * Generates a monthly "Style Magazine" report
