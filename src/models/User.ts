@@ -61,7 +61,14 @@ const userSchema = new Schema<IUserDocument>(
     preferences: {
       coachTone: {
         type: String,
-        enum: ['encouraging', 'firm', 'balanced', 'billionaire_mentor', 'strict_accountant', 'kind_auntie'],
+        enum: [
+          'encouraging',
+          'firm',
+          'balanced',
+          'billionaire_mentor',
+          'strict_accountant',
+          'kind_auntie',
+        ],
         default: 'balanced',
       },
       notificationFrequency: {

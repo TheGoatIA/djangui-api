@@ -117,8 +117,8 @@ export class CoachService {
       userId,
       feature: 'AI_Coach',
       action: 'ask_question',
-      details: { messageLength: userMessage.length }
-    }).catch(e => logger.warn(`Failed to log coach activity: ${e}`));
+      details: { messageLength: userMessage.length },
+    }).catch((e) => logger.warn(`Failed to log coach activity: ${e}`));
 
     return rawAiResponse; // Return raw JSON so the client can decide how to handle it
   }
@@ -168,12 +168,12 @@ export class CoachService {
       UserActivity.create({
         userId,
         feature: 'AI_Coach',
-        action: 'generate_daily_advice'
-      }).catch(e => logger.warn(`Failed to log advice activity: ${e}`));
+        action: 'generate_daily_advice',
+      }).catch((e) => logger.warn(`Failed to log advice activity: ${e}`));
 
       return {
         title: data.title || "Conseil d'Anne 💡",
-        body: data.body || "Prends soin de tes finances aujourd’hui !",
+        body: data.body || 'Prends soin de tes finances aujourd’hui !',
       };
     } catch (error) {
       logger.error(`Failed to generate AI advice for user ${userId}: ${error}`);

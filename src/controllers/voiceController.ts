@@ -16,7 +16,11 @@ export class VoiceController {
       const filePath = req.file.path;
       const mimeType = req.file.mimetype;
 
-      const result = await AnneVoiceService.processVoiceTransaction(filePath, mimeType, req.user._id);
+      const result = await AnneVoiceService.processVoiceTransaction(
+        filePath,
+        mimeType,
+        req.user._id,
+      );
 
       res.status(200).json({
         success: true,

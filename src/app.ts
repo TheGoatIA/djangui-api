@@ -100,8 +100,8 @@ app.use('/api-docs', swaggerUi.serve, (req: any, res: any, next: any) => {
     const options = {
       explorer: true,
       swaggerOptions: {
-        url: '/api-docs/json'
-      }
+        url: '/api-docs/json',
+      },
     };
 
     swaggerUi.setup(swaggerDoc, options)(req, res, next);

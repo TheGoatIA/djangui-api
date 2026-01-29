@@ -14,7 +14,13 @@ export interface IUser {
   language: string;
   firebaseUid?: string;
   preferences: {
-    coachTone: 'encouraging' | 'firm' | 'balanced' | 'billionaire_mentor' | 'strict_accountant' | 'kind_auntie';
+    coachTone:
+      | 'encouraging'
+      | 'firm'
+      | 'balanced'
+      | 'billionaire_mentor'
+      | 'strict_accountant'
+      | 'kind_auntie';
     notificationFrequency: 'high' | 'medium' | 'low';
     budgetAlertThreshold: number;
   };

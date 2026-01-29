@@ -466,16 +466,22 @@ export class AuthService {
       const currentPrefs = user.preferences || {
         coachTone: 'balanced',
         notificationFrequency: 'medium',
-        budgetAlertThreshold: 80
+        budgetAlertThreshold: 80,
       };
 
       // Merge only provided values
       const newPrefs = {
         coachTone: updateData.preferences.coachTone || currentPrefs.coachTone || 'balanced',
-        notificationFrequency: updateData.preferences.notificationFrequency || currentPrefs.notificationFrequency || 'medium',
-        budgetAlertThreshold: updateData.preferences.budgetAlertThreshold !== undefined
-          ? updateData.preferences.budgetAlertThreshold
-          : (currentPrefs.budgetAlertThreshold !== undefined ? currentPrefs.budgetAlertThreshold : 80),
+        notificationFrequency:
+          updateData.preferences.notificationFrequency ||
+          currentPrefs.notificationFrequency ||
+          'medium',
+        budgetAlertThreshold:
+          updateData.preferences.budgetAlertThreshold !== undefined
+            ? updateData.preferences.budgetAlertThreshold
+            : currentPrefs.budgetAlertThreshold !== undefined
+              ? currentPrefs.budgetAlertThreshold
+              : 80,
       };
 
       user.preferences = newPrefs;

@@ -82,11 +82,17 @@ export class CurrencyService {
    * Converts all financial data for a user when they change country
    * (Placeholder for future implementation)
    */
-  static async convertUserFinancialData(userId: string, oldCurrency: string, newCurrency: string): Promise<void> {
+  static async convertUserFinancialData(
+    userId: string,
+    oldCurrency: string,
+    newCurrency: string,
+  ): Promise<void> {
     if (oldCurrency === newCurrency) return;
 
     const rate = this.getRate(oldCurrency, newCurrency);
-    logger.info(`Converting financial data for user ${userId} from ${oldCurrency} to ${newCurrency} at rate ${rate}`);
+    logger.info(
+      `Converting financial data for user ${userId} from ${oldCurrency} to ${newCurrency} at rate ${rate}`,
+    );
 
     // TODO: Implement bulk update of user's Transactions, Budgets, Goals, etc.
   }

@@ -2,7 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 import { INotification } from '../types/models';
 
-export interface INotificationDocument extends INotification, Document { }
+export interface INotificationDocument extends INotification, Document {}
 
 const notificationSchema: Schema = new Schema(
   {

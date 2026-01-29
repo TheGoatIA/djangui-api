@@ -12,7 +12,11 @@ export class AnneVoiceService {
    * @param userId ID of the user (for tracking)
    * @returns Extracted transaction data in JSON format
    */
-  static async processVoiceTransaction(filePath: string, mimeType: string, userId?: string): Promise<any> {
+  static async processVoiceTransaction(
+    filePath: string,
+    mimeType: string,
+    userId?: string,
+  ): Promise<any> {
     try {
       const audioBuffer = fs.readFileSync(filePath);
 
@@ -48,8 +52,8 @@ export class AnneVoiceService {
           userId,
           feature: 'AI_Voice',
           action: 'process_voice_transaction',
-          details: { isValid: result.isValid, confidence: result.confidence }
-        }).catch(e => logger.warn(`Failed to log voice activity: ${e}`));
+          details: { isValid: result.isValid, confidence: result.confidence },
+        }).catch((e) => logger.warn(`Failed to log voice activity: ${e}`));
       }
 
       return result;

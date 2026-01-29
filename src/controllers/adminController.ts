@@ -847,7 +847,7 @@ export class AdminController {
           cpuCount = quota / period;
         }
       }
-    } catch (e) { }
+    } catch (e) {}
 
     return {
       memoryLimit: memLimit,
