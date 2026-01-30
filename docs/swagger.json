@@ -1065,6 +1065,175 @@
                         "format": "date-time"
                     }
                 }
+            },
+            "AutoBudgetResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "budgets": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "category": {
+                                            "type": "string",
+                                            "example": "Alimentation"
+                                        },
+                                        "amount": {
+                                            "type": "number",
+                                            "example": 120000
+                                        },
+                                        "period": {
+                                            "type": "object",
+                                            "properties": {
+                                                "month": {
+                                                    "type": "integer",
+                                                    "example": 2
+                                                },
+                                                "year": {
+                                                    "type": "integer",
+                                                    "example": 2026
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "analysis": {
+                                "type": "string",
+                                "example": "Votre budget est optimisé selon la règle 50/30/20..."
+                            }
+                        }
+                    }
+                }
+            },
+            "OracleResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "alerts": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "severity": {
+                                            "type": "string",
+                                            "enum": [
+                                                "high",
+                                                "medium",
+                                                "low"
+                                            ],
+                                            "example": "high"
+                                        },
+                                        "date": {
+                                            "type": "string",
+                                            "format": "date",
+                                            "example": "2026-02-15"
+                                        },
+                                        "title": {
+                                            "type": "string",
+                                            "example": "Risque de découvert"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Attention, votre solde risque de devenir négatif."
+                                        },
+                                        "type": {
+                                            "type": "string",
+                                            "example": "cashflow_risk"
+                                        }
+                                    }
+                                }
+                            },
+                            "overallHealth": {
+                                "type": "string",
+                                "example": "Stable"
+                            }
+                        }
+                    }
+                }
+            },
+            "ReportResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "title": {
+                                "type": "string",
+                                "example": "Édition Janvier 2026"
+                            },
+                            "summary": {
+                                "type": "string",
+                                "example": "Ce mois-ci, vous avez fait preuve de discipline..."
+                            },
+                            "topInsights": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string",
+                                    "example": "Réduction de 15% sur les loisirs"
+                                }
+                            },
+                            "recommendations": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string",
+                                    "example": "Augmentez votre épargne tontine"
+                                }
+                            },
+                            "magazineStyle": {
+                                "type": "object",
+                                "properties": {
+                                    "coverImage": {
+                                        "type": "string",
+                                        "example": "https://api.kauri-app.com/static/magazine/cover.jpg"
+                                    },
+                                    "theme": {
+                                        "type": "string",
+                                        "example": "gold_luxury"
+                                    }
+                                }
+                            },
+                            "data": {
+                                "type": "object",
+                                "properties": {
+                                    "month": {
+                                        "type": "integer",
+                                        "example": 1
+                                    },
+                                    "year": {
+                                        "type": "integer",
+                                        "example": 2026
+                                    },
+                                    "income": {
+                                        "type": "number",
+                                        "example": 500000
+                                    },
+                                    "expenses": {
+                                        "type": "number",
+                                        "example": 320000
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         },
         "TurnSummary": {
@@ -6545,6 +6714,103 @@
                             }
                         }
                     }
+                }
+            },
+            "/v1/premium/auto-budget": {
+                "post": {
+                    "tags": [
+                        "Premium"
+                    ],
+                    "summary": "Generate AI Auto-Budget",
+                    "description": "[Premium Only] Analyzes transaction history to generate an optimized monthly budget.",
+                    "responses": {
+                        "200": {
+                            "description": "Budget generated successfully",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/AutoBudgetResponse"
+                                    }
+                                }
+                            }
+                        },
+                        "403": {
+                            "description": "Premium subscription required"
+                        }
+                    },
+                    "security": [
+                        {
+                            "bearerAuth": []
+                        }
+                    ]
+                }
+            },
+            "/v1/premium/oracle": {
+                "get": {
+                    "tags": [
+                        "Premium"
+                    ],
+                    "summary": "Get Oracle AI Alerts",
+                    "description": "[Premium Only] Gets predictive financial alerts and risk analysis.",
+                    "responses": {
+                        "200": {
+                            "description": "Alerts retrieved successfully",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/OracleResponse"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "security": [
+                        {
+                            "bearerAuth": []
+                        }
+                    ]
+                }
+            },
+            "/v1/premium/report": {
+                "get": {
+                    "tags": [
+                        "Premium"
+                    ],
+                    "summary": "Get Style Magazine Report",
+                    "description": "[Premium Only] Generates a rich, narrative monthly financial report.",
+                    "parameters": [
+                        {
+                            "name": "month",
+                            "in": "query",
+                            "schema": {
+                                "type": "integer"
+                            }
+                        },
+                        {
+                            "name": "year",
+                            "in": "query",
+                            "schema": {
+                                "type": "integer"
+                            }
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Report generated successfully",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/ReportResponse"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "security": [
+                        {
+                            "bearerAuth": []
+                        }
+                    ]
                 }
             }
         }

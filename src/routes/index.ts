@@ -24,6 +24,7 @@ import simulatorRoutes from './simulator.routes';
 import tontineRoutes from './tontine.routes';
 import subscriptionRoutes from './subscription.routes';
 import analyticsRoutes from './analytics.routes';
+import premiumRoutes from './premiumRoutes';
 
 const router = Router();
 
@@ -51,6 +52,7 @@ router.use('/forecast', forecastRoutes);
 router.use('/simulator', simulatorRoutes);
 router.use('/tontines', tontineRoutes);
 router.use('/subscriptions', subscriptionRoutes);
+router.use('/premium', premiumRoutes);
 
 // Webhooks
 router.post('/webhooks/stripe', WebhookController.stripeWebhook);

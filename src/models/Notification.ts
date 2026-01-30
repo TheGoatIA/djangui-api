@@ -1,13 +1,8 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
-export interface INotification extends Document {
-  userId: mongoose.Types.ObjectId;
-  title: string;
-  body: string;
-  data?: Record<string, any>;
-  isRead: boolean;
-  createdAt: Date;
-}
+import { INotification } from '../types/models';
+
+export interface INotificationDocument extends INotification, Document {}
 
 const notificationSchema: Schema = new Schema(
   {
@@ -24,6 +19,11 @@ const notificationSchema: Schema = new Schema(
     body: {
       type: String,
       required: [true, 'Notification must have a body'],
+    },
+    category: {
+      type: String,
+      enum: ['transactional', 'important', 'informational'],
+      default: 'transactional',
     },
     data: {
       type: Schema.Types.Mixed,
@@ -42,6 +42,6 @@ const notificationSchema: Schema = new Schema(
 // Index for performance on listing user notifications
 notificationSchema.index({ userId: 1, createdAt: -1 });
 
-const Notification = mongoose.model<INotification>('Notification', notificationSchema);
+const Notification = mongoose.model<INotificationDocument>('Notification', notificationSchema);
 
 export default Notification;

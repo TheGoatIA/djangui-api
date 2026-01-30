@@ -179,6 +179,7 @@ export class PaymentService {
       await NotificationService.sendToUser(payment.userId.toString(), {
         title: '',
         body: '',
+        category: 'transactional',
         translationKey: 'RECHARGE_SUCCESS',
         translationData: { amount: payment.amount, currency: payment.currency },
         data: { type: 'payment', status: 'success', reference },
@@ -203,6 +204,7 @@ export class PaymentService {
       await NotificationService.sendToUser(payment.userId.toString(), {
         title: '',
         body: '',
+        category: 'transactional',
         translationKey: 'SUBSCRIPTION_ACTIVATED',
         data: { type: 'payment', status: 'success', reference },
       });
