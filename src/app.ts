@@ -15,6 +15,7 @@ import swaggerDocument from '../docs/swagger.json';
 import { currencyMiddleware } from './middleware/currencyMiddleware';
 import mongoose from 'mongoose';
 import os from 'os';
+import { AuthController } from './controllers/authController';
 
 // Rate limiting using Redis
 
@@ -290,6 +291,8 @@ app.get('/', (req, res) => {
     </html>
   `);
 });
+
+app.get('/reset-password', AuthController.renderResetPasswordPage);
 
 app.use('/api/v1', routes);
 
