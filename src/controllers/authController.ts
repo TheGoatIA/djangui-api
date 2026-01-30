@@ -333,12 +333,17 @@ export class AuthController {
   }
 
   static async renderResetPasswordPage(req: Request, res: Response) {
-    const tokenFromQuery = req.query.token as string;
-    const tokenFromParams = req.params.token;
-    const token = tokenFromQuery || tokenFromParams;
+    // Try to get token from path parameter first, then query parameter
+    const token = req.params.token || req.query.token as string;
     
-    if (!token || token === 'undefined') {
-      return res.status(400).send('<h1>Lien invalide</h1><p>Le jeton de réinitialisation est manquant ou invalide. Veuillez demander un nouveau lien de réinitialisation.</p>');
+    if (!token || token === 'undefined' || token === ':token') {
+      return res.status(400).send(`
+        <div style="font-family: sans-serif; text-align: center; padding: 50px;">
+          <h1 style="color: #ff4d4d;">Lien invalide</h1>
+          <p>Le jeton de réinitialisation est manquant ou invalide.</p>
+          <p>Veuillez demander un nouveau lien de réinitialisation depuis l'application Kauri.</p>
+        </div>
+      `);
     }
 
     res.send(`
@@ -578,7 +583,17 @@ export class AuthController {
               const form = document.getElementById('resetForm');
               const submitBtn = document.getElementById('submitBtn');
               const message = document.getElementById('message');
-              const token = "${token}";
+              
+              // Robust token extraction
+              let token = "${token}";
+              if (!token || token === "undefined" || token === ":token") {
+                  // Fallback: extract from path /reset-password/TOKEN
+                  // Filter empty parts and get last non-empty part
+                  const pathParts = window.location.pathname.split('/').filter(p => !!p);
+                  token = pathParts[pathParts.length - 1];
+              }
+
+              console.log('Kauri Debug: Token extracted -', token);
 
               form.onsubmit = async (e) => {
                   e.preventDefault();
@@ -586,29 +601,61 @@ export class AuthController {
                   const password = document.getElementById('password').value;
                   const confirmPassword = document.getElementById('confirmPassword').value;
 
+                  // Clear previous messages
+                  message.style.display = 'none';
+
+                  if (password.length < 8) {
+                      showMessage("Le mot de passe doit contenir au moins 8 caractères.", "error");
+                      return;
+                  }
+
                   if (password !== confirmPassword) {
                       showMessage("Les mots de passe ne correspondent pas.", "error");
                       return;
                   }
 
+                  if (!token || token === "reset-password") {
+                      showMessage("Erreur : le jeton de sécurité est manquant. Veuillez réessayer avec un nouveau lien.", "error");
+                      return;
+                  }
+
                   try {
                       setLoading(true);
+                      console.log('Kauri Debug: Submitting reset for token', token);
+
                       const response = await fetch('/api/v1/auth/reset-password/' + token, {
                           method: 'PATCH',
-                          headers: { 'Content-Type': 'application/json' },
+                          headers: { 
+                              'Content-Type': 'application/json',
+                              'Accept': 'application/json'
+                          },
                           body: JSON.stringify({ password })
                       });
 
                       const data = await response.json();
 
                       if (response.ok) {
-                          showMessage("Votre mot de passe a été réinitialisé avec succès ! Vous pouvez maintenant vous connecter sur l'application.", "success");
-                          form.style.display = 'none';
+                          // Replace card content with Success Dialog
+                          document.querySelector('.card').innerHTML = \`
+                              <div style="text-align: center; animation: fadeIn 0.8s ease-out;">
+                                  <div style="width: 80px; height: 80px; background: rgba(29, 185, 84, 0.1); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem; border: 2px solid var(--primary);">
+                                      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                                          <polyline points="20 6 9 17 4 12"></polyline>
+                                      </svg>
+                                  </div>
+                                  <h1 style="background: linear-gradient(to right, #fff, var(--primary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Succès !</h1>
+                                  <p style="color: var(--text-dim); margin-top: 1.5rem; line-height: 1.6; font-size: 1.1rem;">
+                                      Votre mot de passe a été réinitialisé avec succès.<br>
+                                      Vous pouvez maintenant vous connecter à l'application Kauri en toute sécurité.
+                                  </p>
+                              </div>
+                          \`;
                       } else {
-                          showMessage(data.message || "Une erreur est survenue.", "error");
+                          showMessage(data.message || "Le lien a expiré ou est invalide.", "error");
                       }
                   } catch (err) {
-                      showMessage("Erreur de connexion au serveur.", "error");
+                      console.error('Kauri Error:', err);
+                      showMessage("Erreur de connexion : " + err.message, "error");
                   } finally {
                       setLoading(false);
                   }
@@ -617,12 +664,19 @@ export class AuthController {
               function showMessage(text, type) {
                   message.textContent = text;
                   message.className = 'message ' + type;
+                  message.style.display = 'block';
+                  
+                  // Scroll message into view for mobile users
+                  message.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
               }
 
               function setLoading(loading) {
                   submitBtn.disabled = loading;
-                  if (loading) submitBtn.classList.add('loading');
-                  else submitBtn.classList.remove('loading');
+                  if (loading) {
+                      submitBtn.classList.add('loading');
+                  } else {
+                      submitBtn.classList.remove('loading');
+                  }
               }
           </script>
       </body>
