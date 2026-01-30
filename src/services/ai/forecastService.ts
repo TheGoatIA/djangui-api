@@ -1,6 +1,7 @@
 import User from '../../models/User';
 import Transaction from '../../models/Transaction';
 import Budget from '../../models/Budget';
+import Subscription from '../../models/Subscription';
 import { GeminiService } from './geminiService';
 import { PromptBuilder } from './promptBuilder';
 import { RedisService } from '../redisService';
@@ -22,7 +23,7 @@ export class ForecastService {
     const threeMonthsAgo = new Date();
     threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
 
-    const [transactions, activeBudgets] = await Promise.all([
+    const [transactions, activeBudgets, activeSubscriptions] = await Promise.all([
       Transaction.find({
         userId,
         date: { $gte: threeMonthsAgo },
@@ -33,11 +34,16 @@ export class ForecastService {
         userId,
         status: 'active',
       }).lean(),
+      Subscription.find({
+        userId,
+        status: 'active',
+      }).lean(),
     ]);
 
     const context = {
       recentTransactions: transactions.slice(0, 50), // Limit context size
       budgets: activeBudgets,
+      subscriptions: activeSubscriptions,
       currentDate: new Date().toISOString(),
     };
 

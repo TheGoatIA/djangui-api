@@ -105,6 +105,7 @@ export class TontineService {
     await NotificationService.sendToUser(tontine.creatorId.toString(), {
       title: '',
       body: '',
+      category: 'important',
       translationKey: 'TONTINE_JOIN',
       translationData: { name: data.displayName, tontineName: tontine.name },
       data: { tontineId: tontine._id.toString(), type: 'TONTINE_JOIN' },
@@ -335,6 +336,7 @@ export class TontineService {
       await NotificationService.sendToUser(m.userId.toString(), {
         title: '',
         body: '',
+        category: 'important',
         translationKey: 'TONTINE_STARTED',
         translationData: { tontineName: tontine.name },
         data: { tontineId: tontine._id.toString(), type: 'TONTINE_STARTED' },
@@ -419,6 +421,7 @@ export class TontineService {
         await NotificationService.sendToUser(m.userId.toString(), {
           title: '',
           body: '',
+          category: 'important',
           translationKey: 'TONTINE_COMPLETED',
           translationData: { tontineName: tontine.name },
           data: { tontineId: tontine._id.toString(), type: 'TONTINE_ROTATION' },
@@ -427,6 +430,7 @@ export class TontineService {
         await NotificationService.sendToUser(m.userId.toString(), {
           title: '',
           body: '',
+          category: 'important',
           translationKey: 'TONTINE_NEW_TURN',
           translationData: { turn: tontine.currentTurn },
           data: { tontineId: tontine._id.toString(), type: 'TONTINE_ROTATION' },

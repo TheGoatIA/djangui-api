@@ -1,5 +1,5 @@
 import { Response, NextFunction } from 'express';
-import { KauriVoiceService } from '../services/ai/kauriVoiceService';
+import { AnneVoiceService } from '../services/ai/anneVoiceService';
 import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 
@@ -16,7 +16,11 @@ export class VoiceController {
       const filePath = req.file.path;
       const mimeType = req.file.mimetype;
 
-      const result = await KauriVoiceService.processVoiceTransaction(filePath, mimeType);
+      const result = await AnneVoiceService.processVoiceTransaction(
+        filePath,
+        mimeType,
+        req.user._id,
+      );
 
       res.status(200).json({
         success: true,
