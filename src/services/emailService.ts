@@ -109,7 +109,7 @@ export class EmailService {
    */
   static async sendPasswordResetEmail(to: string, token: string) {
     const baseUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
-    const resetUrl = `${baseUrl}/reset-password?token=${token}`;
+    const resetUrl = `${baseUrl}/reset-password/${token}`;
     const subject = 'Réinitialisation de mot de passe';
 
     const body = `
