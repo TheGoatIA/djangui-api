@@ -1,6 +1,6 @@
 {
   "name": "kauri",
-  "version": "1.0.7",
+  "version": "1.0.71",
   "description": "Kauri API",
   "main": "dist/server.js",
   "scripts": {

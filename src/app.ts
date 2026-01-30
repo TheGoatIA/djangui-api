@@ -292,7 +292,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.get('/reset-password', AuthController.renderResetPasswordPage);
+app.get('/reset-password/:token?', AuthController.renderResetPasswordPage);
 
 app.use('/api/v1', routes);
 
