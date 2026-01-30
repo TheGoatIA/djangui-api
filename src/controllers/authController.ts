@@ -333,10 +333,12 @@ export class AuthController {
   }
 
   static async renderResetPasswordPage(req: Request, res: Response) {
-    const { token } = req.query;
+    const tokenFromQuery = req.query.token as string;
+    const tokenFromParams = req.params.token;
+    const token = tokenFromQuery || tokenFromParams;
     
-    if (!token) {
-      return res.status(400).send('<h1>Lien invalide</h1><p>Le jeton de réinitialisation est manquant.</p>');
+    if (!token || token === 'undefined') {
+      return res.status(400).send('<h1>Lien invalide</h1><p>Le jeton de réinitialisation est manquant ou invalide. Veuillez demander un nouveau lien de réinitialisation.</p>');
     }
 
     res.send(`
