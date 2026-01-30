@@ -333,15 +333,14 @@ export class AuthController {
   }
 
   static async renderResetPasswordPage(req: Request, res: Response) {
-    // Try to get token from path parameter first, then query parameter
     const token = req.params.token || req.query.token as string;
     
     if (!token || token === 'undefined' || token === ':token') {
       return res.status(400).send(`
-        <div style="font-family: sans-serif; text-align: center; padding: 50px;">
-          <h1 style="color: #ff4d4d;">Lien invalide</h1>
-          <p>Le jeton de réinitialisation est manquant ou invalide.</p>
-          <p>Veuillez demander un nouveau lien de réinitialisation depuis l'application Kauri.</p>
+        <div style="font-family: sans-serif; text-align: center; padding: 50px; background: #0b0f14; color: #f8fafc; min-height: 100vh;">
+          <h1 style="color: #ff4d4d; font-size: 2rem; margin-bottom: 1rem;">Lien invalide</h1>
+          <p style="font-size: 1.1rem; color: #94a3b8;">Le jeton de réinitialisation est manquant ou invalide.</p>
+          <p style="margin-top: 2rem;"><a href="/" style="color: #1DB954; text-decoration: none; font-weight: bold;">Retour à l'accueil</a></p>
         </div>
       `);
     }
@@ -411,6 +410,7 @@ export class AuthController {
                   width: 100%;
                   max-width: 450px;
                   animation: fadeIn 0.8s ease-out;
+                  z-index: 10;
               }
 
               @keyframes fadeIn {
@@ -525,13 +525,6 @@ export class AuthController {
                   border: 1px solid rgba(255, 77, 77, 0.2);
               }
 
-              .message.success {
-                  display: block;
-                  background: rgba(29, 185, 84, 0.1);
-                  color: var(--success);
-                  border: 1px solid rgba(29, 185, 84, 0.2);
-              }
-
               .spinner {
                   width: 20px;
                   height: 20px;
@@ -549,6 +542,31 @@ export class AuthController {
 
               .loading .spinner { display: block; }
               .loading .btn-text { display: none; }
+
+              /* Success State Styles */
+              #successView {
+                  text-align: center;
+                  display: none;
+              }
+
+              .success-icon {
+                  width: 80px;
+                  height: 80px;
+                  background: rgba(29, 185, 84, 0.1);
+                  border-radius: 50%;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  margin: 0 auto 1.5rem;
+                  border: 2px solid var(--primary);
+              }
+
+              .success-title {
+                  background: linear-gradient(to right, #fff, var(--primary));
+                  -webkit-background-clip: text;
+                  -webkit-text-fill-color: transparent;
+                  margin-bottom: 1rem;
+              }
           </style>
       </head>
       <body>
@@ -556,128 +574,130 @@ export class AuthController {
           <div class="blob blob-2"></div>
 
           <div class="card">
-              <div class="logo">K</div>
-              <h1>Nouveau Départ</h1>
-              <p class="subtitle">Choisissez un mot de passe fort pour sécuriser votre compte Kauri.</p>
+              <!-- Form View -->
+              <div id="formView">
+                  <div class="logo">K</div>
+                  <h1 id="mainTitle">Nouveau Départ</h1>
+                  <p class="subtitle">Choisissez un mot de passe fort pour sécuriser votre compte Kauri.</p>
 
-              <form id="resetForm">
-                  <div class="form-group">
-                      <label for="password">Nouveau mot de passe</label>
-                      <input type="password" id="password" placeholder="••••••••" required minlength="8">
+                  <form id="resetForm" onsubmit="return false;">
+                      <div class="form-group">
+                          <label for="password">Nouveau mot de passe</label>
+                          <input type="password" id="password" placeholder="••••••••" required minlength="8">
+                      </div>
+                      <div class="form-group">
+                          <label for="confirmPassword">Confirmer le mot de passe</label>
+                          <input type="password" id="confirmPassword" placeholder="••••••••" required minlength="8">
+                      </div>
+
+                      <button type="button" class="btn" id="submitBtn">
+                          <span class="spinner"></span>
+                          <span class="btn-text">Mettre à jour</span>
+                      </button>
+                  </form>
+
+                  <div id="message" class="message"></div>
+              </div>
+
+              <!-- Success View -->
+              <div id="successView">
+                  <div class="success-icon">
+                      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
                   </div>
-                  <div class="form-group">
-                      <label for="confirmPassword">Confirmer le mot de passe</label>
-                      <input type="password" id="confirmPassword" placeholder="••••••••" required minlength="8">
-                  </div>
-
-                  <button type="submit" class="btn" id="submitBtn">
-                      <span class="spinner"></span>
-                      <span class="btn-text">Mettre à jour</span>
-                  </button>
-              </form>
-
-              <div id="message" class="message"></div>
+                  <h1 class="success-title">Succès !</h1>
+                  <p style="color: var(--text-dim); margin-top: 1.5rem; line-height: 1.6; font-size: 1.1rem;">
+                      Votre mot de passe a été réinitialisé avec succès.<br>
+                      Vous pouvez maintenant vous connecter à l'application Kauri en toute sécurité.
+                  </p>
+              </div>
           </div>
 
           <script>
-              const form = document.getElementById('resetForm');
-              const submitBtn = document.getElementById('submitBtn');
-              const message = document.getElementById('message');
-              
-              // Robust token extraction
-              let token = "${token}";
-              if (!token || token === "undefined" || token === ":token") {
-                  // Fallback: extract from path /reset-password/TOKEN
-                  // Filter empty parts and get last non-empty part
-                  const pathParts = window.location.pathname.split('/').filter(p => !!p);
-                  token = pathParts[pathParts.length - 1];
-              }
-
-              console.log('Kauri Debug: Token extracted -', token);
-
-              form.onsubmit = async (e) => {
-                  e.preventDefault();
+              (function() {
+                  const form = document.getElementById('resetForm');
+                  const submitBtn = document.getElementById('submitBtn');
+                  const message = document.getElementById('message');
+                  const formView = document.getElementById('formView');
+                  const successView = document.getElementById('successView');
                   
-                  const password = document.getElementById('password').value;
-                  const confirmPassword = document.getElementById('confirmPassword').value;
-
-                  // Clear previous messages
-                  message.style.display = 'none';
-
-                  if (password.length < 8) {
-                      showMessage("Le mot de passe doit contenir au moins 8 caractères.", "error");
-                      return;
-                  }
-
-                  if (password !== confirmPassword) {
-                      showMessage("Les mots de passe ne correspondent pas.", "error");
-                      return;
-                  }
-
-                  if (!token || token === "reset-password") {
-                      showMessage("Erreur : le jeton de sécurité est manquant. Veuillez réessayer avec un nouveau lien.", "error");
-                      return;
-                  }
-
-                  try {
-                      setLoading(true);
-                      console.log('Kauri Debug: Submitting reset for token', token);
-
-                      const response = await fetch('/api/v1/auth/reset-password/' + token, {
-                          method: 'PATCH',
-                          headers: { 
-                              'Content-Type': 'application/json',
-                              'Accept': 'application/json'
-                          },
-                          body: JSON.stringify({ password })
-                      });
-
-                      const data = await response.json();
-
-                      if (response.ok) {
-                          // Replace card content with Success Dialog
-                          document.querySelector('.card').innerHTML = \`
-                              <div style="text-align: center; animation: fadeIn 0.8s ease-out;">
-                                  <div style="width: 80px; height: 80px; background: rgba(29, 185, 84, 0.1); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem; border: 2px solid var(--primary);">
-                                      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                                          <polyline points="20 6 9 17 4 12"></polyline>
-                                      </svg>
-                                  </div>
-                                  <h1 style="background: linear-gradient(to right, #fff, var(--primary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Succès !</h1>
-                                  <p style="color: var(--text-dim); margin-top: 1.5rem; line-height: 1.6; font-size: 1.1rem;">
-                                      Votre mot de passe a été réinitialisé avec succès.<br>
-                                      Vous pouvez maintenant vous connecter à l'application Kauri en toute sécurité.
-                                  </p>
-                              </div>
-                          \`;
-                      } else {
-                          showMessage(data.message || "Le lien a expiré ou est invalide.", "error");
+                  // Use a pure hex token passed from server
+                  const injectedToken = "${token}";
+                  
+                  // Robust token extraction fallback
+                  function getToken() {
+                      if (injectedToken && injectedToken !== "undefined" && injectedToken !== ":token") {
+                          return injectedToken;
                       }
-                  } catch (err) {
-                      console.error('Kauri Error:', err);
-                      showMessage("Erreur de connexion : " + err.message, "error");
-                  } finally {
-                      setLoading(false);
+                      const pathParts = window.location.pathname.split('/').filter(p => !!p);
+                      return pathParts[pathParts.length - 1];
                   }
-              };
 
-              function showMessage(text, type) {
-                  message.textContent = text;
-                  message.className = 'message ' + type;
-                  message.style.display = 'block';
-                  
-                  // Scroll message into view for mobile users
-                  message.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-              }
+                  const token = getToken();
 
-              function setLoading(loading) {
-                  submitBtn.disabled = loading;
-                  if (loading) {
-                      submitBtn.classList.add('loading');
-                  } else {
-                      submitBtn.classList.remove('loading');
+                  submitBtn.addEventListener('click', async (e) => {
+                      e.preventDefault();
+                      
+                      const password = document.getElementById('password').value;
+                      const confirmPassword = document.getElementById('confirmPassword').value;
+
+                      message.style.display = 'none';
+
+                      if (password.length < 8) {
+                          showMessage("Le mot de passe doit contenir au moins 8 caractères.", "error");
+                          return;
+                      }
+
+                      if (password !== confirmPassword) {
+                          showMessage("Les mots de passe ne correspondent pas.", "error");
+                          return;
+                      }
+
+                      if (!token || token === "reset-password") {
+                          showMessage("Erreur : Jeton de sécurité introuvable. Veuillez utiliser le lien reçu par email.", "error");
+                          return;
+                      }
+
+                      try {
+                          setLoading(true);
+                          
+                          const response = await fetch('/api/v1/auth/reset-password/' + token, {
+                              method: 'PATCH',
+                              headers: { 
+                                  'Content-Type': 'application/json',
+                                  'Accept': 'application/json'
+                              },
+                              body: JSON.stringify({ password })
+                          });
+
+                          const data = await response.json();
+
+                          if (response.ok) {
+                              formView.style.display = 'none';
+                              successView.style.display = 'block';
+                          } else {
+                              showMessage(data.message || "Le lien a expiré ou est invalide.", "error");
+                          }
+                      } catch (err) {
+                          showMessage("Impossible de contacter le serveur. Vérifiez votre connexion.", "error");
+                      } finally {
+                          setLoading(false);
+                      }
+                  });
+
+                  function showMessage(text, type) {
+                      message.textContent = text;
+                      message.className = 'message ' + type;
+                      message.style.display = 'block';
                   }
-              }
+
+                  function setLoading(loading) {
+                      submitBtn.disabled = loading;
+                      if (loading) submitBtn.classList.add('loading');
+                      else submitBtn.classList.remove('loading');
+                  }
+              })();
           </script>
       </body>
       </html>
