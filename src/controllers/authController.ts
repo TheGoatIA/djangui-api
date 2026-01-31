@@ -333,9 +333,9 @@ export class AuthController {
   }
 
   static async renderResetPasswordPage(req: Request, res: Response) {
-    const token = req.params.token || req.query.token as string;
+    const token = req.params.token || (req.query.token as string);
     const deepLink = `kauri://reset-password?token=${token}`;
-    
+
     res.send(`
       <!DOCTYPE html>
       <html lang="fr">
