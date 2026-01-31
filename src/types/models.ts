@@ -15,12 +15,12 @@ export interface IUser {
   firebaseUid?: string;
   preferences: {
     coachTone:
-      | 'encouraging'
-      | 'firm'
-      | 'balanced'
-      | 'billionaire_mentor'
-      | 'strict_accountant'
-      | 'kind_auntie';
+    | 'encouraging'
+    | 'firm'
+    | 'balanced'
+    | 'billionaire_mentor'
+    | 'strict_accountant'
+    | 'kind_auntie';
     notificationFrequency: 'high' | 'medium' | 'low';
     budgetAlertThreshold: number;
   };
@@ -200,14 +200,22 @@ export interface ISavingGoal {
   name: string;
   description?: string;
   emoji?: string;
-  type: 'emergency' | 'project' | 'regular' | 'challenge';
+  type: 'emergency' | 'project' | 'regular' | 'challenge' | 'debt';
   targetAmount: number;
   currentAmount: number;
   startDate: Date;
   deadline?: Date;
   priority: 'high' | 'medium' | 'low';
   strategy: {
-    type: '50-30-20' | 'progressive' | 'roundup' | 'pay-yourself-first' | 'envelope' | 'custom';
+    type:
+    | '50-30-20'
+    | 'progressive'
+    | 'roundup'
+    | 'pay-yourself-first'
+    | 'envelope'
+    | 'custom'
+    | 'snowball'
+    | 'avalanche';
     details?: any;
   };
   autoSaveRules: {

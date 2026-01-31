@@ -20,7 +20,7 @@ const savingGoalSchema = new Schema<ISavingGoalDocument>(
     emoji: String,
     type: {
       type: String,
-      enum: ['emergency', 'project', 'regular', 'challenge'],
+      enum: ['emergency', 'project', 'regular', 'challenge', 'debt'],
       default: 'regular',
     },
     targetAmount: {
@@ -46,7 +46,16 @@ const savingGoalSchema = new Schema<ISavingGoalDocument>(
     strategy: {
       type: {
         type: String,
-        enum: ['50-30-20', 'progressive', 'roundup', 'pay-yourself-first', 'envelope', 'custom'],
+        enum: [
+          '50-30-20',
+          'progressive',
+          'roundup',
+          'pay-yourself-first',
+          'envelope',
+          'custom',
+          'snowball',
+          'avalanche',
+        ],
         default: 'custom',
       },
       details: Schema.Types.Mixed,
