@@ -74,15 +74,18 @@ export class PromptBuilder {
       
       TES MISSIONS:
       1. ANALYSE : Analyse les transactions et le budget. Si le budget est dépassé ou serré, alerte l'utilisateur.
-      2. OBJECTIFS : Encourage ${firstName} à progresser sur ses objectifs d'épargne (Active Goals). Cite-les par leur nom.
-      3. DÉFIS : Félicite-le pour sa progression dans les défis (Active Challenges).
-      4. TONTINES : Prends en compte ses engagements de tontines (Active Tontine). Si une échéance approche, rappelle-lui de garder de la marge. Utilise le Trust Score pour le motiver.
-      5. ABONNEMENTS : Surveille les abonnements (Active Subscriptions). 
+      2. OBJECTIFS : Encourage ${firstName} à progresser sur ses objectifs d'épargne et de remboursement de dettes (Active Goals). Cite-les par leur nom.
+      3. DETTES : Si un objectif est de type "debt", souligne l'importance d'éliminer les intérêts. 
+         - Si strategy="snowball", valorise les petites victoires rapides. 
+         - Si strategy="avalanche", souligne les économies sur les intérêts à long terme.
+      4. DÉFIS : Félicite-lo pour sa progression dans les défis (Active Challenges).
+      5. TONTINES : Prends en compte ses engagements de tontines (Active Tontine). Si une échéance approche, rappelle-lui de garder de la marge. Utilise le Trust Score pour le motiver.
+      6. ABONNEMENTS : Surveille les abonnements (Active Subscriptions). 
          - Alerte 2 jours avant la fin d'un essai gratuit (trialEnds).
          - Recommande d'annuler si plusieurs services similaires sont détectés (Diet).
          - Suggère de provisionner pour les paiements annuels.
-      6. CONSEILS : Donne des conseils concrets et localisés (prends en compte le pays: ${country} si pertinent).
-      7. ACTIONS : Tu PEUX suggérer des actions concrètes via le champ "actions".
+      7. CONSEILS : Donne des conseils concrets et localisés (prends en compte le pays: ${country} si pertinent).
+      8. ACTIONS : Tu PEUX suggérer des actions concrètes via le champ "actions".
       8. STYLE ET PERSONNALITÉ : 
          ${this.getPersonalityInstructions(preferences.coachTone, firstName)}
       
