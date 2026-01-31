@@ -4,9 +4,7 @@ export const createGoalSchema = Joi.object({
   name: Joi.string().required(),
   description: Joi.string().optional().allow('', null),
   emoji: Joi.string().optional().allow('', null),
-  type: Joi.string()
-    .valid('emergency', 'project', 'regular', 'challenge', 'debt')
-    .optional(),
+  type: Joi.string().valid('emergency', 'project', 'regular', 'challenge', 'debt').optional(),
   targetAmount: Joi.number().min(0).required(),
   deadline: Joi.date().optional().allow(null),
   priority: Joi.string().valid('high', 'medium', 'low').optional(),
@@ -49,9 +47,7 @@ export const updateGoalSchema = Joi.object({
   name: Joi.string().optional(),
   description: Joi.string().optional().allow('', null),
   emoji: Joi.string().optional().allow('', null),
-  type: Joi.string()
-    .valid('emergency', 'project', 'regular', 'challenge', 'debt')
-    .optional(),
+  type: Joi.string().valid('emergency', 'project', 'regular', 'challenge', 'debt').optional(),
   targetAmount: Joi.number().min(0).optional(),
   deadline: Joi.date().optional().allow(null),
   priority: Joi.string().valid('high', 'medium', 'low').optional(),
