@@ -1,11 +1,12 @@
 import User from '../../models/User';
 import Transaction from '../../models/Transaction';
+import Budget from '../../models/Budget';
 import { GeminiService } from './geminiService';
 import { PromptBuilder } from './promptBuilder';
 import { AppError } from '../../middleware/errorHandler';
 
 export class AutoBudgetService {
-  static async generateBudget(userId: string) {
+  static async generateBudget(userId: string, requestedMonth?: number, requestedYear?: number) {
     const user = await User.findById(userId);
     if (!user) throw new AppError('User not found', 404);
 
@@ -25,14 +26,39 @@ export class AutoBudgetService {
       .lean();
 
     const now = new Date();
-    const nextMonthDate = new Date();
-    nextMonthDate.setMonth(now.getMonth() + 1);
+    let targetMonth = requestedMonth;
+    let targetYear = requestedYear;
+
+    // Intelligent Fallback Logic if no period is requested
+    if (!targetMonth || !targetYear) {
+      const currentMonth = now.getMonth() + 1;
+      const currentYear = now.getFullYear();
+
+      // Check if a budget already exists for the current month
+      const existingBudget = await Budget.findOne({
+        userId,
+        'period.month': currentMonth,
+        'period.year': currentYear,
+      });
+
+      if (!existingBudget) {
+        // If no budget for current month, prioritize current month
+        targetMonth = currentMonth;
+        targetYear = currentYear;
+      } else {
+        // If budget exists, default to next month
+        const nextMonthDate = new Date();
+        nextMonthDate.setMonth(now.getMonth() + 1);
+        targetMonth = nextMonthDate.getMonth() + 1;
+        targetYear = nextMonthDate.getFullYear();
+      }
+    }
 
     const context = {
       currentDate: now.toISOString(),
       targetPeriod: {
-        month: nextMonthDate.getMonth() + 1,
-        year: nextMonthDate.getFullYear(),
+        month: targetMonth,
+        year: targetYear,
       },
       transactions: transactions.map((t) => ({
         amount: t.amount,
