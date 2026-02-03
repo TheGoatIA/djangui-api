@@ -8,7 +8,7 @@ const router = Router();
 router.use(protect);
 router.use(premiumOnly);
 
-router.post('/auto-budget', PremiumController.generateAutoBudget);
+router.get('/auto-budget', PremiumController.generateAutoBudget);
 router.get('/report', PremiumController.getMonthlyReport);
 
 export default router;
