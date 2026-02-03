@@ -10,13 +10,17 @@ export class PremiumController {
    */
   static async generateAutoBudget(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const budget = await AutoBudgetService.generateBudget(req.user._id);
+      const month = req.query.month ? parseInt(req.query.month as string) : undefined;
+      const year = req.query.year ? parseInt(req.query.year as string) : undefined;
+
+      const budget = await AutoBudgetService.generateBudget(req.user._id, month, year);
 
       // Track Activity
       await UserActivity.create({
         userId: req.user._id,
         feature: 'AI_Premium',
         action: 'generate_auto_budget',
+        details: { month, year },
         platform: (req.headers['x-platform'] as any) || 'android',
       });
 
