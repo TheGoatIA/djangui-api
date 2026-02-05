@@ -17,6 +17,7 @@ import TontineMember from '../models/TontineMember';
 import TontineContribution from '../models/TontineContribution';
 import { TontineService } from './tontineService';
 import Subscription from '../models/Subscription';
+import { SubscriptionService } from './subscriptionService';
 import { SlackService } from './slackService';
 
 export class CronService {
@@ -98,6 +99,14 @@ export class CronService {
     cron.schedule('0 2 * * *', () => {
       this.runDailyBackup();
     });
+
+    // Daily at 01:00 AM: Automatic Subscription Renewals
+    cron.schedule('0 1 * * *', () => {
+      this.processSubscriptionsRenewal();
+    });
+
+    // Run once on startup to handle any missed renewals
+    this.processSubscriptionsRenewal();
 
     logger.info('Cron jobs initialized successfully');
   }
@@ -315,8 +324,8 @@ export class CronService {
             </thead>
             <tbody>
               ${anomalies
-                .map(
-                  (a) => `
+            .map(
+              (a) => `
                 <tr>
                   <td style="padding: 8px; border: 1px solid #ddd;">${a.email}</td>
                   <td style="padding: 8px; border: 1px solid #ddd;">${a.walletBalance}</td>
@@ -324,8 +333,8 @@ export class CronService {
                   <td style="padding: 8px; border: 1px solid #ddd; color: red;">${a.diff.toFixed(2)}</td>
                 </tr>
               `,
-                )
-                .join('')}
+            )
+            .join('')}
             </tbody>
           </table>
         `;
@@ -612,6 +621,33 @@ export class CronService {
       );
     } catch (error: any) {
       logger.error(`Error in checkSubscriptionReminders job: ${error.message}`);
+    }
+  }
+
+  /**
+   * Process automatic subscription renewals for those that reached their billing date
+   */
+  private static async processSubscriptionsRenewal() {
+    try {
+      logger.info('Starting automatic subscription renewal job...');
+      const renewed = await SubscriptionService.processAutoRenewals();
+
+      if (renewed.length > 0) {
+        let slackMessage = `🔄 *Automatic Subscription Renewals*\n`;
+        slackMessage += `Total renewed: ${renewed.length}\n\n`;
+
+        renewed.forEach((sub) => {
+          slackMessage += `• *${sub.name}*: ${sub.amount} ${sub.currency} (User: ${sub.userId})\n`;
+        });
+
+        await SlackService.sendNotification(slackMessage);
+      }
+
+      logger.info(
+        `Automatic subscription renewal job completed. ${renewed.length} subscriptions renewed.`,
+      );
+    } catch (error: any) {
+      logger.error(`Error in processSubscriptionsRenewal job: ${error.message}`);
     }
   }
 }
