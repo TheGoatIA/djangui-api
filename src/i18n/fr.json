@@ -54,5 +54,7 @@
     "COUNTRY_UPDATE_APPROVED_TITLE": "Pays mis à jour !",
     "COUNTRY_UPDATE_APPROVED_BODY": "Votre pays a été changé pour {{targetCountryName}}. Tous vos comptes ont été convertis en {{currency}}.",
     "TONTINE_CONTRIBUTION_VALIDATED_TITLE": "Cotisation reçue ! ✅",
-    "TONTINE_CONTRIBUTION_VALIDATED_BODY": "Votre preuve de paiement pour le tour {{turn}} de \"{{tontineName}}\" a été validée par IA."
+    "TONTINE_CONTRIBUTION_VALIDATED_BODY": "Votre preuve de paiement pour le tour {{turn}} de \"{{tontineName}}\" a été validée par IA.",
+    "SUBSCRIPTION_RENEWED_TITLE": "Abonnement renouvelé ! ✅",
+    "SUBSCRIPTION_RENEWED_BODY": "Votre abonnement \"{{name}}\" a été reconduit jusqu'au {{date}}."
 }

@@ -54,5 +54,7 @@
     "COUNTRY_UPDATE_APPROVED_TITLE": "Country updated!",
     "COUNTRY_UPDATE_APPROVED_BODY": "Your country has been changed to {{targetCountryName}}. All your accounts have been converted to {{currency}}.",
     "TONTINE_CONTRIBUTION_VALIDATED_TITLE": "Contribution received! ✅",
-    "TONTINE_CONTRIBUTION_VALIDATED_BODY": "Your proof of payment for turn {{turn}} of \"{{tontineName}}\" has been validated by AI."
+    "TONTINE_CONTRIBUTION_VALIDATED_BODY": "Your proof of payment for turn {{turn}} of \"{{tontineName}}\" has been validated by AI.",
+    "SUBSCRIPTION_RENEWED_TITLE": "Subscription renewed! ✅",
+    "SUBSCRIPTION_RENEWED_BODY": "Your subscription \"{{name}}\" has been extended until {{date}}."
 }

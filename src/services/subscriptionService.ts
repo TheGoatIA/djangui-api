@@ -3,6 +3,7 @@ import Transaction from '../models/Transaction';
 import User from '../models/User';
 import { AppError } from '../middleware/errorHandler';
 import { ISubscription } from '../types/models';
+import { NotificationService } from './notificationService';
 import logger from '../utils/logger';
 
 export class SubscriptionService {
@@ -118,5 +119,66 @@ export class SubscriptionService {
     }
 
     return suggestions;
+  }
+
+  /**
+   * Calcule la prochaine date de facturation basée sur la fréquence
+   */
+  static calculateNextBillingDate(currentDate: Date, frequency: string): Date {
+    const nextDate = new Date(currentDate);
+    switch (frequency) {
+      case 'weekly':
+        nextDate.setDate(nextDate.getDate() + 7);
+        break;
+      case 'monthly':
+        nextDate.setMonth(nextDate.getMonth() + 1);
+        break;
+      case 'yearly':
+        nextDate.setFullYear(nextDate.getFullYear() + 1);
+        break;
+    }
+    return nextDate;
+  }
+
+  /**
+   * Renouvelle les abonnements arrivés à échéance
+   */
+  static async processAutoRenewals(): Promise<any[]> {
+    const now = new Date();
+    // Trouver les abonnements actifs dont la date de facturation est passée
+    const expiredSubscriptions = await Subscription.find({
+      status: 'active',
+      nextBillingDate: { $lte: now },
+    });
+
+    const renewed = [];
+    for (const sub of expiredSubscriptions) {
+      try {
+        const nextBillingDate = this.calculateNextBillingDate(sub.nextBillingDate, sub.frequency);
+        sub.nextBillingDate = nextBillingDate;
+        await sub.save();
+
+        // Optionnel : Créer une notification pour l'utilisateur
+        await NotificationService.sendToUser(sub.userId.toString(), {
+          title: 'Abonnement renouvelé',
+          body: `Votre abonnement "${sub.name}" a été reconduit jusqu'au ${nextBillingDate.toLocaleDateString()}.`,
+          translationKey: 'SUBSCRIPTION_RENEWED',
+          translationData: { name: sub.name, date: nextBillingDate.toLocaleDateString() },
+          data: { type: 'SUBSCRIPTION_RENEWAL', subscriptionId: sub._id.toString() },
+        });
+
+        renewed.push({
+          name: sub.name,
+          amount: sub.amount,
+          currency: sub.currency,
+          userId: sub.userId,
+        });
+        logger.info(`Subscription automatically renewed: ${sub.name} for user ${sub.userId}`);
+      } catch (error: any) {
+        logger.error(`Failed to renew subscription ${sub._id}: ${error.message}`);
+      }
+    }
+
+    return renewed;
   }
 }
