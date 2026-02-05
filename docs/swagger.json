@@ -445,6 +445,42 @@
                     }
                 }
             },
+            "FeatureFlag": {
+                "type": "object",
+                "properties": {
+                    "_id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string",
+                        "example": "Chat IA Coach"
+                    },
+                    "slug": {
+                        "type": "string",
+                        "example": "ai_coach_chat"
+                    },
+                    "isEnabled": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "description": {
+                        "type": "string",
+                        "example": "Chat IA avec Anne"
+                    },
+                    "minAppVersion": {
+                        "type": "string",
+                        "example": "1.0.0"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
             "User": {
                 "type": "object",
                 "properties": {
@@ -1510,6 +1546,156 @@
                                 }
                             }
                         }
+                    }
+                }
+            }
+        },
+        "/v1/config/features": {
+            "get": {
+                "tags": [
+                    "Config"
+                ],
+                "summary": "Get Public Feature Flags",
+                "description": "Returns a mapping of feature slugs to their enabled status.",
+                "responses": {
+                    "200": {
+                        "description": "Mapping des fonctionnalités récupéré",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                        "type": "object",
+                                        "properties": {
+                                            "isEnabled": {
+                                                "type": "boolean"
+                                            },
+                                            "minAppVersion": {
+                                                "type": "string",
+                                                "example": "1.0.0"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/admin/feature-flags": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "List All Feature Flags (Admin)",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Liste des flags récupérée",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/FeatureFlag"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Create Feature Flag (Admin)",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/FeatureFlag"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Flag créé"
+                    }
+                }
+            }
+        },
+        "/v1/admin/feature-flags/{id}": {
+            "patch": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Update Feature Flag (Admin)",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/FeatureFlag"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Flag mis à jour"
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Delete Feature Flag (Admin)",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Flag supprimé"
                     }
                 }
             }

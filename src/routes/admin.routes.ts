@@ -29,6 +29,13 @@ router.delete('/challenges/:id', AdminController.deleteChallenge);
 router.get('/settings', AdminController.getSystemSettings);
 router.patch('/settings', AdminController.updateSystemSetting);
 
+// Feature Flags
+import { FeatureFlagController } from '../controllers/featureFlagController';
+router.get('/feature-flags', FeatureFlagController.getAllFlags);
+router.post('/feature-flags', FeatureFlagController.createFlag);
+router.patch('/feature-flags/:id', FeatureFlagController.updateFlag);
+router.delete('/feature-flags/:id', FeatureFlagController.deleteFlag);
+
 // Country Management
 router.get('/countries', CountryController.getAllCountries);
 router.post('/countries', CountryController.addCountry);

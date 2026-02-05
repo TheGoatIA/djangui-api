@@ -25,12 +25,14 @@ import tontineRoutes from './tontine.routes';
 import subscriptionRoutes from './subscription.routes';
 import analyticsRoutes from './analytics.routes';
 import premiumRoutes from './premiumRoutes';
+import configRoutes from './config.routes';
 
 const router = Router();
 
 router.use('/auth', authRoutes);
 router.use('/analytics', analyticsRoutes);
 router.use('/system', systemRoutes);
+router.use('/config', configRoutes);
 router.use('/admin', adminRoutes); // Admin routes
 router.use('/notifications', notificationRoutes);
 router.use('/support', supportRoutes);
