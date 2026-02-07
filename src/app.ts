@@ -51,6 +51,18 @@ const limiter = rateLimit({
 });
 
 // Middlewares
+
+// Telemetry Proxy: Handle raw binary for OTEL before ANY other middleware (to avoid body parsing or rate limiting issues)
+// Important: application/x-protobuf must be treated as a Buffer. inflate: false ensures we proxy compressed data as-is.
+app.use(
+  '/api/v1/system/telemetry/traces',
+  express.raw({
+    type: ['application/x-protobuf', 'application/json', '*/*'],
+    limit: '10mb',
+    inflate: false,
+  }),
+);
+
 app.use(limiter);
 app.use(MonitoringService.metricsMiddleware.bind(MonitoringService));
 app.use(requestLogger);
@@ -62,8 +74,7 @@ app.use(
 
 app.use(compression());
 
-// Telemetry Proxy: Handle raw binary/JSON before global body parsers
-app.use('/api/v1/system/telemetry', express.raw({ type: '*/*', limit: '10mb' }));
+app.use(compression());
 
 app.use(
   express.json({

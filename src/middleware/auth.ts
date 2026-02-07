@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { AppError } from './errorHandler';
 import User from '../models/User';
 import logger from '../utils/logger';
+import RequestContext from '../utils/context';
 
 export interface AuthRequest extends Request {
   user?: any;
@@ -38,6 +39,7 @@ const protect = async (req: AuthRequest, res: Response, next: NextFunction) => {
 
     // GRANT ACCESS TO PROTECTED ROUTE
     req.user = currentUser;
+    RequestContext.set('userId', currentUser._id.toString());
     next();
   } catch (err) {
     return next(new AppError('Invalid token or expired. Please log in again.', 401));
@@ -69,5 +71,30 @@ const restrictTo = (...roles: string[]) => {
   };
 };
 
-export { protect, premiumOnly, restrictTo };
+const identify = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    let token;
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+      token = req.headers.authorization.split(' ')[1];
+    }
+
+    if (!token) return next();
+
+    const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET || 'super-secret') as {
+      id: string;
+    };
+
+    const currentUser = await User.findById(decoded.id);
+    if (!currentUser || !currentUser.isActive) return next();
+
+    req.user = currentUser;
+    RequestContext.set('userId', currentUser._id.toString());
+    next();
+  } catch (err) {
+    // We don't block, just move to next
+    next();
+  }
+};
+
+export { protect, identify, premiumOnly, restrictTo };
 export default protect;
