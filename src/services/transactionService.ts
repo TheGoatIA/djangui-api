@@ -11,6 +11,7 @@ import logger from '../utils/logger';
 import mongoose from 'mongoose';
 import User from '../models/User';
 import { SlackService } from './slackService';
+import { MonitoringService } from './monitoringService';
 
 export class TransactionService {
   static async createTransaction(userId: string, data: any) {
@@ -331,6 +332,7 @@ export class TransactionService {
       logger.info(
         `Roundup strategy applied for user ${userId}: ${roundupAmount} added to goal ${roundupGoal.name}`,
       );
+      MonitoringService.recordSavingsImpact(roundupAmount, 'roundup', 'XAF');
     }
   }
 

@@ -59,6 +59,7 @@ export interface IUser {
     appVersion?: string;
     refreshToken?: string;
     lastActive: Date;
+    createdAt: Date;
     ipAddress?: string;
   }[];
   deviceInfo?: {

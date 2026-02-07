@@ -1,5 +1,6 @@
 import axios from 'axios';
 import logger from '../utils/logger';
+import { MonitoringService } from './monitoringService';
 
 export class SlackService {
   private static readonly WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL;
@@ -17,13 +18,18 @@ export class SlackService {
       return;
     }
 
+    const start = Date.now();
     try {
       await axios.post(webhookUrl, {
         text: message,
       });
       logger.info(`Slack ${isError ? 'error ' : ''}notification sent successfully`);
+      MonitoringService.recordExternalApiRequest('slack', 'webhook', 'success');
     } catch (error: any) {
       logger.error(`Failed to send Slack ${isError ? 'error ' : ''}notification: ${error.message}`);
+      MonitoringService.recordExternalApiRequest('slack', 'webhook', 'failure');
+    } finally {
+      MonitoringService.observeExternalApiDuration('slack', 'webhook', (Date.now() - start) / 1000);
     }
   }
 

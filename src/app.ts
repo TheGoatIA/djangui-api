@@ -61,6 +61,10 @@ app.use(
 );
 
 app.use(compression());
+
+// Telemetry Proxy: Handle raw binary/JSON before global body parsers
+app.use('/api/v1/system/telemetry', express.raw({ type: '*/*', limit: '10mb' }));
+
 app.use(
   express.json({
     verify: (req: any, res, buf) => {

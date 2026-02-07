@@ -38,15 +38,18 @@ export class TontineAIService {
         Retourne UNIQUEMENT le JSON.
       `;
 
-      const parsed = await GeminiService.generateJSON([
-        prompt,
-        {
-          inlineData: {
-            data: base64Data,
-            mimeType: 'image/jpeg',
+      const parsed = await GeminiService.generateJSON(
+        [
+          prompt,
+          {
+            inlineData: {
+              data: base64Data,
+              mimeType: 'image/jpeg',
+            },
           },
-        },
-      ]);
+        ],
+        'ocr_tontine',
+      );
 
       return {
         transactionRef: parsed.transactionRef || 'UNKNOWN_' + Date.now(),

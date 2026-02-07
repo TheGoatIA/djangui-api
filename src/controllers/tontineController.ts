@@ -7,6 +7,7 @@ import Tontine from '../models/Tontine';
 import TontineMember from '../models/TontineMember';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
+import { MonitoringService } from '../services/monitoringService';
 
 export class TontineController {
   /**
@@ -15,6 +16,10 @@ export class TontineController {
   static async create(req: Request, res: Response, next: NextFunction) {
     try {
       const tontine = await TontineService.createTontine((req as any).user.id, req.body);
+
+      // Metrique business
+      MonitoringService.recordTontineAction('create');
+
       res.status(201).json({ status: 'success', data: tontine });
     } catch (error) {
       next(error);
@@ -70,6 +75,10 @@ export class TontineController {
         parts,
         payoutDetails,
       });
+
+      // Metrique business
+      MonitoringService.recordTontineAction('join');
+
       res.status(200).json({ status: 'success', data: member });
     } catch (error) {
       next(error);
@@ -170,6 +179,9 @@ export class TontineController {
         translationData: { turn: tontine.currentTurn, tontineName: tontine.name },
         data: { tontineId: tontineId, type: 'TONTINE_CONTRIBUTION_VALIDATED' },
       });
+
+      // Metrique business
+      MonitoringService.recordTontineAction('contribution', isLate ? 'late' : 'success');
 
       res.status(201).json({
         status: 'success',

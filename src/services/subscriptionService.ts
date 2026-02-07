@@ -5,6 +5,7 @@ import { AppError } from '../middleware/errorHandler';
 import { ISubscription } from '../types/models';
 import { NotificationService } from './notificationService';
 import logger from '../utils/logger';
+import { MonitoringService } from './monitoringService';
 
 export class SubscriptionService {
   /**
@@ -64,8 +65,13 @@ export class SubscriptionService {
    * Supprimer un abonnement
    */
   static async deleteSubscription(id: string, userId: string): Promise<void> {
+    const sub = await Subscription.findOne({ _id: id, userId });
     const result = await Subscription.deleteOne({ _id: id, userId });
     if (result.deletedCount === 0) throw new AppError('Abonnement non trouvé', 404);
+
+    if (sub) {
+      MonitoringService.recordChurn(sub.name, 'manual_cancel');
+    }
   }
 
   /**

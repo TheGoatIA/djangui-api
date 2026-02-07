@@ -1,11 +1,16 @@
 import { Request, Response, NextFunction } from 'express';
 import { BudgetService } from '../services/budgetService';
 import { AuthRequest } from '../middleware/auth';
+import { MonitoringService } from '../services/monitoringService';
 
 export class BudgetController {
   static async create(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const budget = await BudgetService.createBudget(req.user._id, req.body);
+
+      // Metrique business
+      MonitoringService.recordBudgetCreation();
+
       res.status(201).json({
         success: true,
         data: budget,

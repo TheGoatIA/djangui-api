@@ -1,5 +1,6 @@
 import redis from '../config/redis';
 import logger from '../utils/logger';
+import { MonitoringService } from './monitoringService';
 
 export class RedisService {
   /**
@@ -9,8 +10,10 @@ export class RedisService {
     try {
       const stringValue = JSON.stringify(value);
       await redis.set(key, stringValue, 'EX', ttlSeconds);
+      MonitoringService.recordCacheOperation('set', 'success');
     } catch (err: any) {
       logger.error(`Error setting Redis key ${key}: ${err.message}`);
+      MonitoringService.recordCacheOperation('set', 'failure');
     }
   }
 
@@ -20,10 +23,15 @@ export class RedisService {
   static async get<T>(key: string): Promise<T | null> {
     try {
       const value = await redis.get(key);
-      if (!value) return null;
+      if (!value) {
+        MonitoringService.recordCacheOperation('get', 'miss');
+        return null;
+      }
+      MonitoringService.recordCacheOperation('get', 'hit');
       return JSON.parse(value) as T;
     } catch (err: any) {
       logger.error(`Error getting Redis key ${key}: ${err.message}`);
+      MonitoringService.recordCacheOperation('get', 'failure');
       return null;
     }
   }

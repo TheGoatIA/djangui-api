@@ -4,6 +4,7 @@ import logger from '../../utils/logger';
 import { AppError } from '../../middleware/errorHandler';
 import SystemSetting from '../../models/SystemSetting';
 import AIUsage from '../../models/AIUsage';
+import { MonitoringService } from '../monitoringService';
 
 // Pricing Constants (Cost per 1M tokens)
 // Pricing Constants (Cost per 1M tokens) - Updated Jan 2026
@@ -96,6 +97,12 @@ export class GeminiService {
         status,
         errorMessage,
       });
+
+      // Prometheus Metrics
+      MonitoringService.recordAiRequest(context, modelName, status);
+      MonitoringService.observeAiDuration(context, modelName, durationMs / 1000);
+      MonitoringService.recordAiTokens(modelName, 'input', promptTokens);
+      MonitoringService.recordAiTokens(modelName, 'output', completionTokens);
     } catch (err) {
       logger.error(`Failed to save AI usage log: ${err}`);
     }

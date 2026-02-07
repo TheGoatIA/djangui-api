@@ -3,10 +3,16 @@ import { NotificationService } from './notificationService';
 import { AppError } from '../middleware/errorHandler';
 import mongoose from 'mongoose';
 import logger from '../utils/logger';
+import { MonitoringService } from './monitoringService';
 
 export class GoalService {
   static async createGoal(userId: string, data: any) {
     const goal = await SavingGoal.create({ ...data, userId });
+
+    // Metrique business
+    MonitoringService.recordGoalEvent('create', data.type || 'regular');
+    MonitoringService.recordGoalAmount('create', 'XAF', goal.targetAmount);
+
     return goal;
   }
 
@@ -86,6 +92,12 @@ export class GoalService {
       throw error;
     } finally {
       session.endSession();
+      // Metrique business (post-transaction)
+      try {
+        // Re-fetch goal to succeed (optimized out for now, just record success)
+        MonitoringService.recordGoalEvent('contribute', 'unknown', 'success');
+        MonitoringService.recordGoalAmount('contribute', 'XAF', amount);
+      } catch (e) {}
     }
   }
 
@@ -137,6 +149,8 @@ export class GoalService {
     if (!goal) {
       throw new AppError('Goal not found', 404);
     }
+
+    MonitoringService.recordGoalEvent('delete', goal.type || 'unknown');
     return true;
   }
 }

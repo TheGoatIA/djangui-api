@@ -1,6 +1,11 @@
 import dotenv from 'dotenv';
-import mongoose from 'mongoose';
 dotenv.config();
+
+import { initTracing } from './config/tracing';
+// Initialize OpenTelemetry Tracing
+initTracing();
+
+import mongoose from 'mongoose';
 
 import connectDB from './config/database';
 import redis from './config/redis';
@@ -16,16 +21,22 @@ const PORT = process.env.PORT || 3000;
 
 const startServer = async () => {
   try {
+    console.log('Step 1: Connecting to MongoDB...');
     await connectDB();
+    console.log('Step 1: Connected to MongoDB');
 
     // Seed initial data
+    console.log('Step 2: Seeding data...');
     await seedCountries();
     await ChallengeService.seedChallenges();
+    console.log('Step 2: Data seeded');
 
     // Initialize Monitoring (Prometheus)
+    console.log('Step 3: Init Monitoring...');
     MonitoringService.init();
 
     // Initialize Cron Jobs
+    console.log('Step 4: Init Cron...');
     CronService.init();
 
     const server = app.listen(PORT, () => {
