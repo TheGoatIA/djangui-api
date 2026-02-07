@@ -158,6 +158,7 @@ export interface IInvestment {
 export interface ITransaction {
   userId: mongoose.Types.ObjectId;
   amount: number;
+  currency: string;
   type: 'income' | 'expense';
   category: string;
   subcategory?: string;

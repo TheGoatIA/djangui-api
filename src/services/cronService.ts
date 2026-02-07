@@ -27,100 +27,141 @@ export class CronService {
    */
   static init() {
     // Daily at 9:00 AM: Check for low balance
-    cron.schedule('0 9 * * *', () => {
-      this.checkLowBalances();
-    });
+    cron.schedule(
+      '0 9 * * *',
+      this.runMonitored('low_balance_check', () => this.checkLowBalances()),
+    );
 
     // Daily at 9:00 PM: Reminder to enter transactions
-    cron.schedule('0 21 * * *', () => {
-      this.sendDailyTransactionReminders();
-    });
+    cron.schedule(
+      '0 21 * * *',
+      this.runMonitored('transaction_reminder', () => this.sendDailyTransactionReminders()),
+    );
 
     // Weekly on Monday at 8:00 AM: Financial summary
-    cron.schedule('0 8 * * 1', () => {
-      this.sendWeeklySummaries();
-    });
+    cron.schedule(
+      '0 8 * * 1',
+      this.runMonitored('weekly_summary', () => this.sendWeeklySummaries()),
+    );
 
     // Monthly on the 1st at 00:01 AM: Reset/Init budgets
-    cron.schedule('1 0 1 * *', () => {
-      this.autoInitMonthlyBudgets();
-    });
+    cron.schedule(
+      '1 0 1 * *',
+      this.runMonitored('monthly_budget_init', () => this.autoInitMonthlyBudgets()),
+    );
 
     // Daily at midnight: Global Activity Report
-    cron.schedule('0 0 * * *', () => {
-      this.sendDailyAdminReport();
-    });
+    cron.schedule(
+      '0 0 * * *',
+      this.runMonitored('daily_admin_report', () => this.sendDailyAdminReport()),
+    );
 
     // Daily at 03:00 AM: Financial Integrity Check
-    cron.schedule('0 3 * * *', () => {
-      this.runFinancialIntegrityCheck();
-    });
+    cron.schedule(
+      '0 3 * * *',
+      this.runMonitored('integrity_check', () => this.runFinancialIntegrityCheck()),
+    );
 
     // Monthly on the 1st at 04:00 AM: Data Archiving
-    cron.schedule('0 4 1 * *', () => {
-      this.runDataArchiving();
-    });
+    cron.schedule(
+      '0 4 1 * *',
+      this.runMonitored('data_archiving', () => this.runDataArchiving()),
+    );
 
     // Daily at 10:00 AM: Inactivity Reminder (3 days)
-    cron.schedule('0 10 * * *', () => {
-      this.checkUserInactivity();
-    });
+    cron.schedule(
+      '0 10 * * *',
+      this.runMonitored('inactivity_check', () => this.checkUserInactivity()),
+    );
 
     // Monthly on the 1st at 10:00 AM: Monthly Report Reminder
-    cron.schedule('0 10 1 * *', () => {
-      this.sendMonthlyReportReminders();
-    });
+    cron.schedule(
+      '0 10 1 * *',
+      this.runMonitored('monthly_report_reminder', () => this.sendMonthlyReportReminders()),
+    );
 
     // Daily at 11:00 AM: Overdraft Prevention (Premium)
-    cron.schedule('0 11 * * *', () => {
-      this.runOverdraftPrevention();
-    });
+    cron.schedule(
+      '0 11 * * *',
+      this.runMonitored('overdraft_prevention', () => this.runOverdraftPrevention()),
+    );
 
     // Daily at 08:00 AM: Goal Progress Reminder
-    cron.schedule('0 8 * * *', () => {
-      this.sendDailyGoalProgress();
-    });
+    cron.schedule(
+      '0 8 * * *',
+      this.runMonitored('goal_progress_reminder', () => this.sendDailyGoalProgress()),
+    );
 
     // Daily at 11:00 AM: Personal AI Financial Advice
-    cron.schedule('0 11 * * *', () => {
-      this.sendDailyAIAdvice();
-    });
+    cron.schedule(
+      '0 11 * * *',
+      this.runMonitored('ai_advice', () => this.sendDailyAIAdvice()),
+    );
 
     // Daily at 10:00 AM: Tontine Payment Reminders
-    cron.schedule('0 10 * * *', () => {
-      this.sendTontineReminders();
-    });
+    cron.schedule(
+      '0 10 * * *',
+      this.runMonitored('tontine_payment_reminder', () => this.sendTontineReminders()),
+    );
 
     // Daily at 09:00 AM: Subscription Reminders
-    cron.schedule('0 9 * * *', () => {
-      this.checkSubscriptionReminders();
-    });
+    cron.schedule(
+      '0 9 * * *',
+      this.runMonitored('subscription_reminder', () => this.checkSubscriptionReminders()),
+    );
 
     // Daily at 02:00 AM: Database Backup
-    cron.schedule('0 2 * * *', () => {
-      this.runDailyBackup();
-    });
+    cron.schedule(
+      '0 2 * * *',
+      this.runMonitored('database_backup', () => this.runDailyBackup()),
+    );
 
     // Daily at 01:00 AM: Automatic Subscription Renewals
-    cron.schedule('0 1 * * *', () => {
-      this.processSubscriptionsRenewal();
-    });
+    cron.schedule(
+      '0 1 * * *',
+      this.runMonitored('subscription_renewal', () => this.processSubscriptionsRenewal()),
+    );
 
     // Hourly: Tontine Health & Quality Check (Final Polish)
-    cron.schedule('0 * * * *', () => {
-      this.updateTontineHealthMetrics();
-    });
+    cron.schedule(
+      '0 * * * *',
+      this.runMonitored('tontine_health_check', () => this.updateTontineHealthMetrics()),
+    );
 
     // Every 10 minutes: Financial Pulse (Economy Gauge)
-    cron.schedule('*/10 * * * *', () => {
-      this.updateEconomyMetrics();
-    });
+    cron.schedule(
+      '*/10 * * * *',
+      this.runMonitored('economy_pulse', () => this.updateEconomyMetrics()),
+    );
 
     // Run once on startup
-    this.processSubscriptionsRenewal();
-    this.updateEconomyMetrics();
+    this.processSubscriptionsRenewal().catch((err) =>
+      logger.error(`Startup renewal error: ${err.message}`),
+    );
+    this.updateEconomyMetrics().catch((err) =>
+      logger.error(`Startup economy error: ${err.message}`),
+    );
 
     logger.info('Cron jobs initialized successfully');
+  }
+
+  /**
+   * Wrapper to monitor cron job execution
+   */
+  private static runMonitored(name: string, fn: () => Promise<void>) {
+    return async () => {
+      const start = Date.now();
+      try {
+        await fn();
+        MonitoringService.recordCronJob(name, 'success');
+      } catch (error: any) {
+        MonitoringService.recordCronJob(name, 'failure');
+        logger.error(`Cron Job [${name}] failed: ${error.message}`);
+      } finally {
+        const duration = (Date.now() - start) / 1000;
+        MonitoringService.observeCronJobDuration(name, duration);
+      }
+    };
   }
 
   /**
