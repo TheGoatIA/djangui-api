@@ -103,6 +103,11 @@ export class GeminiService {
       MonitoringService.observeAiDuration(context, modelName, durationMs / 1000);
       MonitoringService.recordAiTokens(modelName, 'input', promptTokens);
       MonitoringService.recordAiTokens(modelName, 'output', completionTokens);
+
+      // recordAiContextEfficiency(total, prompt)
+      if (promptTokens > 0) {
+        MonitoringService.recordAiContextEfficiency(totalTokens, promptTokens);
+      }
     } catch (err) {
       logger.error(`Failed to save AI usage log: ${err}`);
     }

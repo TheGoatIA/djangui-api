@@ -1,7 +1,7 @@
 import mongoose, { Schema, Document } from 'mongoose';
 import { ITransaction } from '../types/models';
 
-export interface ITransactionDocument extends ITransaction, Document {}
+export interface ITransactionDocument extends ITransaction, Document { }
 
 const transactionSchema = new Schema<ITransactionDocument>(
   {
@@ -15,6 +15,11 @@ const transactionSchema = new Schema<ITransactionDocument>(
       type: Number,
       required: [true, 'Amount is required'],
       min: [0, 'Amount cannot be negative'],
+    },
+    currency: {
+      type: String,
+      required: true,
+      default: 'XAF',
     },
     type: {
       type: String,

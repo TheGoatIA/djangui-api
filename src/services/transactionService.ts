@@ -135,6 +135,14 @@ export class TransactionService {
 
       await session.commitTransaction();
 
+      // Metrique business - Move from controller to service for bulk coverage
+      MonitoringService.recordTransaction(
+        transaction.type,
+        'success',
+        transaction.currency || 'XAF',
+        transaction.amount,
+      );
+
       // Background task: Update active challenges progress
       TransactionService.updateRelatedChallenges(
         userId,

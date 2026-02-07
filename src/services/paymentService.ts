@@ -335,6 +335,8 @@ export class PaymentService {
     user.subscription.autoRenew = false;
     await user.save();
 
+    MonitoringService.recordChurn(user.subscription.plan, 'manual_cancel');
+
     // Notify Slack
     SlackService.sendNotification(
       `📉 *Subscription Cancelled*\n*User ID*: ${userId}\n*Email*: ${user.email}\n*Plan*: ${user.subscription.plan}`,
