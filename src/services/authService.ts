@@ -4,6 +4,7 @@ import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import admin from '../config/firebase';
 import crypto from 'crypto';
+import { MonitoringService } from './monitoringService';
 import { EmailService } from './emailService';
 import { SlackService } from './slackService';
 import { AuditService } from './auditService';
@@ -88,12 +89,16 @@ export class AuthService {
       `👤 *New User Registered*\n*Email*: ${newUser.email}\n*Country*: ${newUser.country}\n*Currency*: ${newUser.currency}`,
     );
 
+    const platform = userData.deviceInfo?.platform || 'unknown';
+    MonitoringService.recordUserSignup('email', newUser.country);
+    MonitoringService.recordAuthEvent('register', 'email', 'success', newUser.country, platform);
+
     return { user: newUser, tokens };
   }
 
   static async firebaseAuth(
     idToken: string,
-    options: { country?: string; currency?: string } = {},
+    options: { country?: string; currency?: string; platform?: string } = {},
   ) {
     try {
       // 1) Verify Firebase ID Token
@@ -102,6 +107,7 @@ export class AuthService {
 
       // 2) Check if user exists by firebaseUid first
       let user = await User.findOne({ firebaseUid: uid });
+      let isNewUser = false;
 
       if (!user && email) {
         // Try to find by email if UID fails (maybe first login with Google/Email for existing account)
@@ -113,6 +119,7 @@ export class AuthService {
 
       if (!user) {
         // 3) Create user if not exists
+        isNewUser = true;
         const nameParts = (name || '').split(' ');
         let countryCode = (options.country || 'CM').toUpperCase();
         let currencyCode = options.currency || 'XAF';
@@ -180,7 +187,22 @@ export class AuthService {
         status: 'success',
       });
 
-      return { user, tokens };
+      const platform = decodedToken.device_platform || options.platform || 'unknown';
+      if (isNewUser) {
+        MonitoringService.recordUserSignup('firebase', user.country);
+        MonitoringService.recordAuthEvent(
+          'register',
+          'firebase',
+          'success',
+          user.country,
+          platform,
+        );
+      } else {
+        MonitoringService.recordAuthEvent('login', 'firebase', 'success', user.country, platform);
+        MonitoringService.updateActiveSessions(platform, 1);
+      }
+
+      return { user, tokens, isNewUser };
     } catch (error: any) {
       logger.error(`Error in Firebase Auth: ${error.message}`);
       throw new AppError('Invalid or expired Firebase token', 401);
@@ -227,6 +249,10 @@ export class AuthService {
           `🔐 *Security Alert: Failed Login*\n*User*: ${email}\n*Reason*: Incorrect password\n*Time*: ${new Date().toISOString()}`,
         );
       }
+      MonitoringService.recordAuthFailure(
+        user ? 'wrong_password' : 'user_not_found',
+        user?.country,
+      );
       throw new AppError('Incorrect email or password', 401);
     }
 
@@ -240,6 +266,7 @@ export class AuthService {
       appVersion: sessionData?.appVersion,
       refreshToken: tokens.refreshToken,
       lastActive: new Date(),
+      createdAt: new Date(),
       ipAddress: sessionData?.ipAddress,
     };
 
@@ -267,6 +294,10 @@ export class AuthService {
       status: 'success',
       metadata: { deviceId: sessionData?.deviceId },
     });
+
+    const platform = sessionData?.deviceInfo?.platform || 'unknown';
+    MonitoringService.recordAuthEvent('login', 'email', 'success', user.country, platform);
+    MonitoringService.updateActiveSessions(platform, 1);
 
     return { user, tokens };
   }
@@ -307,18 +338,40 @@ export class AuthService {
       user.refreshToken = tokens.refreshToken;
       await (user as any).save({ validateBeforeSave: false });
 
+      MonitoringService.recordAuthEvent('refresh', 'jwt', 'success', user.country);
+
       return tokens;
     } catch (err) {
+      MonitoringService.recordAuthEvent('refresh', 'jwt', 'failure', 'unknown');
       throw new AppError('Invalid or expired refresh token', 401);
     }
   }
 
-  static async logout(userId: string) {
+  static async logout(userId: string, refreshToken?: string) {
     const user = await User.findById(userId);
     if (user) {
-      user.refreshToken = undefined;
-      // Also clear sessions on logout? Usually we just clear the current one.
-      // For simplicity here, we clear legacy refresh token.
+      // Find the session to record duration
+      const sessionIndex = refreshToken
+        ? user.sessions.findIndex((s) => s.refreshToken === refreshToken)
+        : -1;
+
+      if (sessionIndex !== -1) {
+        const session = user.sessions[sessionIndex];
+        const platform = session.deviceInfo?.platform || 'unknown';
+        const duration = (Date.now() - session.createdAt.getTime()) / 1000;
+
+        MonitoringService.recordSessionDuration(duration);
+        MonitoringService.updateActiveSessions(platform, -1);
+        MonitoringService.recordAuthEvent('logout', 'jwt', 'success', user.country, platform);
+
+        // Remove this session
+        user.sessions.splice(sessionIndex, 1);
+      } else {
+        // Fallback for legacy logout
+        MonitoringService.recordAuthEvent('logout', 'jwt', 'success', user.country, 'unknown');
+        if (user.refreshToken === refreshToken) user.refreshToken = undefined;
+      }
+
       await (user as any).save({ validateBeforeSave: false });
 
       AuditService.record({
@@ -327,6 +380,8 @@ export class AuthService {
         resource: 'USER',
         status: 'success',
       });
+
+      MonitoringService.recordAuthEvent('logout', 'jwt', 'success', user.country);
     }
     return true;
   }
@@ -353,6 +408,8 @@ export class AuthService {
 
     user.passwordResetToken = hashedToken;
     user.passwordResetExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    MonitoringService.recordAuthEvent('forgot_password', 'email', 'success', user.country);
 
     await (user as any).save({ validateBeforeSave: false });
 
@@ -381,6 +438,9 @@ export class AuthService {
     user.password = password;
     user.passwordResetToken = undefined;
     user.passwordResetExpires = undefined;
+
+    MonitoringService.recordAuthEvent('reset_password', 'email', 'success', user.country);
+
     await user.save();
 
     const tokens = createSendToken(user);
@@ -407,6 +467,8 @@ export class AuthService {
     user.emailVerificationExpires = undefined;
     await (user as any).save({ validateBeforeSave: false });
 
+    MonitoringService.recordAuthEvent('verify_email', 'email', 'success', user.country);
+
     const tokens = createSendToken(user);
     return { user, tokens };
   }
@@ -430,6 +492,7 @@ export class AuthService {
 
     try {
       await EmailService.sendVerificationEmail(user.email, verificationToken);
+      MonitoringService.recordAuthEvent('resend_verification', 'email', 'success', user.country);
     } catch (err) {
       user.emailVerificationToken = undefined;
       user.emailVerificationExpires = undefined;
@@ -506,6 +569,8 @@ export class AuthService {
     user.password = newPassword;
     await user.save();
 
+    MonitoringService.recordSensitiveAction('password_change', 'success');
+
     return true;
   }
 
@@ -514,6 +579,7 @@ export class AuthService {
     if (!user) throw new AppError('User not found', 404);
 
     // TODO: Cleanup other user data (transactions, goals, etc.) if needed
+    MonitoringService.recordSensitiveAction('account_delete', 'success');
     return true;
   }
 

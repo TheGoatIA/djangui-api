@@ -19,6 +19,7 @@ import { TontineService } from './tontineService';
 import Subscription from '../models/Subscription';
 import { SubscriptionService } from './subscriptionService';
 import { SlackService } from './slackService';
+import { MonitoringService } from './monitoringService';
 
 export class CronService {
   /**
@@ -105,8 +106,19 @@ export class CronService {
       this.processSubscriptionsRenewal();
     });
 
-    // Run once on startup to handle any missed renewals
+    // Hourly: Tontine Health & Quality Check (Final Polish)
+    cron.schedule('0 * * * *', () => {
+      this.updateTontineHealthMetrics();
+    });
+
+    // Every 10 minutes: Financial Pulse (Economy Gauge)
+    cron.schedule('*/10 * * * *', () => {
+      this.updateEconomyMetrics();
+    });
+
+    // Run once on startup
     this.processSubscriptionsRenewal();
+    this.updateEconomyMetrics();
 
     logger.info('Cron jobs initialized successfully');
   }
@@ -324,8 +336,8 @@ export class CronService {
             </thead>
             <tbody>
               ${anomalies
-            .map(
-              (a) => `
+                .map(
+                  (a) => `
                 <tr>
                   <td style="padding: 8px; border: 1px solid #ddd;">${a.email}</td>
                   <td style="padding: 8px; border: 1px solid #ddd;">${a.walletBalance}</td>
@@ -333,8 +345,8 @@ export class CronService {
                   <td style="padding: 8px; border: 1px solid #ddd; color: red;">${a.diff.toFixed(2)}</td>
                 </tr>
               `,
-            )
-            .join('')}
+                )
+                .join('')}
             </tbody>
           </table>
         `;
@@ -648,6 +660,72 @@ export class CronService {
       );
     } catch (error: any) {
       logger.error(`Error in processSubscriptionsRenewal job: ${error.message}`);
+    }
+  }
+
+  /**
+   * Calculate total AUM (Assets Under Management) for the Economy Gauge
+   */
+  private static async updateEconomyMetrics() {
+    try {
+      // 1. Total Wallet Balance
+      const walletStats = await User.aggregate([
+        { $match: { isActive: true } },
+        { $group: { _id: '$currency', total: { $sum: '$walletBalance' } } },
+      ]);
+
+      // 2. Total Savings in Goals
+      const goalStats = await SavingGoal.aggregate([
+        { $match: { status: 'active' } }, // Only active goals count towards AUM
+        { $group: { _id: 'XAF', total: { $sum: '$currentAmount' } } }, // Goals are typically XAF for now, but safer to group if we had currency
+      ]);
+
+      // Update Gauge for each currency found
+      walletStats.forEach((stat) => {
+        MonitoringService.updateEconomyMetrics(stat.total, 0, stat._id || 'XAF');
+      });
+
+      if (goalStats.length > 0) {
+        // Assuming Goals are XAF for this iteration, or we'd need currency on Goal model explicit check
+        // For now, we update the Savings part
+        MonitoringService.updateEconomyMetrics(0, goalStats[0].total, 'XAF');
+      }
+
+      logger.info('Economy metrics updated (Financial Pulse)');
+    } catch (error: any) {
+      logger.error(`Error in updateEconomyMetrics job: ${error.message}`);
+    }
+  }
+
+  /**
+   * Monitor Tontine Risk & Quality (Final Polish)
+   */
+  private static async updateTontineHealthMetrics() {
+    try {
+      // 1. Get Default Rate from Service
+      const stats = await TontineService.getGlobalStats();
+      const defaultRate = stats.lateRate || 0;
+
+      // 2. Calculate Average Trust Score
+      const trustStats = await TontineMember.aggregate([
+        { $match: { invitationStatus: 'accepted' } },
+        {
+          $group: {
+            _id: null,
+            avgTrust: { $avg: '$trustScore' },
+          },
+        },
+      ]);
+      const avgTrust = trustStats.length > 0 ? trustStats[0].avgTrust : 100;
+
+      // 3. Update Metrics
+      MonitoringService.updateTontineHealth(defaultRate, avgTrust);
+
+      logger.info(
+        `Tontine Health updated: Default Rate=${defaultRate.toFixed(2)}%, Avg Trust=${avgTrust.toFixed(1)}`,
+      );
+    } catch (error: any) {
+      logger.error(`Error in updateTontineHealthMetrics job: ${error.message}`);
     }
   }
 }

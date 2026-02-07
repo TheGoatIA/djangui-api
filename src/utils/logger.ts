@@ -74,6 +74,8 @@ const transports = [
 ];
 
 // Graylog Transport
+// Graylog Transport - Disabled temporarily due to DNS crash on startup
+
 if (process.env.GRAYLOG_HOST) {
   transports.push(
     new Graylog2({

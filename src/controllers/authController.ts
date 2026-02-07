@@ -3,11 +3,15 @@ import { AuthService } from '../services/authService';
 import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
+import { MonitoringService } from '../services/monitoringService';
 
 export class AuthController {
   static async register(req: Request, res: Response, next: NextFunction) {
     try {
       const { user, tokens } = await AuthService.register(req.body);
+
+      // Metrique business
+      MonitoringService.recordUserSignup('email', req.body.country || 'unknown');
 
       res.status(201).json({
         success: true,
@@ -23,10 +27,16 @@ export class AuthController {
 
   static async firebaseAuth(req: Request, res: Response, next: NextFunction) {
     try {
-      const { idToken, country, currency } = req.body;
+      const { idToken, country, currency, platform } = req.body;
       if (!idToken) throw new AppError('Firebase ID token is required', 400);
 
-      const result = await AuthService.firebaseAuth(idToken, { country, currency });
+      const result = await AuthService.firebaseAuth(idToken, { country, currency, platform });
+
+      // Metrique business (si nouvel utilisateur)
+      if (result.isNewUser) {
+        MonitoringService.recordUserSignup('firebase', country || 'unknown');
+      }
+
       res.status(200).json({
         status: 'success',
         ...result,
@@ -217,7 +227,8 @@ export class AuthController {
 
   static async logout(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      await AuthService.logout(req.user._id);
+      const { refreshToken } = req.body;
+      await AuthService.logout(req.user._id, refreshToken);
 
       res.status(200).json({
         success: true,

@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
+import axios from 'axios';
 import SystemSetting from '../models/SystemSetting';
 import { AppError } from '../middleware/errorHandler';
+import logger from '../utils/logger';
 
 export class SystemController {
   // Check App Version
@@ -91,6 +93,38 @@ export class SystemController {
       });
     } catch (error) {
       next(error);
+    }
+  }
+
+  // Telemetry Proxy for Mobile Traces & Metrics
+  static async proxyTelemetry(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { type } = req.params; // 'traces' or 'metrics'
+
+      // Use OTEL_COLLECTOR_BASE_URL if available, otherwise fallback to service name
+      // Expected base: http://localhost:4318 or http://otel-collector:4318
+      const baseUrl = process.env.OTEL_COLLECTOR_BASE_URL || 'http://localhost:4318';
+      const collectorUrl = `${baseUrl}/v1/${type}`;
+
+      // Forward the body to the OTEL collector
+      await axios.post(collectorUrl, req.body, {
+        headers: {
+          'Content-Type': req.headers['content-type'] || 'application/json',
+          'x-forwarded-for': req.ip,
+        },
+        timeout: 5000, // 5s timeout
+      });
+
+      res.status(200).end();
+    } catch (error: any) {
+      const errorMessage = error.response
+        ? `Status: ${error.response.status}, Data: ${JSON.stringify(error.response.data)}`
+        : error.message;
+
+      logger.error(`Telemetry Proxy Error [${req.params.type}]: ${errorMessage}`);
+
+      // We don't want to crash the mobile app, so we return 202 (Accepted but not necessarily processed)
+      res.status(202).end();
     }
   }
 }

@@ -6,6 +6,7 @@ import { GamificationService } from './gamificationService';
 import { AppError } from '../middleware/errorHandler';
 import { OCRService } from './ai/ocrService';
 import logger from '../utils/logger';
+import { MonitoringService } from './monitoringService';
 
 export class ChallengeService {
   static async getAllChallenges() {
@@ -182,6 +183,9 @@ export class ChallengeService {
         );
       }
 
+      // Record Fraud attempt
+      MonitoringService.recordChallengeFraud('not_a_receipt');
+
       // 1. Transaction Uniqueness
       if (ocrResult.transactionId) {
         const existingTransaction = await UserChallenge.findOne({
@@ -193,6 +197,7 @@ export class ChallengeService {
             100,
             "Tentative de fraude (réutilisation d'un ID de transaction).",
           );
+          MonitoringService.recordChallengeFraud('duplicate_transaction');
           throw new AppError('Cette transaction a déjà été utilisée comme preuve.', 400);
         }
       }
@@ -330,6 +335,7 @@ export class ChallengeService {
       throw new AppError('Participation not found', 404);
     }
 
+    MonitoringService.recordChallengeEvent('unjoin', 'unknown');
     return true;
   }
 }

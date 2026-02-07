@@ -4,6 +4,7 @@ import Notification from '../models/Notification';
 import logger from '../utils/logger';
 import { messaging } from 'firebase-admin';
 import { I18nService } from './i18nService';
+import { MonitoringService } from './monitoringService';
 
 export interface NotificationPayload {
   title: string;
@@ -61,6 +62,7 @@ export class NotificationService {
         logger.info(
           `Push notification skipped for user ${userId} due to frequency settings (${frequency}) and category (${category}): ${payload.title}`,
         );
+        MonitoringService.recordNotificationEvent('skipped', 'frequency_limit');
         return;
       }
 
@@ -68,6 +70,7 @@ export class NotificationService {
         logger.info(
           `No FCM tokens found for user ${userId}. Push skiped, but saved to history: ${payload.title}`,
         );
+        MonitoringService.recordNotificationEvent('skipped', 'no_tokens');
         return;
       }
 
@@ -86,6 +89,11 @@ export class NotificationService {
       logger.info(
         `Notifications sent: ${response.successCount} success, ${response.failureCount} failure`,
       );
+
+      if (response.successCount > 0)
+        MonitoringService.recordNotificationEvent('success', 'delivered');
+      if (response.failureCount > 0)
+        MonitoringService.recordNotificationEvent('failure', 'fcm_error');
 
       // Cleanup invalid tokens
       if (response.failureCount > 0) {
@@ -109,6 +117,7 @@ export class NotificationService {
       }
     } catch (error: any) {
       logger.error(`Failed to send notification to user ${userId}: ${error.message}`);
+      MonitoringService.recordNotificationEvent('failure', 'internal_error');
     }
   }
 

@@ -1,6 +1,7 @@
 import FormData from 'form-data';
 import Mailgun from 'mailgun.js';
 import logger from '../utils/logger';
+import { MonitoringService } from './monitoringService';
 
 const mailgun = new Mailgun(FormData);
 
@@ -62,6 +63,7 @@ export class EmailService {
       return;
     }
 
+    const start = Date.now();
     try {
       await client.messages.create(DOMAIN, {
         from: `Kauri Team <no-reply@${DOMAIN}>`,
@@ -71,8 +73,12 @@ export class EmailService {
         html: html || this.getBaseTemplate(subject, `<p>${text}</p>`),
       });
       logger.info(`Email sent to ${to}: ${subject}`);
+      MonitoringService.recordExternalApiRequest('mailgun', 'send', 'success');
     } catch (error: any) {
       logger.error(`Failed to send email to ${to}: ${error.message}`);
+      MonitoringService.recordExternalApiRequest('mailgun', 'send', 'failure');
+    } finally {
+      MonitoringService.observeExternalApiDuration('mailgun', 'send', (Date.now() - start) / 1000);
     }
   }
 

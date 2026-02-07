@@ -2,6 +2,7 @@ import Investment, { IInvestmentDocument } from '../models/Investment';
 import User from '../models/User';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
+import { MonitoringService } from './monitoringService';
 
 export class InvestmentService {
   /**
@@ -43,6 +44,10 @@ export class InvestmentService {
     investment.currentValue = newValue;
     investment.lastUpdated = new Date();
     investment.history.push({ value: newValue, date: new Date() });
+
+    // Calculate and record yield
+    const yieldRatio = ((newValue - investment.initialAmount) / investment.initialAmount) * 100;
+    MonitoringService.updateInvestmentYield(yieldRatio, investment.type);
 
     await investment.save();
     return investment;
