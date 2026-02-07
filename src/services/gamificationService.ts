@@ -1,6 +1,7 @@
 import User from '../models/User';
 import logger from '../utils/logger';
 import { NotificationService } from './notificationService';
+import { MonitoringService } from './monitoringService';
 
 export class GamificationService {
   /**
@@ -34,6 +35,11 @@ export class GamificationService {
         }).catch((err) => logger.error(`Level up notification error: ${err.message}`));
       }
 
+      MonitoringService.recordXP(amount, 'add');
+      if (newLevel > user.level) {
+        MonitoringService.recordLevelUp();
+      }
+
       await user.save();
       return { xp: user.xp, level: user.level };
     } catch (error: any) {
@@ -65,6 +71,8 @@ export class GamificationService {
         translationData: { amount: lostXP, reason },
         data: { type: 'xp_deduction', amount: String(lostXP), reason },
       }).catch((err) => logger.error(`XP deduction notification error: ${err.message}`));
+
+      MonitoringService.recordXP(-lostXP, 'deduct');
 
       await user.save();
       return { xp: user.xp, level: user.level };

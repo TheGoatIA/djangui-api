@@ -12,6 +12,7 @@ import { PromptBuilder } from './promptBuilder';
 import { AppError } from '../../middleware/errorHandler';
 import mongoose from 'mongoose';
 import logger from '../../utils/logger';
+import { MonitoringService } from '../monitoringService';
 
 export class CoachService {
   static async getOrCreateConversation(userId: string): Promise<IConversation> {
@@ -59,6 +60,9 @@ export class CoachService {
       subscriptions,
     };
     const systemPrompt = PromptBuilder.buildCoachSystemPrompt(user, context);
+
+    // Measure Context Efficiency (System Prompt length vs User Message length)
+    MonitoringService.recordAiContextEfficiency(systemPrompt.length, userMessage.length);
 
     // Prepare history for Gemini
     const history = conversation.messages.map((m) => ({

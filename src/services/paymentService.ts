@@ -8,6 +8,7 @@ import logger from '../utils/logger';
 import { NotificationService } from './notificationService';
 import { AuditService } from './auditService';
 import { SlackService } from './slackService';
+import { MonitoringService } from './monitoringService';
 
 export class PaymentService {
   /**
@@ -42,52 +43,68 @@ export class PaymentService {
     const reference = `STP-${uuidv4().split('-')[0].toUpperCase()}`;
     const currency = user.currency || 'USD';
 
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price_data: {
-            currency: currency.toLowerCase(),
-            product_data: {
-              name: type === 'subscription' ? 'Kauri Premium' : 'Wallet Deposit',
+    let session; // Declare session outside try block for wider scope
+    const start = Date.now();
+    try {
+      session = await stripe.checkout.sessions.create({
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price_data: {
+              currency: currency.toLowerCase(),
+              product_data: {
+                name: type === 'subscription' ? 'Kauri Premium' : 'Wallet Deposit',
+              },
+              unit_amount: this.formatAmount(amount, currency),
             },
-            unit_amount: this.formatAmount(amount, currency),
+            quantity: 1,
           },
-          quantity: 1,
+        ],
+        mode: 'payment',
+        success_url: `${process.env.FRONTEND_URL}/payment/success?ref=${reference}`,
+        cancel_url: `${process.env.FRONTEND_URL}/payment/cancel`,
+        customer_email: user.email,
+        client_reference_id: userIdStr,
+        metadata: {
+          userId: userIdStr,
+          type,
+          reference,
         },
-      ],
-      mode: 'payment',
-      success_url: `${process.env.FRONTEND_URL}/payment/success?ref=${reference}`,
-      cancel_url: `${process.env.FRONTEND_URL}/payment/cancel`,
-      customer_email: user.email,
-      client_reference_id: userIdStr,
-      metadata: {
+      });
+      MonitoringService.recordPaymentGateway('stripe', 'create_session', 'success');
+
+      await Payment.create({
         userId: userIdStr,
+        amount,
+        currency,
+        method: 'stripe',
         type,
         reference,
-      },
-    });
+        status: 'pending',
+        externalReference: session.id,
+      });
 
-    await Payment.create({
-      userId: userIdStr,
-      amount,
-      currency,
-      method: 'stripe',
-      type,
-      reference,
-      status: 'pending',
-      externalReference: session.id,
-    });
+      // Audit Log for payment initiation
+      AuditService.record({
+        userId: userId as any,
+        action: 'INIT_PAYMENT',
+        resource: 'PAYMENT',
+        resourceId: reference,
+        status: 'success',
+        metadata: { method: 'stripe', amount, type },
+      });
 
-    // Audit Log for payment initiation
-    AuditService.record({
-      userId: userId as any,
-      action: 'INIT_PAYMENT',
-      resource: 'PAYMENT',
-      resourceId: reference,
-      status: 'success',
-      metadata: { method: 'stripe', amount, type },
-    });
+      return { url: session.url, reference };
+    } catch (error: any) {
+      MonitoringService.recordPaymentGateway('stripe', 'create_session', 'failure');
+      throw error;
+    } finally {
+      MonitoringService.observePaymentGatewayDuration(
+        'stripe',
+        'create_session',
+        (Date.now() - start) / 1000,
+      );
+    }
 
     return { url: session.url, reference };
   }
@@ -108,6 +125,7 @@ export class PaymentService {
     const reference = `NTP-${uuidv4().split('-')[0].toUpperCase()}`;
     const currency = user.currency || 'XAF';
 
+    const start = Date.now();
     try {
       const response = await notchpayApi.post('/payments', {
         amount: this.formatAmount(amount, currency),
@@ -121,6 +139,8 @@ export class PaymentService {
         reference,
         callback: `${process.env.FRONTEND_URL}/payment/success?ref=${reference}`,
       });
+
+      MonitoringService.recordPaymentGateway('notchpay', 'initialize', 'success');
 
       await Payment.create({
         userId: userIdStr,
@@ -148,10 +168,17 @@ export class PaymentService {
         reference,
       };
     } catch (error: any) {
+      MonitoringService.recordPaymentGateway('notchpay', 'initialize', 'failure');
       logger.error(
         `NotchPay initialization error: ${error.response?.data?.message || error.message}`,
       );
       throw new AppError('Payment initialization failed', 500);
+    } finally {
+      MonitoringService.observePaymentGatewayDuration(
+        'notchpay',
+        'initialize',
+        (Date.now() - start) / 1000,
+      );
     }
   }
 
@@ -167,6 +194,8 @@ export class PaymentService {
     payment.externalReference = externalRef || payment.externalReference;
     payment.completedAt = new Date();
     await payment.save();
+
+    MonitoringService.recordPaymentGateway(payment.method || 'unknown', 'complete', 'success');
 
     // If it's a deposit, update wallet,
     // If it's a subscription, update user plan
@@ -242,6 +271,7 @@ export class PaymentService {
     let isPaid = false;
     let externalStatus = 'pending';
 
+    const start = Date.now();
     try {
       if (payment.method === 'notchpay') {
         // Verify with NotchPay API
@@ -252,6 +282,7 @@ export class PaymentService {
         if (transaction.status === 'complete' || transaction.status === 'completed') {
           isPaid = true;
         }
+        MonitoringService.recordPaymentGateway('notchpay', 'verify', 'success');
       } else if (payment.method === 'stripe') {
         // Verify with Stripe API
         const session = await stripe.checkout.sessions.retrieve(payment.externalReference!);
@@ -260,6 +291,7 @@ export class PaymentService {
         if (session.payment_status === 'paid') {
           isPaid = true;
         }
+        MonitoringService.recordPaymentGateway('stripe', 'verify', 'success');
       }
 
       if (isPaid) {
@@ -269,8 +301,15 @@ export class PaymentService {
         return { status: externalStatus, payment };
       }
     } catch (error: any) {
+      MonitoringService.recordPaymentGateway(payment.method || 'unknown', 'verify', 'failure');
       logger.error(`Verification failed for ${reference}: ${error.message}`);
       throw new AppError('Failed to verify payment with provider', 502);
+    } finally {
+      MonitoringService.observePaymentGatewayDuration(
+        payment.method || 'unknown',
+        'verify',
+        (Date.now() - start) / 1000,
+      );
     }
   }
 

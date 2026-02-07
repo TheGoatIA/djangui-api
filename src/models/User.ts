@@ -151,6 +151,7 @@ const userSchema = new Schema<IUserDocument>(
         appVersion: String,
         refreshToken: String,
         lastActive: { type: Date, default: Date.now },
+        createdAt: { type: Date, default: Date.now },
         ipAddress: String,
       },
     ],

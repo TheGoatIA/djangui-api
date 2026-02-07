@@ -1,6 +1,6 @@
 {
   "name": "kauri",
-  "version": "1.0.12",
+  "version": "2.0.0",
   "description": "Kauri API",
   "main": "dist/server.js",
   "scripts": {
@@ -17,6 +17,12 @@
   "type": "commonjs",
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.69.0",
+    "@opentelemetry/exporter-trace-otlp-grpc": "^0.211.0",
+    "@opentelemetry/resources": "^2.5.0",
+    "@opentelemetry/sdk-node": "^0.211.0",
+    "@opentelemetry/semantic-conventions": "^1.39.0",
     "@types/nodemailer": "^7.0.4",
     "@types/swagger-ui-express": "^4.1.8",
     "axios": "^1.7.9",

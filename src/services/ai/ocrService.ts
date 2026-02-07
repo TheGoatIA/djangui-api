@@ -32,15 +32,18 @@ export class OCRService {
         Return ONLY the JSON.
       `;
 
-      const parsed = await GeminiService.generateJSON([
-        prompt,
-        {
-          inlineData: {
-            data: base64Data,
-            mimeType: 'image/jpeg', // Multer filter ensures it's an image or pdf
+      const parsed = await GeminiService.generateJSON(
+        [
+          prompt,
+          {
+            inlineData: {
+              data: base64Data,
+              mimeType: 'image/jpeg', // Multer filter ensures it's an image or pdf
+            },
           },
-        },
-      ]);
+        ],
+        'ocr_receipt',
+      );
 
       return {
         merchant: parsed.merchant || 'Inconnu',
@@ -83,15 +86,18 @@ export class OCRService {
         Return ONLY the JSON.
       `;
 
-      const parsed = await GeminiService.generateJSON([
-        prompt,
-        {
-          inlineData: {
-            data: base64Data,
-            mimeType: 'image/jpeg',
+      const parsed = await GeminiService.generateJSON(
+        [
+          prompt,
+          {
+            inlineData: {
+              data: base64Data,
+              mimeType: 'image/jpeg',
+            },
           },
-        },
-      ]);
+        ],
+        'ocr_challenge',
+      );
 
       return {
         isReceipt: !!parsed.isReceipt,
