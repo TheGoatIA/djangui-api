@@ -16,6 +16,11 @@ const transactionSchema = new Schema<ITransactionDocument>(
       required: [true, 'Amount is required'],
       min: [0, 'Amount cannot be negative'],
     },
+    currency: {
+      type: String,
+      required: true,
+      default: 'XAF',
+    },
     type: {
       type: String,
       enum: ['income', 'expense'],

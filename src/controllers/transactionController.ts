@@ -12,14 +12,6 @@ export class TransactionController {
     try {
       const transaction = await TransactionService.createTransaction(req.user._id, req.body);
 
-      // Metrique business
-      MonitoringService.recordTransaction(
-        transaction.type,
-        'success', // Assuming sync success
-        req.user.currency,
-        transaction.amount,
-      );
-
       res.status(201).json({
         success: true,
         data: transaction,

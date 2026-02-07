@@ -204,6 +204,14 @@ export class AuthService {
 
       return { user, tokens, isNewUser };
     } catch (error: any) {
+      MonitoringService.recordAuthFailure('firebase_invalid', options.country);
+      MonitoringService.recordAuthEvent(
+        'login',
+        'firebase',
+        'failure',
+        options.country,
+        options.platform,
+      );
       logger.error(`Error in Firebase Auth: ${error.message}`);
       throw new AppError('Invalid or expired Firebase token', 401);
     }
@@ -342,6 +350,7 @@ export class AuthService {
 
       return tokens;
     } catch (err) {
+      MonitoringService.recordAuthFailure('refresh_invalid', 'unknown');
       MonitoringService.recordAuthEvent('refresh', 'jwt', 'failure', 'unknown');
       throw new AppError('Invalid or expired refresh token', 401);
     }
