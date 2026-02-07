@@ -1,7 +1,7 @@
 import mongoose, { Schema, Document } from 'mongoose';
 import { ITransaction } from '../types/models';
 
-export interface ITransactionDocument extends ITransaction, Document { }
+export interface ITransactionDocument extends ITransaction, Document {}
 
 const transactionSchema = new Schema<ITransactionDocument>(
   {

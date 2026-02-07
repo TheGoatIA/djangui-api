@@ -105,12 +105,15 @@ export class PromptBuilder {
       }
 
       ROUTES DISPONIBLES :
-      - /transactions/add : Ajouter une dépense
-      - /budgets/add : Créer un budget
-      - /goals : Voir les objectifs
-      - /tontines : Voir les tontines
-      - /insights : Voir les analyses
-      - /subscriptions : Gérer les abonnements
+      - /transactions/add : Ajouter une dépense/transaction
+      - /budgets : Gérer ou créer un budget
+      - /goals : Voir/gérer les objectifs d'épargne
+      - /tontines : Voir/gérer les tontines
+      - /challenges : Voir les défis et récompenses
+      - /insights : Voir les analyses détaillées
+      - /user-subscriptions : Gérer ses abonnements (Netflix, etc.)
+      - /subscription : Gérer l'abonnement Kauri Premium
+      - /profile : Voir mon profil
 
       Règle d'or: Toujours prioriser la bienveillance tout en restant précis sur les chiffres.
     `;

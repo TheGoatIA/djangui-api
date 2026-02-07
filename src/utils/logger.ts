@@ -4,6 +4,7 @@ import path from 'path';
 import Transport from 'winston-transport';
 import axios from 'axios';
 import Graylog2 from 'winston-graylog2';
+import RequestContext from './context';
 
 const levels = {
   error: 0,
@@ -39,13 +40,30 @@ const fileFormat = winston.format.combine(
 const consoleFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss:ms' }),
   winston.format.colorize({ all: true }),
-  winston.format.printf(
-    (info) =>
-      `${info.timestamp} ${info.level}: ${info.message}${
-        info.userId ? ` [User: ${info.userId}]` : ''
-      }${info.context ? ` [Context: ${info.context}]` : ''}`,
-  ),
+  winston.format.printf((info) => {
+    const context = RequestContext.getStore();
+    const requestId = info.requestId || context?.requestId;
+    const userId = info.userId || context?.userId;
+    const ctxLabel = info.context || context?.context;
+
+    return `${info.timestamp} ${info.level}: ${info.message}${
+      userId ? ` [User: ${userId}]` : ''
+    }${requestId ? ` [Req: ${requestId}]` : ''}${ctxLabel ? ` [Context: ${ctxLabel}]` : ''}`;
+  }),
 );
+
+// Global metadata formatter (Ensures requestId/userId are always in the metadata object)
+const contextFormat = winston.format((info) => {
+  const context = RequestContext.getStore();
+  if (context) {
+    info.requestId = info.requestId || context.requestId;
+    info.userId = info.userId || context.userId;
+    if (context.context && !info.context) {
+      info.context = context.context;
+    }
+  }
+  return info;
+});
 
 const transports = [
   // Console Transport
@@ -136,6 +154,7 @@ if (process.env.NODE_ENV === 'production') {
 const logger = winston.createLogger({
   level: level(),
   levels,
+  format: winston.format.combine(contextFormat(), winston.format.errors({ stack: true })),
   transports,
 });
 
