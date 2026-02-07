@@ -12,6 +12,7 @@ import redis from './config/redis';
 import { ChallengeService } from './services/challengeService';
 import { CronService } from './services/cronService';
 import { MonitoringService } from './services/monitoringService';
+import { FeatureFlagService } from './services/featureFlagService';
 import logger from './utils/logger';
 import { seedCountries } from './utils/seedCountries';
 import app from './app'; // Keep this import as 'app' is used later
@@ -29,6 +30,7 @@ const startServer = async () => {
     console.log('Step 2: Seeding data...');
     await seedCountries();
     await ChallengeService.seedChallenges();
+    await FeatureFlagService.seed();
     console.log('Step 2: Data seeded');
 
     // Initialize Monitoring (Prometheus)
