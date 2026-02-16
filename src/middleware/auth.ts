@@ -51,7 +51,11 @@ const premiumOnly = async (req: AuthRequest, res: Response, next: NextFunction) 
     return next(new AppError('Authentication required.', 401));
   }
 
-  if (req.user.subscription?.plan !== 'premium' || req.user.subscription?.status !== 'active') {
+  if (
+    req.user.subscription?.plan !== 'premium' ||
+    req.user.subscription?.status !== 'active' ||
+    (req.user.subscription?.endDate && new Date(req.user.subscription.endDate) < new Date())
+  ) {
     return next(
       new AppError('This is a premium feature. Please upgrade your plan to access it.', 403),
     );
