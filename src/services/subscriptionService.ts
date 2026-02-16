@@ -187,4 +187,40 @@ export class SubscriptionService {
 
     return renewed;
   }
+  /**
+   * Expire les comptes Premium dont la date de fin est dépassée
+   */
+  static async processPremiumExpirations(): Promise<number> {
+    const now = new Date();
+    // Trouver les utilisateurs premium actifs dont l'abonnement est expiré
+    const expiredUsers = await User.find({
+      'subscription.plan': 'premium',
+      'subscription.status': 'active',
+      'subscription.endDate': { $lte: now },
+    });
+
+    let count = 0;
+    for (const user of expiredUsers) {
+      try {
+        user.subscription.status = 'expired';
+        await (user as any).save({ validateBeforeSave: false });
+
+        // Notifier l'utilisateur
+        await NotificationService.sendToUser(user._id.toString(), {
+          title: 'Abonnement Premium expiré',
+          body: 'Votre abonnement Premium est arrivé à son terme. Passez au niveau supérieur pour retrouver vos avantages.',
+          translationKey: 'PREMIUM_EXPIRED',
+          data: { type: 'PREMIUM_EXPIRATION' },
+        });
+
+        MonitoringService.recordChurn('premium', 'auto_expiration');
+        logger.info(`Premium status expired for user ${user._id}`);
+        count++;
+      } catch (error: any) {
+        logger.error(`Failed to expire premium for user ${user._id}: ${error.message}`);
+      }
+    }
+
+    return count;
+  }
 }

@@ -122,6 +122,12 @@ export class CronService {
       this.runMonitored('subscription_renewal', () => this.processSubscriptionsRenewal()),
     );
 
+    // Daily at 00:05 AM: Premium Expirations
+    cron.schedule(
+      '5 0 * * *',
+      this.runMonitored('premium_expiration', () => this.processPremiumExpirations()),
+    );
+
     // Hourly: Tontine Health & Quality Check (Final Polish)
     cron.schedule(
       '0 * * * *',
@@ -137,6 +143,9 @@ export class CronService {
     // Run once on startup
     this.processSubscriptionsRenewal().catch((err) =>
       logger.error(`Startup renewal error: ${err.message}`),
+    );
+    this.processPremiumExpirations().catch((err) =>
+      logger.error(`Startup premium expiration error: ${err.message}`),
     );
     this.updateEconomyMetrics().catch((err) =>
       logger.error(`Startup economy error: ${err.message}`),
@@ -377,8 +386,8 @@ export class CronService {
             </thead>
             <tbody>
               ${anomalies
-                .map(
-                  (a) => `
+            .map(
+              (a) => `
                 <tr>
                   <td style="padding: 8px; border: 1px solid #ddd;">${a.email}</td>
                   <td style="padding: 8px; border: 1px solid #ddd;">${a.walletBalance}</td>
@@ -386,8 +395,8 @@ export class CronService {
                   <td style="padding: 8px; border: 1px solid #ddd; color: red;">${a.diff.toFixed(2)}</td>
                 </tr>
               `,
-                )
-                .join('')}
+            )
+            .join('')}
             </tbody>
           </table>
         `;
@@ -701,6 +710,19 @@ export class CronService {
       );
     } catch (error: any) {
       logger.error(`Error in processSubscriptionsRenewal job: ${error.message}`);
+    }
+  }
+
+  /**
+   * Process premium status expirations
+   */
+  private static async processPremiumExpirations() {
+    try {
+      logger.info('Starting premium expiration job...');
+      const count = await SubscriptionService.processPremiumExpirations();
+      logger.info(`Premium expiration job completed. ${count} users moved to expired status.`);
+    } catch (error: any) {
+      logger.error(`Error in processPremiumExpirations job: ${error.message}`);
     }
   }
 

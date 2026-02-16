@@ -186,7 +186,12 @@ const userSchema = new Schema<IUserDocument>(
 
 // Virtual for isPremium
 userSchema.virtual('isPremium').get(function (this: IUserDocument) {
-  return this.subscription?.plan === 'premium' && this.subscription?.status === 'active';
+  const isPlanPremium = this.subscription?.plan === 'premium';
+  const isActive = this.subscription?.status === 'active';
+  const isNotExpired =
+    !this.subscription?.endDate || new Date(this.subscription.endDate) >= new Date();
+
+  return isPlanPremium && isActive && isNotExpired;
 });
 
 // Pre-save hook for password hashing
