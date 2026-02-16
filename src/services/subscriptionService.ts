@@ -207,8 +207,8 @@ export class SubscriptionService {
 
         // Notifier l'utilisateur
         await NotificationService.sendToUser(user._id.toString(), {
-          title: 'Abonnement Premium expiré',
-          body: 'Votre abonnement Premium est arrivé à son terme. Passez au niveau supérieur pour retrouver vos avantages.',
+          title: '',
+          body: '',
           translationKey: 'PREMIUM_EXPIRED',
           data: { type: 'PREMIUM_EXPIRATION' },
         });
