@@ -21,6 +21,7 @@ import { SubscriptionService } from './subscriptionService';
 import { SlackService } from './slackService';
 import { MonitoringService } from './monitoringService';
 import { ReconciliationService } from './reconciliationService';
+import { FinancialAlertService } from './financialAlertService';
 
 export class CronService {
   /**
@@ -306,60 +307,16 @@ export class CronService {
   }
 
   /**
-   * Send daily global activity report to admin
+   * Send daily global activity report to admin (UPGRADED)
    */
   private static async sendDailyAdminReport() {
     try {
-      const stats = await ReportService.getGlobalDailyStats();
-      const adminEmail = process.env.ADMIN_EMAIL || 'me@borisgauty.com';
+      const stats = await ReportService.getExecutiveFinancialReport('daily');
 
-      const html = `
-        <h3>Rapport d'Activité Journalier</h3>
-        <p><strong>Période :</strong> ${stats.period.start.toLocaleString()} - ${stats.period.end.toLocaleString()}</p>
-        
-        <h4>Utilisateurs</h4>
-        <ul>
-          <li>Nouveaux : ${stats.users.new}</li>
-          <li>Actifs (24h) : ${stats.users.active}</li>
-        </ul>
+      // Utilisation du nouveau service d'alerting pour le rapport exécutif
+      await FinancialAlertService.sendDailyExecutiveReport(stats);
 
-        <h4>Transactions</h4>
-        <table style="width: 100%; border-collapse: collapse;">
-          <thead>
-            <tr style="background-color: #f2f2f2;">
-              <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Type</th>
-              <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Nombre</th>
-              <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Volume Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td style="padding: 8px; border: 1px solid #ddd;">Revenus</td>
-              <td style="padding: 8px; border: 1px solid #ddd;">${stats.transactions.income.count}</td>
-              <td style="padding: 8px; border: 1px solid #ddd;">${stats.transactions.income.volume}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px; border: 1px solid #ddd;">Dépenses</td>
-              <td style="padding: 8px; border: 1px solid #ddd;">${stats.transactions.expense.count}</td>
-              <td style="padding: 8px; border: 1px solid #ddd;">${stats.transactions.expense.volume}</td>
-            </tr>
-          </tbody>
-        </table>
-      `;
-
-      await EmailService.sendEmail(
-        adminEmail,
-        `📊 Rapport Journalier KAURI - ${new Date().toLocaleDateString()}`,
-        'Votre rapport quotidien est prêt.',
-        html,
-      );
-
-      // Notify Slack
-      await SlackService.sendNotification(
-        `📊 *Daily Activity Report Ready*\n*Period*: ${stats.period.start.toLocaleDateString()}\n*New Users*: ${stats.users.new}\n*Active Users*: ${stats.users.active}\n*Income Volume*: ${stats.transactions.income.volume}\n*Expense Volume*: ${stats.transactions.expense.volume}`,
-      );
-
-      logger.info('Daily admin report sent');
+      logger.info('Daily executive financial report sent');
     } catch (error: any) {
       logger.error(`Error in sendDailyAdminReport job: ${error.message}`);
     }

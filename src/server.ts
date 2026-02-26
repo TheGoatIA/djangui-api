@@ -37,6 +37,7 @@ const startServer = async () => {
     // Run migrations
     console.log('Step 2.5: Running migrations...');
     await MigrationService.runInitialFintechMigration();
+    await MigrationService.runRealMoneyMigration();
     console.log('Step 2.5: Migrations completed');
 
     // Initialize Monitoring (Prometheus)

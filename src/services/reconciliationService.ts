@@ -2,54 +2,86 @@ import User from '../models/User';
 import Transaction from '../models/Transaction';
 import { SlackService } from './slackService';
 import logger from '../utils/logger';
-import axios from 'axios';
 
 export class ReconciliationService {
     /**
-     * Vérifie si la somme des soldes Kauri correspond au solde réel sur NotchPay (Cameroun)
+     * Effectue un audit d'intégrité interne : 
+     * Vérifie si le solde affiché (walletBalance) correspond mathématiquement à l'historique des transactions.
      */
-    static async checkGlobalNotchPayBalance() {
+    static async checkInternalIntegrity() {
         try {
-            // 1. Somme des soldes Wallet pour les utilisateurs camerounais (XAF)
-            const stats = await User.aggregate([
-                { $match: { country: 'CM', isActive: true } },
-                { $group: { _id: null, totalKauriXAF: { $sum: '$walletBalance' } } }
-            ]);
+            logger.info(`[Reconciliation] Lancement de l'audit d'intégrité interne...`);
 
-            const totalKauriXAF = stats.length > 0 ? stats[0].totalKauriXAF : 0;
+            const activeUsers = await User.find({ isActive: true });
+            const anomalies: any[] = [];
+            let totalChecked = 0;
 
-            // 2. Récupérer le solde réel via l'API NotchPay
-            // Note: Ceci est une simulation de l'appel API NotchPay
-            // En production: axios.get('https://api.notchpay.co/balance', { headers: { Authorization: process.env.NOTCHPAY_SECRET_KEY } })
-            const notchPayBalanceXAF = await this.fetchNotchPayBalance();
+            for (const user of activeUsers) {
+                totalChecked++;
 
-            const diff = totalKauriXAF - notchPayBalanceXAF;
+                // Calculer la balance théorique basée sur les transactions complétées
+                const stats = await Transaction.aggregate([
+                    { $match: { userId: user._id, status: 'completed' } },
+                    {
+                        $group: {
+                            _id: '$type',
+                            total: { $sum: '$amount' },
+                            totalFees: { $sum: '$fees' }
+                        }
+                    }
+                ]);
 
-            // 3. Alerter si écart significatif (> 1000 XAF)
-            if (Math.abs(diff) > 1000) {
-                const message = `🚨 *DIFFERENCE DE RECONCILIATION DETECTEE (XAF)*\n` +
-                    `Somme Wallets Kauri : ${totalKauriXAF.toLocaleString()} XAF\n` +
-                    `Solde NotchPay Réel : ${notchPayBalanceXAF.toLocaleString()} XAF\n` +
-                    `*Ecart : ${diff.toLocaleString()} XAF*`;
+                let income = 0;
+                let expense = 0;
 
-                await SlackService.sendNotification(message);
-                logger.error(message);
-            } else {
-                logger.info(`Reconciliation XAF OK (Ecart: ${diff} XAF)`);
+                stats.forEach(s => {
+                    // Entrées d'argent
+                    if (['deposit', 'tontine_payout', 'income', 'saving_transfer'].includes(s._id)) {
+                        income += s.total;
+                    }
+                    // Sorties d'argent (incluant les frais)
+                    else {
+                        expense += (s.total + (s.totalFees || 0));
+                    }
+                });
+
+                const theoreticalBalance = income - expense;
+                const diff = Math.abs(theoreticalBalance - user.walletBalance);
+
+                // Seuil de tolérance (ex: 1 XAF pour arrondis)
+                if (diff > 1) {
+                    anomalies.push({
+                        userId: user._id,
+                        email: user.email,
+                        currentBalance: user.walletBalance,
+                        theoreticalBalance,
+                        diff
+                    });
+                }
             }
 
-            return { totalKauriXAF, notchPayBalanceXAF, diff };
+            // 3. Alerter Slack si des anomalies sont détectées
+            if (anomalies.length > 0) {
+                const message = `🚨 *ANOMALIES DE RECONCILIATION INTERNE*\n` +
+                    `Utilisateurs audités : ${totalChecked}\n` +
+                    `Anomalies détectées : ${anomalies.length}\n` +
+                    `Détails : Rapport généré dans les logs admin.`;
+
+                await SlackService.sendNotification(message);
+                logger.error(message, { anomalies });
+            } else {
+                logger.info(`Réconciliation Interne OK : ${totalChecked} comptes vérifiés.`);
+            }
+
+            return {
+                timestamp: new Date(),
+                totalChecked,
+                anomalyCount: anomalies.length,
+                anomalies: anomalies.slice(0, 50) // On limite le retour pour l'UI
+            };
         } catch (err: any) {
-            logger.error(`Reconciliation Service Error: ${err.message}`);
+            logger.error(`Reconciliation Internal Audit Error: ${err.message}`);
             throw err;
         }
-    }
-
-    /**
-     * Simulation de l'appel API NotchPay
-     */
-    private static async fetchNotchPayBalance(): Promise<number> {
-        // Mock: En réel, extraire la balance XAF de la réponse API
-        return 5000000; // Exemple: 5 millions XAF
     }
 }
