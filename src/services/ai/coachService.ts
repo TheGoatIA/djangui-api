@@ -13,6 +13,7 @@ import { AppError } from '../../middleware/errorHandler';
 import mongoose from 'mongoose';
 import logger from '../../utils/logger';
 import { MonitoringService } from '../monitoringService';
+import { SlackService } from '../slackService';
 
 export class CoachService {
   static async getOrCreateConversation(userId: string): Promise<IConversation> {
@@ -61,6 +62,37 @@ export class CoachService {
     };
     const systemPrompt = PromptBuilder.buildCoachSystemPrompt(user, context);
 
+    // AI Security Check
+    if (user.status !== 'active') {
+      throw new AppError('Votre compte est suspendu suite à des activités suspectes avec l\'IA.', 403);
+    }
+
+    if (GeminiService.detectAttack(userMessage)) {
+      user.aiAttackCount = (user.aiAttackCount || 0) + 1;
+
+      const isSuspended = user.aiAttackCount >= 3;
+      if (isSuspended) {
+        user.status = 'suspended';
+      }
+      await user.save();
+
+      // Slack Alert
+      await SlackService.sendNotification(
+        `🚨 *Alerte Sécurité IA* 🚨\n*Utilisateur*: ${user.firstName} ${user.lastName} (${user.email})\n*Message*: "${userMessage}"\n*Tentatives*: ${user.aiAttackCount}/3\n*Action*: ${isSuspended ? '🔴 COMPTE SUSPENDU' : '⚠️ AVERTISSEMENT'}`,
+        true
+      );
+
+      if (isSuspended) {
+        throw new AppError('Votre compte a été banni définitivement après 3 tentatives de manipulation de l\'intelligence artificielle.', 403);
+      }
+
+      return JSON.stringify({
+        text: `⚠️ **Avertissement de sécurité** : Votre message a été détecté comme une tentative de manipulation de mes instructions de base. Ceci est formellement interdit. \n\nEncore **${3 - user.aiAttackCount
+          }** tentative(s) et votre compte sera **définitivement bloqué**.`,
+        actions: []
+      });
+    }
+
     // Measure Context Efficiency (System Prompt length vs User Message length)
     MonitoringService.recordAiContextEfficiency(systemPrompt.length, userMessage.length);
 
@@ -70,24 +102,8 @@ export class CoachService {
       parts: [{ text: m.content }],
     }));
 
-    // Start chat with context as the first message if history is empty
-    const chat = await GeminiService.startChat([
-      {
-        role: 'user',
-        parts: [
-          { text: `Initialise ton rôle de coach à partir de ces instructions: ${systemPrompt}` },
-        ],
-      },
-      {
-        role: 'model',
-        parts: [
-          {
-            text: "Compris. Bonjour, je suis Anne, ta coach financière. Comment puis-je t'aider aujourd'hui ?",
-          },
-        ],
-      },
-      ...history,
-    ]);
+    // Start chat with proper systemInstruction (isolated from history)
+    const chat = await GeminiService.startChat(history, systemPrompt);
 
     const result = await chat.sendMessage(userMessage);
     const rawAiResponse = result.response.text();
@@ -166,7 +182,7 @@ export class CoachService {
     const prompt = PromptBuilder.buildDailyAdvicePrompt(user as any, context);
 
     try {
-      const data = await GeminiService.generateJSON(prompt, 'daily-advice');
+      const data = await GeminiService.generateJSON('Génère le conseil du jour.', 'daily-advice', prompt);
 
       // Track Activity
       UserActivity.create({

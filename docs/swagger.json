@@ -623,6 +623,19 @@
                     "isActive": {
                         "type": "boolean"
                     },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "active",
+                            "suspended",
+                            "blocked"
+                        ],
+                        "example": "active"
+                    },
+                    "aiAttackCount": {
+                        "type": "integer",
+                        "example": 0
+                    },
                     "isPremium": {
                         "type": "boolean"
                     },
@@ -6184,6 +6197,9 @@
                                 }
                             }
                         }
+                    },
+                    "403": {
+                        "description": "Accès refusé - Compte suspendu pour tentative d'attaque IA"
                     }
                 }
             }
@@ -6980,7 +6996,7 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "OK. Note: Les frais sont de 3% (Standard) ou 1.5% (Premium).",
                         "content": {
                             "application/json": {
                                 "example": {
@@ -6993,6 +7009,9 @@
                                 }
                             }
                         }
+                    },
+                    "403": {
+                        "description": "Compte suspendu ou vérification KYC requise"
                     }
                 }
             }

@@ -81,6 +81,8 @@ export interface IUser {
   appVersion?: string;
   lastLogin?: Date;
   refreshToken?: string;
+  aiAttackCount: number;
+  status: 'active' | 'suspended' | 'blocked';
   createdAt: Date;
   updatedAt: Date;
 }

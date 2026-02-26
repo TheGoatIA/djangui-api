@@ -186,6 +186,16 @@ const userSchema = new Schema<IUserDocument>(
     appVersion: String,
     lastLogin: Date,
     refreshToken: String,
+    // AI Security
+    aiAttackCount: {
+      type: Number,
+      default: 0,
+    },
+    status: {
+      type: String,
+      enum: ['active', 'suspended', 'blocked'],
+      default: 'active',
+    },
   },
   {
     timestamps: true,

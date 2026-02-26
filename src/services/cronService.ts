@@ -151,7 +151,7 @@ export class CronService {
     // Daily at 04:00 AM: Global Reconciliation Check
     cron.schedule(
       '0 4 * * *',
-      this.runMonitored('global_reconciliation', async () => { await ReconciliationService.checkGlobalNotchPayBalance(); }),
+      this.runMonitored('global_reconciliation', async () => { await ReconciliationService.checkInternalIntegrity(); }),
     );
 
     // Run once on startup
