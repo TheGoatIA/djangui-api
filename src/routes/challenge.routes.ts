@@ -10,7 +10,7 @@ router.use(protect);
 router.get('/', ChallengeController.getAll);
 router.get('/my-challenges', ChallengeController.getUserChallenges);
 router.post('/join', ChallengeController.join);
-router.post('/validate-week', upload.single('proof'), ChallengeController.validateWeek);
+router.post('/deposit', ChallengeController.depositMoney);
 router.delete('/:id', ChallengeController.unjoin);
 
 export default router;

@@ -40,16 +40,15 @@ export class ChallengeController {
     }
   }
 
-  static async validateWeek(req: AuthRequest, res: Response, next: NextFunction) {
+  static async depositMoney(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const { userChallengeId, weekNumber, amount } = req.body;
-      const proofFilePath = req.file?.path;
 
-      const userChallenge = await ChallengeService.validateWeek(
+      const userChallenge = await ChallengeService.addChallengeDeposit(
+        req.user._id,
         userChallengeId,
         Number(weekNumber),
-        Number(amount),
-        proofFilePath,
+        Number(amount)
       );
       res.status(200).json({
         success: true,

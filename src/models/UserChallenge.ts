@@ -2,7 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 import { IUserChallenge } from '../types/models';
 
-export interface IUserChallengeDocument extends IUserChallenge, Document {}
+export interface IUserChallengeDocument extends IUserChallenge, Document { }
 
 const userChallengeSchema = new Schema<IUserChallenge>(
   {
@@ -18,6 +18,9 @@ const userChallengeSchema = new Schema<IUserChallenge>(
     startDate: { type: Date, default: Date.now },
     endDate: { type: Date, required: true },
     completedAt: { type: Date },
+    stakeAmount: { type: Number, default: 0 },
+    potentialReward: { type: Number, default: 0 },
+    transactionId: { type: Schema.Types.ObjectId, ref: 'Transaction' },
     weeks: [
       {
         weekNumber: { type: Number, required: true },

@@ -26,10 +26,12 @@ import subscriptionRoutes from './subscription.routes';
 import analyticsRoutes from './analytics.routes';
 import premiumRoutes from './premiumRoutes';
 import configRoutes from './config.routes';
+import fintechRoutes from './fintechRoutes';
 
 const router = Router();
 
 router.use('/auth', authRoutes);
+router.use('/fintech', fintechRoutes);
 router.use('/analytics', analyticsRoutes);
 router.use('/system', systemRoutes);
 router.use('/config', configRoutes);
@@ -59,5 +61,12 @@ router.use('/premium', premiumRoutes);
 // Webhooks
 router.post('/webhooks/stripe', WebhookController.stripeWebhook);
 router.post('/webhooks/notchpay', WebhookController.notchpayWebhook);
+
+// Admin Fintech Routes
+import { AdminFintechController } from '../controllers/adminFintechController';
+router.get('/admin/fintech/kyc/pending', AdminFintechController.getPendingKYC);
+router.post('/admin/fintech/kyc/verify', AdminFintechController.verifyKYC);
+router.post('/admin/fintech/reconciliation/trigger', AdminFintechController.triggerReconciliation);
+router.get('/admin/fintech/stats', AdminFintechController.getFintechStats);
 
 export default router;

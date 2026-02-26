@@ -15,12 +15,12 @@ export interface IUser {
   firebaseUid?: string;
   preferences: {
     coachTone:
-      | 'encouraging'
-      | 'firm'
-      | 'balanced'
-      | 'billionaire_mentor'
-      | 'strict_accountant'
-      | 'kind_auntie';
+    | 'encouraging'
+    | 'firm'
+    | 'balanced'
+    | 'billionaire_mentor'
+    | 'strict_accountant'
+    | 'kind_auntie';
     notificationFrequency: 'high' | 'medium' | 'low';
     budgetAlertThreshold: number;
   };
@@ -40,6 +40,16 @@ export interface IUser {
   passwordResetExpires?: Date;
   isPremium: boolean;
   walletBalance: number;
+  kycLevel: 'none' | 'pending' | 'verified';
+  kycData?: {
+    documentType: 'cni' | 'passport' | 'driver_license';
+    documentNumber?: string;
+    fullName?: string;
+    documentImageUrl?: string;
+    selfieImageUrl?: string;
+    verifiedAt?: Date;
+    rejectionReason?: string;
+  };
   xp: number;
   level: number;
   badges: {
@@ -100,6 +110,9 @@ export interface IUserChallenge {
   startDate: Date;
   endDate: Date;
   completedAt?: Date;
+  stakeAmount: number; // Montant misé par l'utilisateur
+  potentialReward: number; // Montant total à gagner si succès
+  transactionId?: mongoose.Types.ObjectId; // Référence à la transaction de mise
   weeks: {
     weekNumber: number;
     targetAmount: number;
@@ -159,13 +172,20 @@ export interface ITransaction {
   userId: mongoose.Types.ObjectId;
   amount: number;
   currency: string;
-  type: 'income' | 'expense';
+  type: 'income' | 'expense' | 'deposit' | 'withdrawal' | 'tontine_contribution' | 'tontine_payout' | 'saving_transfer' | 'challenge_reward';
   category: string;
   subcategory?: string;
   description: string;
   merchant?: string;
   location?: string;
   date: Date;
+  status: 'pending' | 'completed' | 'failed' | 'cancelled';
+  reference: string;
+  externalReference?: string;
+  paymentMethod: 'stripe' | 'notchpay' | 'wallet' | 'cash';
+  fees: number;
+  metadata?: Record<string, any>;
+  receiptUrl?: string; // Link to the generated invoice PDF
   tags: string[];
   isRecurring: boolean;
   recurringFrequency?: 'daily' | 'weekly' | 'monthly' | 'yearly';
@@ -173,6 +193,20 @@ export interface ITransaction {
   categorizationConfidence?: number;
   receipt?: string;
   linkedGoalId?: mongoose.Types.ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface IInvoice {
+  userId: mongoose.Types.ObjectId;
+  transactionId: mongoose.Types.ObjectId;
+  invoiceNumber: string;
+  amount: number;
+  currency: string;
+  dueDate?: Date;
+  status: 'draft' | 'issued' | 'paid' | 'cancelled';
+  pdfUrl?: string;
+  metadata?: Record<string, any>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -210,14 +244,14 @@ export interface ISavingGoal {
   priority: 'high' | 'medium' | 'low';
   strategy: {
     type:
-      | '50-30-20'
-      | 'progressive'
-      | 'roundup'
-      | 'pay-yourself-first'
-      | 'envelope'
-      | 'custom'
-      | 'snowball'
-      | 'avalanche';
+    | '50-30-20'
+    | 'progressive'
+    | 'roundup'
+    | 'pay-yourself-first'
+    | 'envelope'
+    | 'custom'
+    | 'snowball'
+    | 'avalanche';
     details?: any;
   };
   autoSaveRules: {

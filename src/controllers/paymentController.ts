@@ -18,8 +18,8 @@ export class PaymentController {
 
   static async initNotchPay(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const { amount, type } = req.body;
-      const result = await PaymentService.initializeNotchPay(req.user._id, amount, type);
+      const { amount, type, phone } = req.body;
+      const result = await PaymentService.initializeNotchPay(req.user._id, amount, type, phone);
       res.status(200).json({
         success: true,
         data: result,
