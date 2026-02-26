@@ -120,6 +120,24 @@ const userSchema = new Schema<IUserDocument>(
       default: 0,
       min: 0,
     },
+    kycLevel: {
+      type: String,
+      enum: ['none', 'pending', 'verified'],
+      default: 'none',
+      index: true,
+    },
+    kycData: {
+      documentType: {
+        type: String,
+        enum: ['cni', 'passport', 'driver_license'],
+      },
+      documentNumber: String,
+      fullName: String,
+      documentImageUrl: String,
+      selfieImageUrl: String,
+      verifiedAt: Date,
+      rejectionReason: String,
+    },
     xp: {
       type: Number,
       default: 0,

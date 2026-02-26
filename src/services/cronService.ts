@@ -20,6 +20,7 @@ import Subscription from '../models/Subscription';
 import { SubscriptionService } from './subscriptionService';
 import { SlackService } from './slackService';
 import { MonitoringService } from './monitoringService';
+import { ReconciliationService } from './reconciliationService';
 
 export class CronService {
   /**
@@ -138,6 +139,18 @@ export class CronService {
     cron.schedule(
       '*/10 * * * *',
       this.runMonitored('economy_pulse', () => this.updateEconomyMetrics()),
+    );
+
+    // Daily at 02:00 AM: Tontine Auto-Debits
+    cron.schedule(
+      '0 2 * * *',
+      this.runMonitored('tontine_auto_debit', () => TontineService.processAutoDebits()),
+    );
+
+    // Daily at 04:00 AM: Global Reconciliation Check
+    cron.schedule(
+      '0 4 * * *',
+      this.runMonitored('global_reconciliation', async () => { await ReconciliationService.checkGlobalNotchPayBalance(); }),
     );
 
     // Run once on startup

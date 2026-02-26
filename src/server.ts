@@ -15,6 +15,7 @@ import { MonitoringService } from './services/monitoringService';
 import { FeatureFlagService } from './services/featureFlagService';
 import logger from './utils/logger';
 import { seedCountries } from './utils/seedCountries';
+import { MigrationService } from './services/migrationService';
 import app from './app'; // Keep this import as 'app' is used later
 import './config/redis'; // Initialize Redis connection
 
@@ -32,6 +33,11 @@ const startServer = async () => {
     await ChallengeService.seedChallenges();
     await FeatureFlagService.seed();
     console.log('Step 2: Data seeded');
+
+    // Run migrations
+    console.log('Step 2.5: Running migrations...');
+    await MigrationService.runInitialFintechMigration();
+    console.log('Step 2.5: Migrations completed');
 
     // Initialize Monitoring (Prometheus)
     console.log('Step 3: Init Monitoring...');

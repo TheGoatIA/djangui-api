@@ -1,5 +1,5 @@
-import fr from '../i18n/fr.json';
-import en from '../i18n/en.json';
+const fr = require('../i18n/fr.json');
+const en = require('../i18n/en.json');
 
 const translations: Record<string, any> = { fr, en };
 

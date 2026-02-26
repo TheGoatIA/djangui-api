@@ -52,6 +52,17 @@ export class WebhookController {
       } catch (err: any) {
         logger.error(`Error completing payment via NotchPay Webhook: ${err.message}`);
       }
+    } else if (data.event === 'transfer.complete') {
+      // Le transfert est fini, on pourrait mettre à jour le statut de la transaction
+      // mais WalletService.executeTransaction l'a déjà mis en completed lors de l'initiation MoMo
+      // car NotchPay Transfers est quasi instantané. 
+      // Ici on peut envoyer une notification de succès finale.
+      logger.info(`Transfer ${data.data.reference} completed successfully`);
+    } else if (data.event === 'transfer.failed') {
+      // En cas d'échec du transfert après l'acceptation initiale
+      const reference = data.data.reference;
+      logger.error(`Transfer ${reference} failed: ${data.data.reason}`);
+      // TODO: Logique de remboursement automatique si non gérée dans PayoutService
     }
 
     res.json({ received: true });

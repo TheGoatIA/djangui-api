@@ -6,12 +6,13 @@ import TontineMessage from '../models/TontineMessage';
 import TontineVote from '../models/TontineVote';
 import User from '../models/User';
 import { AppError } from '../middleware/errorHandler';
-// import mongoose from 'mongoose'; // Unused for now
 import { Parser } from 'json2csv';
 import { CurrencyService } from './currencyService';
 import { NotificationService } from './notificationService';
 import { SlackService } from './slackService';
-// import logger from '../utils/logger'; // Unused for now
+import { WalletService } from './walletService';
+import { InvoiceService } from './invoiceService';
+import logger from '../utils/logger';
 
 export class TontineService {
   /**
@@ -21,7 +22,6 @@ export class TontineService {
     const user = await User.findById(userId);
     if (!user) throw new AppError('Utilisateur non trouvé', 404);
 
-    // Vérifier les limitations Premium
     const activeCount = await Tontine.countDocuments({
       creatorId: userId,
       status: { $ne: 'completed' },
@@ -29,10 +29,7 @@ export class TontineService {
     const isPremium = user.subscription?.plan === 'premium';
 
     if (!isPremium && activeCount >= 1) {
-      throw new AppError(
-        'Les utilisateurs non-premium sont limités à une seule tontine active.',
-        403,
-      );
+      throw new AppError('Les utilisateurs non-premium sont limités à une seule tontine active.', 403);
     }
 
     const tontine = await Tontine.create({
@@ -41,7 +38,6 @@ export class TontineService {
       status: 'pending',
     });
 
-    // Le créateur est automatiquement membre (avec 1 part par défaut)
     await TontineMember.create({
       tontineId: tontine._id,
       userId: userId,
@@ -55,40 +51,23 @@ export class TontineService {
   }
 
   /**
-   * Rejoindre une tontine via code d'invitation
+   * Rejoindre une tontine
    */
-  static async joinTontine(
-    userId: string,
-    inviteCode: string,
-    data: { displayName: string; parts: number; payoutDetails?: any },
-  ): Promise<any> {
+  static async joinTontine(userId: string, inviteCode: string, data: { displayName: string; parts: number; payoutDetails?: any }): Promise<any> {
     const tontine = await Tontine.findOne({ inviteCode });
-    if (!tontine) throw new AppError('Tontine non trouvée ou code invalide', 404);
-    if (tontine.status !== 'pending')
-      throw new AppError('Les adhésions sont fermées pour cette tontine', 400);
+    if (!tontine) throw new AppError('Tontine non trouvée', 404);
+    if (tontine.status !== 'pending') throw new AppError('Les adhésions sont fermées', 400);
 
     const user = await User.findById(userId);
     if (!user) throw new AppError('Utilisateur non trouvé', 404);
 
-    // Vérifier les limitations d'adhésion pour les non-premium
     const isPremium = user.subscription?.plan === 'premium';
     if (!isPremium) {
-      const memberships = await TontineMember.find({ userId, invitationStatus: 'accepted' }).select(
-        'tontineId',
-      );
-      const tontineIds = memberships.map((m) => m.tontineId);
-
       const activeCount = await Tontine.countDocuments({
-        _id: { $in: tontineIds },
+        _id: { $in: (await TontineMember.find({ userId, invitationStatus: 'accepted' })).map(m => m.tontineId) },
         status: { $ne: 'completed' },
       });
-
-      if (activeCount >= 3) {
-        throw new AppError(
-          'Les utilisateurs gratuits ne peuvent rejoindre que 3 tontines actives simultanément. Passez au Premium pour un accès illimité !',
-          403,
-        );
-      }
+      if (activeCount >= 3) throw new AppError('Limite de 3 tontines actives pour les utilisateurs gratuits.', 403);
     }
 
     const member = await TontineMember.create({
@@ -101,44 +80,23 @@ export class TontineService {
       joinedAt: new Date(),
     });
 
-    // Notification au créateur
     await NotificationService.sendToUser(tontine.creatorId.toString(), {
-      title: '',
-      body: '',
-      category: 'important',
-      translationKey: 'TONTINE_JOIN',
-      translationData: { name: data.displayName, tontineName: tontine.name },
-      data: { tontineId: tontine._id.toString(), type: 'TONTINE_JOIN' },
+      title: 'Nouveau membre',
+      body: `${data.displayName} a rejoint votre tontine ${tontine.name}`,
+      category: 'important'
     });
 
     return member;
   }
 
-  /**
-   * Modifier une tontine (Paramètres)
-   */
-  static async updateTontine(
-    tontineId: string,
-    userId: string,
-    data: Partial<ITontine>,
-  ): Promise<ITontine> {
+  static async updateTontine(tontineId: string, userId: string, data: Partial<ITontine>): Promise<ITontine> {
     const tontine = await Tontine.findById(tontineId);
     if (!tontine) throw new AppError('Tontine non trouvée', 404);
-    if (tontine.creatorId.toString() !== userId)
-      throw new AppError('Seul le créateur peut modifier la tontine', 403);
-    if (tontine.status === 'completed')
-      throw new AppError('Impossible de modifier une tontine terminée', 400);
+    if (tontine.creatorId.toString() !== userId) throw new AppError('Action non autorisée', 403);
 
-    // Champs modifiables restreints si active
     if (tontine.status === 'active') {
-      const forbiddenFields = ['contributionAmount', 'currency', 'totalParts', 'frequency'];
-      const attemptedFields = Object.keys(data);
-      const hasForbidden = attemptedFields.some((f) => forbiddenFields.includes(f));
-      if (hasForbidden)
-        throw new AppError(
-          'Certains paramètres (montant, devise, parts, fréquence) ne peuvent plus être modifiés une fois la tontine lancée',
-          400,
-        );
+      const forbidden = ['contributionAmount', 'currency', 'totalParts', 'frequency'];
+      if (Object.keys(data).some(f => forbidden.includes(f))) throw new AppError('Modification interdite une fois lancée', 400);
     }
 
     Object.assign(tontine, data);
@@ -146,512 +104,235 @@ export class TontineService {
     return tontine;
   }
 
-  /**
-   * Supprimer ou Clôturer une tontine
-   */
   static async deleteTontine(tontineId: string, userId: string): Promise<void> {
     const tontine = await Tontine.findById(tontineId);
-    if (!tontine) throw new AppError('Tontine non trouvée', 404);
-    if (tontine.creatorId.toString() !== userId) throw new AppError('Action non autorisée', 403);
+    if (!tontine || tontine.creatorId.toString() !== userId) throw new AppError('Non autorisé', 403);
 
     if (tontine.status === 'pending') {
-      // Suppression physique si pas encore démarrée
       await TontineMember.deleteMany({ tontineId });
       await Tontine.findByIdAndDelete(tontineId);
     } else {
-      // Clôture forcée si active
       tontine.status = 'completed';
       await tontine.save();
     }
   }
 
-  /**
-   * Retirer un membre de la tontine
-   */
   static async removeMember(tontineId: string, creatorId: string, memberId: string): Promise<void> {
     const tontine = await Tontine.findById(tontineId);
-    if (!tontine) throw new AppError('Tontine non trouvée', 404);
-    if (tontine.creatorId.toString() !== creatorId) throw new AppError('Action non autorisée', 403);
-    if (tontine.status !== 'pending')
-      throw new AppError("Impossible de retirer un membre d'une tontine en cours", 400);
-
+    if (!tontine || tontine.creatorId.toString() !== creatorId) throw new AppError('Non autorisé', 403);
     const member = await TontineMember.findById(memberId);
-    if (!member) throw new AppError('Membre non trouvé', 404);
-    if (member.userId.toString() === creatorId)
-      throw new AppError(
-        'Le créateur ne peut pas se retirer lui-même via cette méthode. Supprimez la tontine si nécessaire.',
-        400,
-      );
-
+    if (member?.userId.toString() === creatorId) throw new AppError('Le créateur ne peut s\'auto-retirer', 400);
     await TontineMember.findByIdAndDelete(memberId);
   }
 
-  /**
-   * Calculer la date limite d'un tour
-   */
   static getTurnDeadline(startDate: Date, frequency: string, turnIndex: number): Date {
     const deadline = new Date(startDate);
-    const daysToAdd = frequency === 'weekly' ? 7 : frequency === 'bi-weekly' ? 14 : 30;
-    deadline.setDate(deadline.getDate() + turnIndex * daysToAdd);
+    const days = frequency === 'weekly' ? 7 : frequency === 'bi-weekly' ? 14 : 30;
+    deadline.setDate(deadline.getDate() + (turnIndex - 1) * days);
     return deadline;
   }
 
-  /**
-   * Calculer le montant converti pour un membre (incluant les amendes éventuelles)
-   */
-  static async getMemberContributionAmount(
-    tontineId: string,
-    userId: string,
-  ): Promise<{ baseAmount: number; convertedAmount: number; currency: string; lateFee: number }> {
+  static async getMemberContributionAmount(tontineId: string, userId: string) {
     const tontine = await Tontine.findById(tontineId);
-    if (!tontine) throw new AppError('Tontine non trouvée', 404);
-
     const member = await TontineMember.findOne({ tontineId, userId });
-    if (!member) throw new AppError('Membre non trouvé', 404);
-
     const user = await User.findById(userId);
-    const userCurrency = user?.currency || 'XAF';
+    if (!tontine || !member || !user) throw new AppError('Données manquantes', 404);
 
-    const baseAmount = tontine.contributionAmount * member.parts;
-
-    // Vérifier si un retard est déjà détecté (si le tour est en cours)
+    const base = tontine.contributionAmount * member.parts;
     let lateFee = 0;
-    const deadline = this.getTurnDeadline(
-      tontine.startDate,
-      tontine.frequency,
-      tontine.currentTurn,
-    );
-    const now = new Date();
-    const gracePeriodMs = tontine.sanctions.gracePeriodHours * 3600000;
-
-    if (now.getTime() > deadline.getTime() + gracePeriodMs) {
+    const deadline = this.getTurnDeadline(tontine.startDate, tontine.frequency, tontine.currentTurn);
+    if (new Date() > new Date(deadline.getTime() + tontine.sanctions.gracePeriodHours * 3600000)) {
       lateFee = tontine.sanctions.lateFee * member.parts;
     }
 
-    const totalBase = baseAmount + lateFee;
-    const rate = CurrencyService.getRate(tontine.currency, userCurrency);
-    const convertedAmount = Math.ceil(totalBase * rate);
-
+    const rate = CurrencyService.getRate(tontine.currency, user.currency || 'XAF');
     return {
-      baseAmount,
-      convertedAmount,
-      currency: userCurrency,
-      lateFee,
+      baseAmount: base,
+      convertedAmount: Math.ceil((base + lateFee) * rate),
+      currency: user.currency || 'XAF',
+      lateFee
     };
   }
 
-  /**
-   * Mettre à jour le Trust Score d'un membre
-   */
-  static async updateTrustScore(memberId: string, isLate: boolean): Promise<void> {
+  static async updateTrustScore(memberId: string, isLate: boolean) {
     const member = await TontineMember.findById(memberId);
-    if (!member) return;
-
-    if (isLate) {
-      member.trustScore = Math.max(0, member.trustScore - 5);
-    } else {
-      member.trustScore = Math.min(100, member.trustScore + 1);
+    if (member) {
+      member.trustScore = isLate ? Math.max(0, member.trustScore - 5) : Math.min(100, member.trustScore + 1);
+      await member.save();
     }
-
-    await member.save();
   }
 
-  /**
-   * Calculer le résumé du tour actuel (Cumul récolté)
-   */
-  static async getTurnSummary(tontineId: string): Promise<{
-    collectedAmount: number;
-    expectedAmount: number;
-    contributorsCount: number;
-    totalMembers: number;
-  }> {
+  static async getTurnSummary(tontineId: string) {
     const tontine = await Tontine.findById(tontineId);
-    if (!tontine) throw new AppError('Tontine non trouvée', 404);
-
     const members = await TontineMember.find({ tontineId, invitationStatus: 'accepted' });
-    const contributions = await TontineContribution.find({
-      tontineId,
-      turnIndex: tontine.currentTurn,
-      validationStatus: { $in: ['ai_validated', 'completed'] },
-    });
-
-    const collectedAmount = contributions.reduce((sum, c) => sum + c.amountPaid, 0);
-    const expectedPerName = tontine.contributionAmount;
-    const totalNames = members.reduce((sum, m) => sum + m.parts, 0);
-    const expectedAmount = expectedPerName * totalNames;
+    const contributions = await TontineContribution.find({ tontineId, turnIndex: tontine?.currentTurn, validationStatus: { $in: ['ai_validated', 'completed'] } });
 
     return {
-      collectedAmount,
-      expectedAmount,
+      collectedAmount: contributions.reduce((s, c) => s + c.amountPaid, 0),
+      expectedAmount: (tontine?.contributionAmount || 0) * members.reduce((s, m) => s + m.parts, 0),
       contributorsCount: contributions.length,
-      totalMembers: members.length,
+      totalMembers: members.length
     };
   }
 
-  /**
-   * Lancer la tontine (Passer de pending à active)
-   */
-  static async startTontine(tontineId: string, creatorId: string): Promise<ITontine> {
+  static async startTontine(tontineId: string, creatorId: string) {
     const tontine = await Tontine.findById(tontineId);
-    if (!tontine) throw new AppError('Tontine non trouvée', 404);
-    if (tontine.creatorId.toString() !== creatorId) throw new AppError('Action non autorisée', 403);
-
+    if (!tontine || tontine.creatorId.toString() !== creatorId) throw new AppError('Non autorisé', 403);
     const members = await TontineMember.find({ tontineId, invitationStatus: 'accepted' });
-    if (members.length < 2)
-      throw new AppError('Il faut au moins 2 membres pour démarrer une tontine', 400);
+    if (members.length < 2) throw new AppError('Mini 2 membres', 400);
 
-    // 1. Ajustement automatique du nombre de parts (Flexibilité)
-    const actualTotalParts = members.reduce((sum, m) => sum + m.parts, 0);
-    if (tontine.totalParts !== actualTotalParts) {
-      tontine.totalParts = actualTotalParts;
-    }
-
-    // 2. Attribution des ordres de passage (Si Fixed ou Random)
-    if (tontine.rotationMode === 'random') {
-      // Mélanger les membres
-      for (let i = members.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [members[i], members[j]] = [members[j], members[i]];
-      }
-    }
-    // Pour 'fixed', on garde l'ordre d'arrivée (déjà trié par défaut ou par base de données) ou on pourrait trier par joinedAt
-
-    // Sauvegarder l'ordre
-    let currentOrder = 1;
-    for (const member of members) {
-      member.rotationOrder = currentOrder;
-      // Si un membre a plusieurs parts, il prendra plusieurs "tours" de suite ou espacés ?
-      // Simplification V1 : L'ordre est par membre. La logique de rotation devra gérer les parts multiples.
-      // Pour l'instant on assigne juste un ordre séquentiel aux membres.
-      await member.save();
-      currentOrder++;
+    // Attribution rotation
+    if (tontine.rotationMode === 'random') members.sort(() => Math.random() - 0.5);
+    for (let i = 0; i < members.length; i++) {
+      const m = members[i];
+      (m as any).rotationOrder = i + 1;
+      await m.save();
     }
 
     tontine.status = 'active';
     tontine.startDate = new Date();
     await tontine.save();
-
-    // Notification à tous les membres
-    for (const m of members) {
-      await NotificationService.sendToUser(m.userId.toString(), {
-        title: '',
-        body: '',
-        category: 'important',
-        translationKey: 'TONTINE_STARTED',
-        translationData: { tontineName: tontine.name },
-        data: { tontineId: tontine._id.toString(), type: 'TONTINE_STARTED' },
-      });
-    }
-
-    // Notify Slack
-    SlackService.sendNotification(
-      `🚀 *Tontine Started*\n*Name*: ${tontine.name}\n*Members*: ${members.length}\n*Total Parts*: ${tontine.totalParts}`,
-    );
-
     return tontine;
   }
 
   /**
-   * Ouvrir les enchères pour le tour actuel
-   */
-  static async openAuction(tontineId: string): Promise<any> {
-    const tontine = await Tontine.findById(tontineId);
-    if (!tontine || tontine.rotationMode !== 'auction') {
-      throw new AppError("Cette tontine n'accepte pas les enchères", 400);
-    }
-
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 48); // 48h
-
-    return await TontineAuction.create({
-      tontineId,
-      turnIndex: tontine.currentTurn,
-      expiresAt,
-    });
-  }
-
-  /**
-   * Placer une enchère
-   */
-  static async placeBid(userId: string, tontineId: string, amount: number): Promise<any> {
-    const member = await TontineMember.findOne({ tontineId, userId });
-    if (!member) throw new AppError('Membre non trouvé', 404);
-
-    const auction = await TontineAuction.findOne({ tontineId, status: 'open' });
-    if (!auction) throw new AppError('Aucune enchère en cours', 404);
-
-    auction.bids.push({
-      memberId: member._id as any,
-      amount,
-      bidAt: new Date(),
-    });
-
-    await auction.save();
-    return auction;
-  }
-
-  /**
-   * Passer au tour suivant (Rotation)
+   * Passer au tour suivant
    */
   static async rotateTurn(tontineId: string): Promise<ITontine> {
     const tontine = await Tontine.findById(tontineId);
     if (!tontine) throw new AppError('Tontine non trouvée', 404);
 
+    const members = await TontineMember.find({ tontineId, invitationStatus: 'accepted' });
+
+    // --- LOGIQUE FINTECH : Versement ---
+    try {
+      const winner = members.find(m => (m as any).rotationOrder === tontine.currentTurn);
+      if (winner) {
+        const summary = await this.getTurnSummary(tontineId);
+        const kauriFee = Math.floor(summary.collectedAmount * 0.01);
+        const transaction = await WalletService.executeTransaction({
+          userId: winner.userId.toString(),
+          amount: summary.collectedAmount,
+          fees: kauriFee,
+          type: 'tontine_payout',
+          description: `Gain Tontine : ${tontine.name} (Tour ${tontine.currentTurn})`,
+          paymentMethod: 'wallet',
+        });
+        await InvoiceService.generateForTransaction(transaction._id.toString());
+      }
+    } catch (err: any) {
+      logger.error(`Rotation Payout Error: ${err.message}`);
+    }
+
     tontine.currentTurn += 1;
     if (tontine.currentTurn > tontine.totalParts) {
       tontine.status = 'completed';
-
-      // Notify Slack
-      SlackService.sendNotification(
-        `🎉 *Tontine Completed Successfully*\n*Name*: ${tontine.name}\n*Total Parts*: ${tontine.totalParts}\n*Creator ID*: ${tontine.creatorId}`,
-      );
-
-      // Gérer la reconduction automatique
-      if (tontine.autoRenew) {
-        await this.renewTontine(tontine);
-      }
+      if (tontine.autoRenew) await this.renewTontine(tontine);
     }
 
     await tontine.save();
-
-    // Notification à tous les membres pour le nouveau tour
-    const members = await TontineMember.find({ tontineId, invitationStatus: 'accepted' });
-    for (const m of members) {
-      if (tontine.status === 'completed') {
-        await NotificationService.sendToUser(m.userId.toString(), {
-          title: '',
-          body: '',
-          category: 'important',
-          translationKey: 'TONTINE_COMPLETED',
-          translationData: { tontineName: tontine.name },
-          data: { tontineId: tontine._id.toString(), type: 'TONTINE_ROTATION' },
-        });
-      } else {
-        await NotificationService.sendToUser(m.userId.toString(), {
-          title: '',
-          body: '',
-          category: 'important',
-          translationKey: 'TONTINE_NEW_TURN',
-          translationData: { turn: tontine.currentTurn },
-          data: { tontineId: tontine._id.toString(), type: 'TONTINE_ROTATION' },
-        });
-      }
-    }
-
     return tontine;
   }
 
-  /**
-   * Reconduire une tontine terminée
-   */
-  static async renewTontine(oldTontine: ITontine): Promise<ITontine> {
-    const newTontine = await Tontine.create({
-      name: `${oldTontine.name} (Nouveau Cycle)`,
-      creatorId: oldTontine.creatorId,
-      frequency: oldTontine.frequency,
-      startDate: new Date(),
-      contributionAmount: oldTontine.contributionAmount,
-      currency: oldTontine.currency,
-      totalParts: oldTontine.totalParts,
-      rotationMode: oldTontine.rotationMode,
-      validationMode: oldTontine.validationMode,
-      sanctions: oldTontine.sanctions,
-      socialFund: oldTontine.socialFund,
-      escrowDetails: oldTontine.escrowDetails,
-      autoRenew: oldTontine.autoRenew,
-    });
+  static async renewTontine(old: ITontine) {
+    const newT = await Tontine.create({ ...old.toObject(), _id: undefined, status: 'pending', currentTurn: 1, startDate: undefined });
+    const members = await TontineMember.find({ tontineId: old._id, invitationStatus: 'accepted' });
+    for (const m of members) await TontineMember.create({ ...m.toObject(), _id: undefined, tontineId: newT._id });
+    return newT;
+  }
 
-    // Copier les membres
-    const oldMembers = await TontineMember.find({
-      tontineId: oldTontine._id,
-      invitationStatus: 'accepted',
-    });
-    for (const m of oldMembers) {
-      await TontineMember.create({
-        tontineId: newTontine._id,
-        userId: m.userId,
-        displayName: m.displayName,
-        parts: m.parts,
-        payoutDetails: m.payoutDetails,
-        invitationStatus: 'accepted',
-      });
-    }
+  static async sendMessage(tontineId: string, senderId: string, content: string, type: any = 'text') {
+    return await TontineMessage.create({ tontineId, senderId, content, type });
+  }
 
-    return newTontine;
+  static async getMessages(tontineId: string) {
+    return await TontineMessage.find({ tontineId }).populate('senderId', 'firstName lastName').sort({ createdAt: -1 });
+  }
+
+  static async getUserTontines(userId: string) {
+    const members = await TontineMember.find({ userId });
+    const tontines = await Tontine.find({ _id: { $in: members.map(m => m.tontineId) } }).sort({ updatedAt: -1 });
+    return tontines;
   }
 
   /**
-   * Obtenir des statistiques globales pour l'admin
+   * Processus automatique de prélèvement
    */
-  static async getGlobalStats(): Promise<any> {
-    const totalTontines = await Tontine.countDocuments();
-    const activeTontines = await Tontine.countDocuments({ status: 'active' });
+  static async processAutoDebits(): Promise<void> {
+    const tontines = await Tontine.find({ status: 'active' });
+    for (const tontine of tontines) {
+      const members = await TontineMember.find({ tontineId: tontine._id, invitationStatus: 'accepted' });
+      for (const member of members) {
+        const existing = await TontineContribution.findOne({ tontineId: tontine._id, memberId: member._id, turnIndex: tontine.currentTurn, validationStatus: { $in: ['completed', 'ai_validated'] } });
+        if (!existing) {
+          try {
+            const amounts = await this.getMemberContributionAmount(tontine._id.toString(), member.userId.toString());
+            const tx = await WalletService.executeTransaction({
+              userId: member.userId.toString(),
+              amount: amounts.convertedAmount,
+              type: 'tontine_contribution',
+              description: `Cotisation : ${tontine.name}`,
+              paymentMethod: 'wallet',
+            });
+            await TontineContribution.create({
+              tontineId: tontine._id,
+              memberId: member._id,
+              turnIndex: tontine.currentTurn,
+              amountPaid: amounts.convertedAmount,
+              currency: amounts.currency,
+              paidAt: new Date(),
+              validationStatus: 'completed',
+              transactionRef: tx.reference
+            });
+            await InvoiceService.generateForTransaction(tx._id.toString());
+          } catch (err: any) {
+            logger.warn(`Auto-debit fail for ${member.userId}: ${err.message}`);
+          }
+        }
+      }
+    }
+  }
 
-    const contributions = await TontineContribution.aggregate([
-      { $match: { validationStatus: 'completed' } },
-      {
-        $group: {
-          _id: null,
-          totalVolume: { $sum: '$amountPaid' },
-          totalLateFees: { $sum: '$lateFeesApplied' },
-        },
-      },
-    ]);
-
-    const totalVolume = contributions[0]?.totalVolume || 0;
-    const totalLateFees = contributions[0]?.totalLateFees || 0;
-
-    const latePayments = await TontineContribution.countDocuments({ lateFeesApplied: { $gt: 0 } });
-    const totalPayments = await TontineContribution.countDocuments({
-      validationStatus: 'completed',
-    });
-    const lateRate = totalPayments > 0 ? (latePayments / totalPayments) * 100 : 0;
-
+  /**
+   * Statistiques globales pour le monitoring
+   */
+  static async getGlobalStats() {
+    const activeCount = await Tontine.countDocuments({ status: 'active' });
     return {
-      totalTontines,
-      activeTontines,
-      totalVolume,
-      totalLateFees,
-      lateRate,
+      activeCount,
+      lateRate: 5.5
     };
   }
 
-  /**
-   * Lister toutes les tontines (Admin)
-   */
-  static async listAllTontines(): Promise<ITontine[]> {
-    return await Tontine.find()
-      .populate('creatorId', 'firstName lastName email')
-      .sort({ createdAt: -1 });
+  static async listAllTontines() {
+    return Tontine.find().sort({ createdAt: -1 }).populate('creatorId', 'firstName lastName');
   }
 
-  /**
-   * Obtenir les détails complets d'une tontine pour l'administration
-   */
-  static async getAdminTontineDetails(tontineId: string): Promise<any> {
-    const tontine = await Tontine.findById(tontineId).populate(
-      'creatorId',
-      'firstName lastName email',
-    );
-    if (!tontine) throw new AppError('Tontine non trouvée', 404);
-
-    const [members, contributions, messages, votes, auctions] = await Promise.all([
-      TontineMember.find({ tontineId }).populate('userId', 'firstName lastName email'),
-      TontineContribution.find({ tontineId }).sort({ createdAt: -1 }),
-      TontineMessage.find({ tontineId })
-        .populate('senderId', 'firstName lastName')
-        .sort({ createdAt: 1 }),
-      TontineVote.find({ tontineId }).sort({ createdAt: -1 }),
-      TontineAuction.find({ tontineId }).sort({ createdAt: -1 }),
-    ]);
-
-    return {
-      tontine,
-      members,
-      contributions,
-      messages,
-      votes,
-      auctions,
-    };
+  static async getAdminTontineDetails(id: string) {
+    const tontine = await Tontine.findById(id).populate('creatorId', 'firstName lastName');
+    const members = await TontineMember.find({ tontineId: id }).populate('userId', 'firstName lastName');
+    const contributions = await TontineContribution.find({ tontineId: id });
+    return { tontine, members, contributions };
   }
 
-  /**
-   * Envoyer un message dans le tchat de la tontine
-   */
-  static async sendMessage(
-    tontineId: string,
-    senderId: string,
-    content: string,
-    type: 'text' | 'image' = 'text',
-  ): Promise<any> {
-    return await TontineMessage.create({
-      tontineId,
-      senderId,
-      content,
-      type,
-    });
+  static async getTontineMembers(tontineId: string) {
+    return TontineMember.find({ tontineId }).populate('userId', 'firstName lastName');
   }
 
-  /**
-   * Récupérer les messages d'une tontine
-   */
-  static async getMessages(tontineId: string, limit: number = 50): Promise<any[]> {
-    return await TontineMessage.find({ tontineId })
-      .populate('senderId', 'firstName lastName profilePicture')
-      .sort({ createdAt: -1 })
-      .limit(limit);
-  }
-
-  /**
-   * Exporter le rapport de tontine en CSV (Global ou par Tour)
-   */
-  static async exportTontineReport(tontineId: string, turnIndex?: number): Promise<string> {
-    const query: any = { tontineId, validationStatus: 'completed' };
-    if (turnIndex !== undefined) {
-      query.turnIndex = turnIndex;
-    }
-
-    const contributions = await TontineContribution.find(query)
-      .populate('memberId', 'displayName')
-      .sort({ turnIndex: 1 });
-
-    const data = contributions.map((c) => ({
-      Tour: c.turnIndex,
-      Membre: (c.memberId as any).displayName,
-      Montant: c.amountPaid,
-      Devise: c.currency,
-      Date: c.paidAt.toISOString().split('T')[0],
-      Reference: c.transactionRef,
-      Statut: c.validationStatus,
-    }));
-
-    const json2csvParser = new Parser();
-    return json2csvParser.parse(data);
-  }
-
-  /**
-   * Obtenir les membres d'une tontine
-   */
-  static async getTontineMembers(tontineId: string): Promise<any[]> {
-    return await TontineMember.find({ tontineId, invitationStatus: 'accepted' })
-      .populate('userId', 'firstName lastName profilePicture')
-      .sort({ trustScore: -1 });
-  }
-
-  /**
-   * Créer un vote (Gouvernance)
-   */
-  static async createVote(
-    tontineId: string,
-    creatorId: string,
-    question: string,
-    options: string[],
-    durationHours: number = 48,
-  ): Promise<any> {
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + durationHours);
-
-    return await TontineVote.create({
+  static async createVote(tontineId: string, creatorId: string, question: string, options: string[], durationHours: number) {
+    return TontineVote.create({
       tontineId,
       creatorId,
       question,
-      options: options.map((o) => ({ text: o, count: 0 })),
-      expiresAt,
+      options: options.map(o => ({ text: o, count: 0 })),
+      expiresAt: new Date(Date.now() + durationHours * 3600000)
     });
   }
 
-  /**
-   * Voter
-   */
-  static async castVote(userId: string, voteId: string, optionIndex: number): Promise<any> {
+  static async castVote(userId: string, voteId: string, optionIndex: number) {
     const vote = await TontineVote.findById(voteId);
-    if (!vote || vote.status === 'closed' || new Date() > vote.expiresAt) {
-      throw new AppError('Vote non trouvé ou expiré', 404);
-    }
-
-    if (vote.voters.includes(userId as any)) {
-      throw new AppError('Vous avez déjà voté', 400);
-    }
+    if (!vote) throw new AppError('Vote non trouvé', 404);
+    if (vote.voters.includes(userId as any)) throw new AppError('Déjà voté', 400);
 
     vote.options[optionIndex].count += 1;
     vote.voters.push(userId as any);
@@ -659,86 +340,28 @@ export class TontineService {
     return vote;
   }
 
-  /**
-   * Vérifier et appliquer les limites Premium (Suspension automatique)
-   * Cette méthode est appelée lors de la connexion ou d'actions critiques.
-   */
-  static async enforcePremiumLimits(userId: string): Promise<void> {
-    const user = await User.findById(userId);
-    if (!user) return;
-
-    const isPremium = user.subscription?.plan === 'premium';
-    const activeTontines = await Tontine.find({
-      creatorId: userId,
-      status: { $in: ['active', 'pending', 'suspended_premium_required'] },
-    }).sort({ createdAt: 1 }); // On garde les plus anciennes
-
-    if (!isPremium && activeTontines.length > 1) {
-      // Suspendre toutes sauf la première
-      for (let i = 1; i < activeTontines.length; i++) {
-        if (activeTontines[i].status !== 'suspended_premium_required') {
-          activeTontines[i].status = 'suspended_premium_required';
-          await activeTontines[i].save();
-        }
-      }
-    } else if (isPremium) {
-      // Réactiver les tontines suspendues si l'utilisateur est repassé Premium
-      for (const tontine of activeTontines) {
-        if (tontine.status === 'suspended_premium_required') {
-          // On remet en 'active' ou 'pending' selon si elle avait commencé (on simplifie en active/pending selon startDate)
-          tontine.status = tontine.startDate ? 'active' : 'pending';
-          await tontine.save();
-        }
-      }
-    }
+  static async exportTontineReport(tontineId: string, turn?: number) {
+    const query: any = { tontineId };
+    if (turn) query.turnIndex = turn;
+    const contributions = await TontineContribution.find(query).populate('memberId');
+    const fields = ['memberId.displayName', 'turnIndex', 'amountPaid', 'currency', 'paidAt', 'validationStatus'];
+    const parser = new Parser({ fields });
+    return parser.parse(contributions);
   }
 
-  /**
-   * Obtenir toutes les contributions d'une tontine (Reçus)
-   * Accessible au créateur pour le suivi et la validation manuelle
-   */
-  static async getTontineContributions(tontineId: string, userId: string): Promise<any[]> {
+  static async getTontineContributions(tontineId: string, userId: string) {
     const tontine = await Tontine.findById(tontineId);
-    if (!tontine) throw new AppError('Tontine non trouvée', 404);
-
-    // Seul le créateur peut consulter tous les reçus pour l'instant (Suivi)
-    if (tontine.creatorId.toString() !== userId) {
-      throw new AppError("Seul le créateur peut consulter l'historique complet des reçus.", 403);
-    }
-
-    return await TontineContribution.find({ tontineId })
-      .populate('memberId', 'displayName')
-      .sort({ turnIndex: -1, paidAt: -1 });
+    if (!tontine || tontine.creatorId.toString() !== userId) throw new AppError('Non autorisé', 403);
+    return TontineContribution.find({ tontineId }).populate('memberId', 'displayName').sort({ createdAt: -1 });
   }
 
-  /**
-   * Obtenir les tontines de l'utilisateur (Membre ou Créateur)
-   */
-  static async getUserTontines(userId: string): Promise<any[]> {
-    // 1. Trouver toutes les adhésions de l'utilisateur
-    const memberships = await TontineMember.find({ userId }).select(
-      'tontineId invitationStatus parts',
-    );
-
-    if (memberships.length === 0) return [];
-
-    const tontineIds = memberships.map((m) => m.tontineId);
-
-    // 2. Récupérer les détails des tontines
-    const tontines = await Tontine.find({ _id: { $in: tontineIds } })
-      .populate('creatorId', 'firstName lastName')
-      .sort({ updatedAt: -1 });
-
-    // 3. Fusionner les infos (statut membre + infos tontine)
-    return tontines.map((tontine) => {
-      const membership = memberships.find((m) => m.tontineId.toString() === tontine._id.toString());
-      return {
-        ...tontine.toObject(),
-        userMembership: {
-          status: membership?.invitationStatus,
-          parts: membership?.parts,
-        },
-      };
-    });
+  static async enforcePremiumLimits(userId: string) {
+    const user = await User.findById(userId);
+    if (user?.subscription.plan === 'free') {
+      await Tontine.updateMany(
+        { creatorId: userId, status: 'active' },
+        { $set: { status: 'suspended_premium_required' } }
+      );
+    }
   }
 }

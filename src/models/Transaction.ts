@@ -1,7 +1,7 @@
 import mongoose, { Schema, Document } from 'mongoose';
 import { ITransaction } from '../types/models';
 
-export interface ITransactionDocument extends ITransaction, Document {}
+export interface ITransactionDocument extends ITransaction, Document { }
 
 const transactionSchema = new Schema<ITransactionDocument>(
   {
@@ -23,7 +23,15 @@ const transactionSchema = new Schema<ITransactionDocument>(
     },
     type: {
       type: String,
-      enum: ['income', 'expense'],
+      enum: [
+        'income',
+        'expense',
+        'deposit',
+        'withdrawal',
+        'tontine_contribution',
+        'tontine_payout',
+        'saving_transfer',
+      ],
       required: [true, 'Type is required'],
     },
     category: {
@@ -42,6 +50,27 @@ const transactionSchema = new Schema<ITransactionDocument>(
       default: Date.now,
       required: true,
     },
+    status: {
+      type: String,
+      enum: ['pending', 'completed', 'failed', 'cancelled'],
+      default: 'completed',
+    },
+    reference: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+    externalReference: String,
+    paymentMethod: {
+      type: String,
+      enum: ['stripe', 'notchpay', 'wallet', 'cash'],
+    },
+    fees: {
+      type: Number,
+      default: 0,
+    },
+    metadata: Schema.Types.Mixed,
+    receiptUrl: String,
     tags: [String],
     isRecurring: {
       type: Boolean,

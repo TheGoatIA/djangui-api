@@ -49,7 +49,15 @@
                         "type": "string",
                         "enum": [
                             "income",
-                            "expense"
+                            "expense",
+                            "deposit",
+                            "withdrawal",
+                            "transfer",
+                            "saving_transfer",
+                            "tontine_contribution",
+                            "tontine_payout",
+                            "fee",
+                            "refund"
                         ],
                         "example": "expense"
                     },
@@ -92,6 +100,29 @@
                         "type": "boolean",
                         "example": false
                     },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "pending",
+                            "completed",
+                            "failed",
+                            "canceled",
+                            "reversed"
+                        ],
+                        "example": "completed"
+                    },
+                    "currency": {
+                        "type": "string",
+                        "example": "XAF"
+                    },
+                    "paymentMethod": {
+                        "type": "string",
+                        "example": "wallet"
+                    },
+                    "reference": {
+                        "type": "string",
+                        "example": "KRI-123456"
+                    },
                     "recurringFrequency": {
                         "type": "string",
                         "enum": [
@@ -122,6 +153,81 @@
                     "updatedAt": {
                         "type": "string",
                         "format": "date-time"
+                    }
+                }
+            },
+            "Wallet": {
+                "type": "object",
+                "properties": {
+                    "userId": {
+                        "type": "string"
+                    },
+                    "balance": {
+                        "type": "number",
+                        "example": 25000
+                    },
+                    "currency": {
+                        "type": "string",
+                        "example": "XAF"
+                    },
+                    "isActive": {
+                        "type": "boolean",
+                        "example": true
+                    }
+                }
+            },
+            "KYC": {
+                "type": "object",
+                "properties": {
+                    "documentType": {
+                        "type": "string",
+                        "enum": [
+                            "cni",
+                            "passport",
+                            "driver_license"
+                        ]
+                    },
+                    "documentNumber": {
+                        "type": "string"
+                    },
+                    "fullName": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "none",
+                            "pending",
+                            "verified",
+                            "rejected"
+                        ]
+                    },
+                    "rejectionReason": {
+                        "type": "string"
+                    }
+                }
+            },
+            "Invoice": {
+                "type": "object",
+                "properties": {
+                    "invoiceNumber": {
+                        "type": "string",
+                        "example": "INV-2026-ABCD"
+                    },
+                    "amount": {
+                        "type": "number",
+                        "example": 5000
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "issued",
+                            "paid",
+                            "canceled"
+                        ]
+                    },
+                    "fileUrl": {
+                        "type": "string"
                     }
                 }
             },
@@ -1270,26 +1376,26 @@
                         }
                     }
                 }
-            }
-        },
-        "TurnSummary": {
-            "type": "object",
-            "properties": {
-                "collectedAmount": {
-                    "type": "number",
-                    "example": 450000
-                },
-                "expectedAmount": {
-                    "type": "number",
-                    "example": 500000
-                },
-                "contributorsCount": {
-                    "type": "integer",
-                    "example": 9
-                },
-                "totalMembers": {
-                    "type": "integer",
-                    "example": 10
+            },
+            "TurnSummary": {
+                "type": "object",
+                "properties": {
+                    "collectedAmount": {
+                        "type": "number",
+                        "example": 450000
+                    },
+                    "expectedAmount": {
+                        "type": "number",
+                        "example": 500000
+                    },
+                    "contributorsCount": {
+                        "type": "integer",
+                        "example": 9
+                    },
+                    "totalMembers": {
+                        "type": "integer",
+                        "example": 10
+                    }
                 }
             }
         }
@@ -6518,15 +6624,15 @@
                 }
             }
         },
-        "/v1/challenges/validate-week": {
+        "/v1/challenges/deposit": {
             "post": {
                 "tags": [
                     "Challenges"
                 ],
-                "summary": "Validate Week",
+                "summary": "Deposit Money for Challenge",
                 "requestBody": {
                     "content": {
-                        "multipart/form-data": {
+                        "application/json": {
                             "schema": {
                                 "type": "object",
                                 "properties": {
@@ -6541,11 +6647,6 @@
                                     "amount": {
                                         "type": "number",
                                         "description": "The amount being saved"
-                                    },
-                                    "proof": {
-                                        "type": "string",
-                                        "format": "binary",
-                                        "description": "Screenshot of the MoMo/Orange Money transaction receipt"
                                     }
                                 }
                             }
@@ -6560,8 +6661,8 @@
                                 "example": {
                                     "success": true,
                                     "data": {
-                                        "xpGained": 50,
-                                        "newBalance": 12500
+                                        "currentValue": 12500,
+                                        "status": "active"
                                     }
                                 }
                             }
@@ -6704,6 +6805,10 @@
                                     },
                                     "type": {
                                         "type": "string"
+                                    },
+                                    "phone": {
+                                        "type": "string",
+                                        "description": "Optional phone number (+237...). If not provided, user profile phone is used."
                                     }
                                 }
                             }
@@ -6720,6 +6825,379 @@
                                     "data": {
                                         "url": "https://api.notchpay.co/...",
                                         "reference": "NTP-456"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/fintech/wallet/balance": {
+            "get": {
+                "tags": [
+                    "Fintech"
+                ],
+                "summary": "Get Wallet Balance",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "success",
+                                    "data": {
+                                        "balance": 25000,
+                                        "currency": "XAF"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/fintech/wallet/transactions": {
+            "get": {
+                "tags": [
+                    "Fintech"
+                ],
+                "summary": "Get Wallet Transactions",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "success",
+                                    "results": 2,
+                                    "data": {
+                                        "transactions": [
+                                            {
+                                                "reference": "TXN-123",
+                                                "amount": 5000,
+                                                "type": "expense",
+                                                "status": "completed"
+                                            },
+                                            {
+                                                "reference": "TXN-456",
+                                                "amount": 10000,
+                                                "type": "income",
+                                                "status": "completed"
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/fintech/kyc/submit": {
+            "post": {
+                "tags": [
+                    "Fintech"
+                ],
+                "summary": "Submit KYC Documents",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "documentType": {
+                                        "type": "string",
+                                        "enum": [
+                                            "cni",
+                                            "passport"
+                                        ]
+                                    },
+                                    "documentNumber": {
+                                        "type": "string"
+                                    },
+                                    "fullName": {
+                                        "type": "string"
+                                    },
+                                    "documentImageUrl": {
+                                        "type": "string"
+                                    },
+                                    "selfieImageUrl": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "success",
+                                    "message": "Documents KYC soumis et en cours de validation par IA",
+                                    "data": {
+                                        "kycLevel": "pending"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/fintech/payout/withdraw": {
+            "post": {
+                "tags": [
+                    "Fintech"
+                ],
+                "summary": "Withdraw Funds to Mobile Money",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "amount": {
+                                        "type": "number"
+                                    },
+                                    "phoneNumber": {
+                                        "type": "string"
+                                    },
+                                    "provider": {
+                                        "type": "string",
+                                        "enum": [
+                                            "orange",
+                                            "mtn"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "success",
+                                    "message": "Demande de retrait initiée",
+                                    "data": {
+                                        "transferId": "tr_12345",
+                                        "reference": "PAY-REF-99"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/fintech/invoice/{transactionId}": {
+            "get": {
+                "tags": [
+                    "Fintech"
+                ],
+                "summary": "Download PDF Invoice",
+                "parameters": [
+                    {
+                        "name": "transactionId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "success",
+                                    "data": {
+                                        "pdfUrl": "https://kauri.com/inv/123.pdf",
+                                        "invoiceNumber": "INV-2026-001"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/fintech/challenge/deposit": {
+            "post": {
+                "tags": [
+                    "Fintech"
+                ],
+                "summary": "Stake Real Money in a Challenge",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "userChallengeId": {
+                                        "type": "string"
+                                    },
+                                    "weekNumber": {
+                                        "type": "number"
+                                    },
+                                    "amount": {
+                                        "type": "number"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "success",
+                                    "data": {
+                                        "challenge": {
+                                            "status": "active",
+                                            "currentValue": 5000
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/admin/fintech/kyc/pending": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "List Pending KYC Requests",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "success",
+                                    "results": 1,
+                                    "data": {
+                                        "users": [
+                                            {
+                                                "firstName": "Jean",
+                                                "email": "jean@kauri.cm",
+                                                "kycLevel": "pending"
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/admin/fintech/kyc/verify": {
+            "post": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Approve or Reject KYC Manually",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "userId": {
+                                        "type": "string"
+                                    },
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "verified",
+                                            "rejected"
+                                        ]
+                                    },
+                                    "reason": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "success",
+                                    "message": "KYC approuvé",
+                                    "data": {
+                                        "kycLevel": "verified"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/admin/fintech/reconciliation/trigger": {
+            "post": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Trigger Financial Reconciliation",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "success",
+                                    "data": {
+                                        "notchPayBalance": 1500000,
+                                        "totalWallets": 1450000,
+                                        "diff": 50000
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/admin/fintech/stats": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Global Fintech Statistics",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "status": "success",
+                                    "data": {
+                                        "stats": [
+                                            {
+                                                "country": "CM",
+                                                "totalWallets": 150,
+                                                "totalBalance": 4500000
+                                            }
+                                        ]
                                     }
                                 }
                             }
@@ -6752,13 +7230,7 @@
                                 "example": {
                                     "success": true,
                                     "data": {
-                                        "status": "completed",
-                                        "payment": {
-                                            "reference": "NTP-ABC...",
-                                            "amount": 5000,
-                                            "currency": "XAF",
-                                            "status": "completed"
-                                        }
+                                        "status": "completed"
                                     }
                                 }
                             }
@@ -6816,21 +7288,7 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "OK",
-                        "content": {
-                            "application/json": {
-                                "example": {
-                                    "success": true,
-                                    "data": {
-                                        "merchant": "Casino",
-                                        "amount": 1500,
-                                        "date": "2026-01-07",
-                                        "fileName": "receipt-123.jpg",
-                                        "filePath": "uploads/receipts/receipt-123.jpg"
-                                    }
-                                }
-                            }
-                        }
+                        "description": "OK"
                     }
                 }
             }
@@ -6858,17 +7316,7 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "OK",
-                        "content": {
-                            "application/json": {
-                                "example": {
-                                    "success": true,
-                                    "data": {
-                                        "avatarUrl": "/uploads/avatars/avatar-123.jpg"
-                                    }
-                                }
-                            }
-                        }
+                        "description": "OK"
                     }
                 }
             }
@@ -6879,125 +7327,108 @@
                     "Emails"
                 ],
                 "summary": "Send Email",
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object"
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/v1/premium/auto-budget": {
+            "post": {
+                "tags": [
+                    "Premium"
+                ],
+                "summary": "Generate AI Auto-Budget",
+                "description": "[Premium Only] Analyzes transaction history to generate an optimized monthly budget.",
+                "responses": {
+                    "200": {
+                        "description": "Budget generated successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AutoBudgetResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Premium subscription required"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/v1/premium/oracle": {
+            "get": {
+                "tags": [
+                    "Premium"
+                ],
+                "summary": "Get Oracle AI Alerts",
+                "description": "[Premium Only] Gets predictive financial alerts and risk analysis.",
+                "responses": {
+                    "200": {
+                        "description": "Alerts retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/OracleResponse"
+                                }
                             }
                         }
                     }
                 },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/v1/premium/report": {
+            "get": {
+                "tags": [
+                    "Premium"
+                ],
+                "summary": "Get Style Magazine Report",
+                "description": "[Premium Only] Generates a rich, narrative monthly financial report.",
+                "parameters": [
+                    {
+                        "name": "month",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "year",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "Report generated successfully",
                         "content": {
                             "application/json": {
-                                "example": {
-                                    "success": true,
-                                    "message": "Sent"
+                                "schema": {
+                                    "$ref": "#/components/schemas/ReportResponse"
                                 }
                             }
                         }
                     }
-                }
-            },
-            "/v1/premium/auto-budget": {
-                "post": {
-                    "tags": [
-                        "Premium"
-                    ],
-                    "summary": "Generate AI Auto-Budget",
-                    "description": "[Premium Only] Analyzes transaction history to generate an optimized monthly budget.",
-                    "responses": {
-                        "200": {
-                            "description": "Budget generated successfully",
-                            "content": {
-                                "application/json": {
-                                    "schema": {
-                                        "$ref": "#/components/schemas/AutoBudgetResponse"
-                                    }
-                                }
-                            }
-                        },
-                        "403": {
-                            "description": "Premium subscription required"
-                        }
-                    },
-                    "security": [
-                        {
-                            "bearerAuth": []
-                        }
-                    ]
-                }
-            },
-            "/v1/premium/oracle": {
-                "get": {
-                    "tags": [
-                        "Premium"
-                    ],
-                    "summary": "Get Oracle AI Alerts",
-                    "description": "[Premium Only] Gets predictive financial alerts and risk analysis.",
-                    "responses": {
-                        "200": {
-                            "description": "Alerts retrieved successfully",
-                            "content": {
-                                "application/json": {
-                                    "schema": {
-                                        "$ref": "#/components/schemas/OracleResponse"
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    "security": [
-                        {
-                            "bearerAuth": []
-                        }
-                    ]
-                }
-            },
-            "/v1/premium/report": {
-                "get": {
-                    "tags": [
-                        "Premium"
-                    ],
-                    "summary": "Get Style Magazine Report",
-                    "description": "[Premium Only] Generates a rich, narrative monthly financial report.",
-                    "parameters": [
-                        {
-                            "name": "month",
-                            "in": "query",
-                            "schema": {
-                                "type": "integer"
-                            }
-                        },
-                        {
-                            "name": "year",
-                            "in": "query",
-                            "schema": {
-                                "type": "integer"
-                            }
-                        }
-                    ],
-                    "responses": {
-                        "200": {
-                            "description": "Report generated successfully",
-                            "content": {
-                                "application/json": {
-                                    "schema": {
-                                        "$ref": "#/components/schemas/ReportResponse"
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    "security": [
-                        {
-                            "bearerAuth": []
-                        }
-                    ]
-                }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
             }
         }
     }

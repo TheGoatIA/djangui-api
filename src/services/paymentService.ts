@@ -112,7 +112,12 @@ export class PaymentService {
   /**
    * Initialize a NotchPay payment (Restricted to Cameroon)
    */
-  static async initializeNotchPay(userId: any, amount: number, type: 'deposit' | 'subscription') {
+  static async initializeNotchPay(
+    userId: any,
+    amount: number,
+    type: 'deposit' | 'subscription',
+    phone?: string,
+  ) {
     const userIdStr = userId.toString();
     const user = await User.findById(userIdStr);
     if (!user) throw new AppError('User not found', 404);
@@ -120,6 +125,20 @@ export class PaymentService {
     // Geo-fencing: NotchPay only for Cameroon
     if (user.country !== 'CM') {
       throw new AppError('NotchPay is only available for users in Cameroon.', 400);
+    }
+
+    // Phone validation: NotchPay requires a valid phone number
+    const finalPhone = phone || user.phone;
+    if (!finalPhone) {
+      throw new AppError(
+        'A phone number is required for NotchPay. Please provide it or update your profile.',
+        400,
+      );
+    }
+
+    // Basic format check for NotchPay (must be valid number, ideally starting with +)
+    if (!/^\+?[1-9]\d{1,14}$/.test(finalPhone.replace(/\s/g, ''))) {
+      throw new AppError('The phone number provided is not valid for NotchPay (+237...).', 400);
     }
 
     const reference = `NTP-${uuidv4().split('-')[0].toUpperCase()}`;
@@ -133,7 +152,7 @@ export class PaymentService {
         customer: {
           name: `${user.firstName} ${user.lastName}`,
           email: user.email,
-          phone: user.phone,
+          phone: finalPhone,
         },
         description: type === 'subscription' ? 'Abonnement Kauri Premium' : 'Recharge Portefeuille',
         reference,
@@ -197,46 +216,51 @@ export class PaymentService {
 
     MonitoringService.recordPaymentGateway(payment.method || 'unknown', 'complete', 'success');
 
-    // If it's a deposit, update wallet,
-    // If it's a subscription, update user plan
+    // If it's a deposit, update wallet via WalletService (ACID)
     if (payment.type === 'deposit') {
-      await User.findByIdAndUpdate(payment.userId, {
-        $inc: { walletBalance: payment.amount },
+      const { WalletService } = require('./walletService');
+      const { InvoiceService } = require('./invoiceService');
+
+      const transaction = await WalletService.executeTransaction({
+        userId: payment.userId.toString(),
+        amount: payment.amount,
+        type: 'deposit',
+        description: 'Recharge Portefeuille Kauri',
+        paymentMethod: payment.method,
+        externalReference: payment.externalReference,
+        reference: payment.reference,
       });
 
-      // Notify
-      await NotificationService.sendToUser(payment.userId.toString(), {
-        title: '',
-        body: '',
-        category: 'transactional',
-        translationKey: 'RECHARGE_SUCCESS',
-        translationData: { amount: payment.amount, currency: payment.currency },
-        data: { type: 'payment', status: 'success', reference },
-      });
+      // Générer la facture automatique
+      await InvoiceService.generateForTransaction(transaction._id.toString());
     } else if (payment.type === 'subscription') {
       logger.info(`Upgrading user ${payment.userId} to Premium...`);
-      const updatedUser = await User.findByIdAndUpdate(
-        payment.userId,
-        {
-          'subscription.plan': 'premium',
-          'subscription.status': 'active',
-          'subscription.startDate': new Date(),
-          // Plan for 1 month
-          'subscription.endDate': new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        },
-        { new: true },
-      );
+      const { InvoiceService } = require('./invoiceService');
+      const Transaction = require('../models/Transaction').default;
 
-      logger.info(`User upgrade result: ${updatedUser?.subscription?.plan}`);
-
-      // Notify
-      await NotificationService.sendToUser(payment.userId.toString(), {
-        title: '',
-        body: '',
-        category: 'transactional',
-        translationKey: 'SUBSCRIPTION_ACTIVATED',
-        data: { type: 'payment', status: 'success', reference },
+      await User.findByIdAndUpdate(payment.userId, {
+        'subscription.plan': 'premium',
+        'subscription.status': 'active',
+        'subscription.startDate': new Date(),
+        'subscription.endDate': new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       });
+
+      // Créer une transaction de type income/expense pour l'abonnement
+      const subTransaction = await Transaction.create({
+        userId: payment.userId,
+        amount: payment.amount,
+        currency: payment.currency,
+        type: 'expense',
+        category: 'subscription',
+        description: 'Abonnement Kauri Premium',
+        status: 'completed',
+        reference: payment.reference,
+        externalReference: payment.externalReference,
+        paymentMethod: payment.method,
+        date: new Date(),
+      });
+
+      await InvoiceService.generateForTransaction(subTransaction._id.toString());
     }
 
     // Audit Log for payment completion
