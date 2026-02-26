@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { KYCService } from '../services/kycService';
 import { ReconciliationService } from '../services/reconciliationService';
+import { ReportService } from '../services/reportService';
 import User from '../models/User';
 import { catchAsync } from '../utils';
 import { AppError } from '../middleware/errorHandler';
@@ -36,10 +37,10 @@ export class AdminFintechController {
     });
 
     /**
-     * Déclencher manuellement une réconciliation bancaire
+     * Déclencher manuellement un audit d'intégrité interne (Réconciliation)
      */
     static triggerReconciliation = catchAsync(async (req: any, res: Response) => {
-        const stats = await ReconciliationService.checkGlobalNotchPayBalance();
+        const stats = await ReconciliationService.checkInternalIntegrity();
 
         res.status(200).json({
             status: 'success',
@@ -48,23 +49,25 @@ export class AdminFintechController {
     });
 
     /**
-     * Obtenir des statistiques financières globales
+     * Obtenir des statistiques financières globales (Argent Réel & AUM)
      */
     static getFintechStats = catchAsync(async (req: any, res: Response) => {
-        const stats = await User.aggregate([
-            { $match: { isActive: true } },
-            {
-                $group: {
-                    _id: '$country',
-                    totalWallets: { $sum: 1 },
-                    totalBalance: { $sum: '$walletBalance' }
-                }
-            }
-        ]);
+        const stats = await ReportService.getExecutiveFinancialReport('daily');
 
         res.status(200).json({
             status: 'success',
-            data: { stats }
+            data: {
+                metrics: {
+                    totalAUM: stats.health.totalAUM,
+                    revenue: stats.revenue.totalFees,
+                    margin: stats.revenue.margin,
+                    volume24h: stats.transactions.totalVolume,
+                    anomalyCount: stats.health.anomalyCount,
+                    riskLevel: stats.health.riskLevel
+                },
+                period: stats.period,
+                growth: stats.growth
+            }
         });
     });
 }

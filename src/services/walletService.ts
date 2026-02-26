@@ -4,6 +4,8 @@ import Transaction from '../models/Transaction';
 import { AppError } from '../middleware/errorHandler';
 import { AuditService } from './auditService';
 import { NotificationService } from './notificationService';
+import { MonitoringService } from './monitoringService';
+import { FinancialAlertService } from './financialAlertService';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger';
 
@@ -78,7 +80,9 @@ export class WalletService {
                 { session },
             );
 
-            // 5. Audit Log
+            // 5. Audit Log & Metrics
+            MonitoringService.recordTransaction(type, 'success', user.currency || 'XAF', amount);
+
             await AuditService.record({
                 userId: userId as any,
                 action: type.toUpperCase(),
@@ -89,8 +93,18 @@ export class WalletService {
             });
 
             await session.commitTransaction();
+            logger.info(`[FINTECH] Transaction ${transactionRef} successful for user ${userId}. Amount: ${amount}, Type: ${type}`);
 
-            // 6. Notification (Hors transaction car non critique)
+            // 6. Monitoring d'Alerte (Async)
+            FinancialAlertService.monitorTransaction({
+                userId,
+                amount,
+                type,
+                reference: transactionRef,
+                status: 'success'
+            }).catch(err => logger.error(`Alert Monitoring Error: ${err.message}`));
+
+            // 7. Notification (Hors transaction car non critique)
             NotificationService.sendToUser(userId, {
                 title: 'Transaction réussie',
                 body: `Votre transaction de ${amount} ${user.currency} a été traitée.`,
@@ -103,7 +117,18 @@ export class WalletService {
             return transaction[0];
         } catch (error: any) {
             await session.abortTransaction();
-            logger.error(`Wallet Transaction Aborted: ${error.message}`);
+            MonitoringService.recordTransaction(data.type, 'failure', 'XAF', data.amount);
+            logger.error(`[FINTECH] Wallet Transaction FAILED: ${error.message} (User: ${data.userId}, Type: ${data.type})`);
+
+            // Alerte sur échec critique
+            FinancialAlertService.monitorTransaction({
+                userId: data.userId,
+                amount: data.amount,
+                type: data.type,
+                reference: data.reference || 'N/A',
+                status: 'failed'
+            }).catch(err => logger.error(`Failure Alert Monitoring Error: ${err.message}`));
+
             throw error;
         } finally {
             session.endSession();

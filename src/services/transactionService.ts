@@ -278,22 +278,17 @@ export class TransactionService {
   }
 
   static async deleteTransaction(id: string, userId: string) {
-    const transaction = await Transaction.findOneAndDelete({ _id: id, userId });
+    const transaction = await Transaction.findOne({ _id: id, userId });
     if (!transaction) {
       throw new AppError('Transaction not found', 404);
     }
-    // TODO: Update budget/goal if necessary
 
-    // Reverse balance update
-    const wasDigitalIncome = transaction.type === 'income' && ['stripe', 'notchpay', 'wallet'].includes(transaction.paymentMethod as any);
-    const wasWalletExpense = transaction.type === 'expense' && transaction.paymentMethod === 'wallet';
-
-    if (wasDigitalIncome) {
-      await User.findByIdAndUpdate(userId, { $inc: { walletBalance: -transaction.amount } });
-    } else if (wasWalletExpense) {
-      await User.findByIdAndUpdate(userId, { $inc: { walletBalance: transaction.amount } });
+    // Sécurité Fintech : Interdiction de supprimer des transactions réelles (Wallet, NotchPay, Stripe)
+    if (transaction.paymentMethod !== 'cash') {
+      throw new AppError('Les transactions financières réelles ne peuvent pas être supprimées pour des raisons d\'audit et d\'intégrité.', 403);
     }
 
+    await Transaction.deleteOne({ _id: id });
     return true;
   }
 

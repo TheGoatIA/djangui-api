@@ -59,10 +59,34 @@ export class WebhookController {
       // Ici on peut envoyer une notification de succès finale.
       logger.info(`Transfer ${data.data.reference} completed successfully`);
     } else if (data.event === 'transfer.failed') {
-      // En cas d'échec du transfert après l'acceptation initiale
       const reference = data.data.reference;
       logger.error(`Transfer ${reference} failed: ${data.data.reason}`);
-      // TODO: Logique de remboursement automatique si non gérée dans PayoutService
+
+      // Logique de remboursement automatique
+      const Transaction = require('../models/Transaction').default;
+      const { WalletService } = require('../services/walletService');
+
+      try {
+        const originalTx = await Transaction.findOne({ reference });
+        if (originalTx && originalTx.status !== 'failed') {
+          await WalletService.executeTransaction({
+            userId: originalTx.userId.toString(),
+            amount: originalTx.amount, // Montant total (Net + Frais)
+            type: 'deposit',
+            description: `Remboursement transfert échoué (${data.data.reason || 'Erreur opérateur'})`,
+            paymentMethod: 'wallet',
+            metadata: { originalReference: reference }
+          });
+
+          originalTx.status = 'failed';
+          originalTx.metadata = { ...originalTx.metadata, failureReason: data.data.reason };
+          await originalTx.save();
+
+          logger.info(`Refund processed for failed transfer: ${reference}`);
+        }
+      } catch (refundErr: any) {
+        logger.error(`Critical: Failed to process refund for transfer ${reference}: ${refundErr.message}`);
+      }
     }
 
     res.json({ received: true });
