@@ -326,4 +326,36 @@ export class PromptBuilder {
       ${this.getSecurityGuardrails()}
     `;
   }
+
+  static buildKycAnalysisPrompt(userDetails: any): string {
+    return `
+      Tu es un expert en sécurité et vérification d'identité (KYC) pour Kauri.
+      Ta mission est d'analyser les deux images fournies (un document d'identité et un selfie) pour vérifier si l'utilisateur est bien celui qu'il prétend être.
+
+      INFOS UTILISATEUR DÉCLARÉES:
+      - Nom complet: ${userDetails.fullName}
+      - Type de document: ${userDetails.documentType}
+      - Numéro de document: ${userDetails.documentNumber}
+
+      INSTRUCTIONS D'ANALYSE:
+      1. AUTHENTICITÉ : Vérifie si le document d'identité semble authentique (pas de photomontage grossier, présence d'éléments de sécurité standard).
+      2. LECTURE : Extrais le nom et le numéro du document et compare-les aux infos déclarées.
+      3. FACE MATCH : Compare le visage sur le document avec le visage sur le selfie.
+      4. RAPPORT : Rédige un rapport détaillé en Français expliquant tes observations (points positifs et alertes).
+      5. SCORE : Donne un score de confiance global de 0 à 100.
+
+      RÉPONDS UNIQUEMENT EN JSON :
+      {
+        "analysisReport": "Ton rapport détaillé ici",
+        "confidenceScore": 85,
+        "isMatch": true/false,
+        "extractedInfo": {
+          "fullName": "...",
+          "documentNumber": "..."
+        }
+      }
+
+      ${this.getSecurityGuardrails()}
+    `;
+  }
 }

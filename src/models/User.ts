@@ -137,6 +137,13 @@ const userSchema = new Schema<IUserDocument>(
       selfieImageUrl: String,
       verifiedAt: Date,
       rejectionReason: String,
+      aiReport: String,
+      aiConfidence: Number,
+      aiAnalysisStatus: {
+        type: String,
+        enum: ['pending', 'completed', 'failed'],
+        default: 'pending',
+      },
     },
     xp: {
       type: Number,

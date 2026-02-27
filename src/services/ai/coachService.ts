@@ -191,15 +191,17 @@ export class CoachService {
         action: 'generate_daily_advice',
       }).catch((e) => logger.warn(`Failed to log advice activity: ${e}`));
 
+      const isEn = user.language === 'en';
       return {
-        title: data.title || "Conseil d'Anne 💡",
-        body: data.body || 'Prends soin de tes finances aujourd’hui !',
+        title: data.title || (isEn ? "Anne's Advice 💡" : "Conseil d'Anne 💡"),
+        body: data.body || (isEn ? "Take care of your finances today!" : "Prends soin de tes finances aujourd’hui !"),
       };
     } catch (error) {
       logger.error(`Failed to generate AI advice for user ${userId}: ${error}`);
+      const isEn = user.language === 'en';
       return {
-        title: "Conseil d'Anne 💡",
-        body: 'Prends soin de tes finances aujourd’hui !',
+        title: isEn ? "Anne's Advice 💡" : "Conseil d'Anne 💡",
+        body: isEn ? "Take care of your finances today!" : "Prends soin de tes finances aujourd’hui !",
       };
     }
   }

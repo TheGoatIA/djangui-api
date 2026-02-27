@@ -106,11 +106,11 @@ export class WalletService {
 
             // 7. Notification (Hors transaction car non critique)
             NotificationService.sendToUser(userId, {
-                title: 'Transaction réussie',
-                body: `Votre transaction de ${amount} ${user.currency} a été traitée.`,
+                title: '',
+                body: '',
                 category: 'transactional',
                 translationKey: 'TRANSACTION_SUCCESS',
-                translationData: { amount, type },
+                translationData: { amount, currency: user.currency, type },
                 data: { transactionRef, type },
             }).catch(err => logger.error(`Wallet Notification Error: ${err.message}`));
 

@@ -2,6 +2,8 @@ import { Response, NextFunction } from 'express';
 import { AnneVoiceService } from '../services/ai/anneVoiceService';
 import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
+import { StorageService } from '../services/storageService';
+import fs from 'fs';
 
 export class VoiceController {
   /**
@@ -22,9 +24,22 @@ export class VoiceController {
         req.user._id,
       );
 
+      // Upload vers MinIO (pour historique/audit)
+      const minioUrl = await StorageService.uploadFile(
+        filePath,
+        'kauri-uploads',
+        `voice/${req.file.filename}`
+      );
+
+      // Nettoyage local
+      try { fs.unlinkSync(filePath); } catch (e) { }
+
       res.status(200).json({
         success: true,
-        data: result,
+        data: {
+          ...result,
+          audioUrl: minioUrl
+        },
       });
     } catch (err) {
       next(err);

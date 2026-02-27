@@ -49,6 +49,9 @@ export interface IUser {
     selfieImageUrl?: string;
     verifiedAt?: Date;
     rejectionReason?: string;
+    aiReport?: string;
+    aiConfidence?: number;
+    aiAnalysisStatus?: 'pending' | 'completed' | 'failed';
   };
   xp: number;
   level: number;

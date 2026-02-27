@@ -166,8 +166,8 @@ export class SubscriptionService {
 
         // Optionnel : Créer une notification pour l'utilisateur
         await NotificationService.sendToUser(sub.userId.toString(), {
-          title: 'Abonnement renouvelé',
-          body: `Votre abonnement "${sub.name}" a été reconduit jusqu'au ${nextBillingDate.toLocaleDateString()}.`,
+          title: '',
+          body: '',
           translationKey: 'SUBSCRIPTION_RENEWED',
           translationData: { name: sub.name, date: nextBillingDate.toLocaleDateString() },
           data: { type: 'SUBSCRIPTION_RENEWAL', subscriptionId: sub._id.toString() },

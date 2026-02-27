@@ -15,6 +15,8 @@
     "BADGE_AWARDED_BODY": "Tu as gagné le badge : {{badgeName}} {{icon}}",
     "TONTINE_JOIN_TITLE": "Nouveau membre ! 🤝",
     "TONTINE_JOIN_BODY": "{{name}} a rejoint votre tontine \"{{tontineName}}\".",
+    "TRANSACTION_SUCCESS_TITLE": "Transaction réussie ✅",
+    "TRANSACTION_SUCCESS_BODY": "Votre transaction de {{amount}} {{currency}} a été traitée avec succès.",
     "TONTINE_STARTED_TITLE": "Tontine lancée ! 🚀",
     "TONTINE_STARTED_BODY": "La tontine \"{{tontineName}}\" a démarré. Préparez vos cotisations !",
     "TONTINE_COMPLETED_TITLE": "Tontine terminée ! 🎉",
@@ -56,5 +58,11 @@
     "TONTINE_CONTRIBUTION_VALIDATED_TITLE": "Cotisation reçue ! ✅",
     "TONTINE_CONTRIBUTION_VALIDATED_BODY": "Votre preuve de paiement pour le tour {{turn}} de \"{{tontineName}}\" a été validée par IA.",
     "SUBSCRIPTION_RENEWED_TITLE": "Abonnement renouvelé ! ✅",
-    "SUBSCRIPTION_RENEWED_BODY": "Votre abonnement \"{{name}}\" a été reconduit jusqu'au {{date}}."
+    "SUBSCRIPTION_RENEWED_BODY": "Votre abonnement \"{{name}}\" a été reconduit jusqu'au {{date}}.",
+    "KYC_APPROVED_TITLE": "KYC Approuvé ! ✅",
+    "KYC_APPROVED_BODY": "Votre identité a été vérifiée avec succès. Vous pouvez désormais effectuer des retraits.",
+    "PREMIUM_EXPIRED_TITLE": "Abonnement Expiré 🚨",
+    "PREMIUM_EXPIRED_BODY": "Votre accès Premium a expiré. Renouvelez-le pour continuer à profiter de toutes les fonctionnalités.",
+    "KYC_SUBMITTED_TITLE": "Vérification en cours ⏳",
+    "KYC_SUBMITTED_BODY": "Vos documents KYC ont été reçus et sont en cours d'analyse par notre équipe."
 }
