@@ -8,6 +8,8 @@ import TontineMember from '../models/TontineMember';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import { MonitoringService } from '../services/monitoringService';
+import { StorageService } from '../services/storageService';
+import fs from 'fs';
 
 export class TontineController {
   /**
@@ -147,7 +149,15 @@ export class TontineController {
       const member = await TontineMember.findOne({ tontineId, userId: (req as any).user.id });
       if (!member) throw new AppError("Vous n'êtes pas membre de cette tontine", 403);
 
-      // 4. Création de la contribution
+      // 4. Téléversement vers MinIO
+      const bucket = 'kauri-uploads';
+      const destinationKey = `tontines/${tontineId}/${file.filename}`;
+      const minioUrl = await StorageService.uploadFile(file.path, bucket, destinationKey);
+
+      // Nettoyage local immédiat
+      try { fs.unlinkSync(file.path); } catch (e) { }
+
+      // 5. Création de la contribution
       const isLate = memberInfo.lateFee > 0;
       const contribution = await TontineContribution.create({
         tontineId,
@@ -155,7 +165,7 @@ export class TontineController {
         turnIndex: tontine.currentTurn,
         amountPaid: analysis.amount,
         currency: tontine.currency,
-        proofImage: file.path,
+        proofImage: minioUrl,
         transactionRef: analysis.transactionRef,
         aiAnalysis: {
           detectedAmount: analysis.amount,

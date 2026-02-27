@@ -81,8 +81,10 @@ export class TontineService {
     });
 
     await NotificationService.sendToUser(tontine.creatorId.toString(), {
-      title: 'Nouveau membre',
-      body: `${data.displayName} a rejoint votre tontine ${tontine.name}`,
+      title: '',
+      body: '',
+      translationKey: 'TONTINE_JOIN',
+      translationData: { name: data.displayName, tontineName: tontine.name },
       category: 'important'
     });
 

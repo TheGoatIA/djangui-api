@@ -5,10 +5,9 @@ import { resourceFromAttributes } from '@opentelemetry/resources';
 import { SEMRESATTRS_SERVICE_NAME } from '@opentelemetry/semantic-conventions';
 import logger from '../utils/logger';
 
+import { ParentBasedSampler, TraceIdRatioBasedSampler } from '@opentelemetry/sdk-trace-base';
+
 const traceExporter = new OTLPTraceExporter({
-  // Point to the OTEL Collector (or Jaeger directly)
-  // In Docker: 'http://otel-collector:4317'
-  // Local: 'http://localhost:4317'
   url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhost:4317',
 });
 
@@ -16,11 +15,18 @@ const sdk = new NodeSDK({
   resource: resourceFromAttributes({
     [SEMRESATTRS_SERVICE_NAME]: 'kauri-api',
   }),
+  sampler: new ParentBasedSampler({
+    root: new TraceIdRatioBasedSampler(0.1), // Sample 10% of requests locally
+  }),
   traceExporter,
   instrumentations: [getNodeAutoInstrumentations()],
 });
 
 export const initTracing = async () => {
+  if (process.env.ENABLE_TRACING === 'false') {
+    logger.info('OpenTelemetry Tracing is disabled via environment variable');
+    return;
+  }
   try {
     sdk.start();
     logger.info('OpenTelemetry Tracing initialized');

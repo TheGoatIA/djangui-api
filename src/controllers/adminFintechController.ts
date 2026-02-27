@@ -25,14 +25,21 @@ export class AdminFintechController {
      * Valider ou rejeter manuellement un KYC
      */
     static verifyKYC = catchAsync(async (req: any, res: Response) => {
-        const { userId, status, reason } = req.body;
+        const { userId, status, reason } = req.body; // status: 'verified' | 'none'
+
+        if (!['verified', 'none'].includes(status)) {
+            throw new AppError('Status invalide. Utilisez "verified" ou "none".', 400);
+        }
 
         const user = await KYCService.adminVerify(userId, status, reason);
 
         res.status(200).json({
             status: 'success',
             message: `KYC ${status === 'verified' ? 'approuvé' : 'rejeté'}`,
-            data: { kycLevel: user.kycLevel }
+            data: {
+                kycLevel: user.kycLevel,
+                rejectionReason: user.kycData?.rejectionReason
+            }
         });
     });
 

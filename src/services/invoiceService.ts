@@ -4,6 +4,7 @@ import User from '../models/User';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
+import { StorageService } from './storageService';
 
 export class InvoiceService {
     /**
@@ -198,8 +199,14 @@ export class InvoiceService {
                 stream.on('error', reject);
             });
 
-            // Dans un environnement cloud, on uploaderait ici vers S3
-            const publicUrl = `/uploads/invoices/${fileName}`;
+            // 3. Upload vers MinIO
+            const bucket = 'kauri-invoices';
+            const destinationKey = `invoices/${fileName}`;
+            const publicUrl = await StorageService.uploadFile(filePath, bucket, destinationKey);
+
+            // 4. Nettoyage local (Optionnel, mais recommandé si on veut être full cloud)
+            try { fs.unlinkSync(filePath); } catch (e) { }
+
             invoice.pdfUrl = publicUrl;
             await invoice.save();
 

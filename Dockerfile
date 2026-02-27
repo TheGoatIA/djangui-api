@@ -22,6 +22,7 @@ RUN npm install --omit=dev
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/docs ./docs
+COPY --from=builder /app/src/i18n ./dist/i18n
 
 # Create uploads directory
 RUN mkdir -p uploads/receipts uploads/avatars

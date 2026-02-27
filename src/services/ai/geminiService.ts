@@ -33,7 +33,7 @@ export class GeminiService {
     try {
       // Fetch model ID from system settings, default to gemini-2.5-flash
       const setting = await SystemSetting.findOne({ key: 'gemini_model' });
-      const modelId = setting?.value || 'gemini-1.5-flash';
+      const modelId = setting?.value || 'gemini-2.5-flash';
 
       return genAI.getGenerativeModel({
         model: modelId,

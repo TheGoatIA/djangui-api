@@ -1,6 +1,21 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+import logger from './utils/logger';
+
+// Global Error Handlers (CRITICAL: Capture any crash before/during startup)
+process.on('uncaughtException', (error) => {
+  console.error('CRITICAL: Uncaught Exception:', error);
+  if (logger) logger.error('Uncaught Exception:', error);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('CRITICAL: Unhandled Rejection at:', promise, 'reason:', reason);
+  if (logger) logger.error('Unhandled Rejection:', { reason, promise });
+  process.exit(1);
+});
+
 import { initTracing } from './config/tracing';
 // Initialize OpenTelemetry Tracing
 initTracing();
@@ -13,7 +28,6 @@ import { ChallengeService } from './services/challengeService';
 import { CronService } from './services/cronService';
 import { MonitoringService } from './services/monitoringService';
 import { FeatureFlagService } from './services/featureFlagService';
-import logger from './utils/logger';
 import { seedCountries } from './utils/seedCountries';
 import { MigrationService } from './services/migrationService';
 import app from './app'; // Keep this import as 'app' is used later
@@ -23,29 +37,29 @@ const PORT = process.env.PORT || 3000;
 
 const startServer = async () => {
   try {
-    console.log('Step 1: Connecting to MongoDB...');
+    logger.info('Step 1: Connecting to MongoDB...');
     await connectDB();
-    console.log('Step 1: Connected to MongoDB');
+    logger.info('Step 1: Connected to MongoDB');
 
     // Seed initial data
-    console.log('Step 2: Seeding data...');
+    logger.info('Step 2: Seeding data...');
     await seedCountries();
     await ChallengeService.seedChallenges();
     await FeatureFlagService.seed();
-    console.log('Step 2: Data seeded');
+    logger.info('Step 2: Data seeded');
 
     // Run migrations
-    console.log('Step 2.5: Running migrations...');
+    logger.info('Step 2.5: Running migrations...');
     await MigrationService.runInitialFintechMigration();
     await MigrationService.runRealMoneyMigration();
-    console.log('Step 2.5: Migrations completed');
+    logger.info('Step 2.5: Migrations completed');
 
     // Initialize Monitoring (Prometheus)
-    console.log('Step 3: Init Monitoring...');
+    logger.info('Step 3: Init Monitoring...');
     MonitoringService.init();
 
     // Initialize Cron Jobs
-    console.log('Step 4: Init Cron...');
+    logger.info('Step 4: Init Cron...');
     CronService.init();
 
     const server = app.listen(PORT, () => {

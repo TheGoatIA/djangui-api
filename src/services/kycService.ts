@@ -3,6 +3,10 @@ import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import { AuditService } from './auditService';
 import { NotificationService } from './notificationService';
+import { SlackService } from './slackService';
+import { GeminiService } from './ai/geminiService';
+import { PromptBuilder } from './ai/promptBuilder';
+import axios from 'axios';
 
 export class KYCService {
     /**
@@ -22,7 +26,8 @@ export class KYCService {
         user.kycData = {
             ...data,
             verifiedAt: undefined,
-            rejectionReason: undefined
+            rejectionReason: undefined,
+            aiAnalysisStatus: 'pending'
         };
 
         await user.save();
@@ -36,6 +41,20 @@ export class KYCService {
             metadata: { documentType: data.documentType }
         });
 
+        // 1. Notification Utilisateur : "En cours d'étude"
+        await NotificationService.sendToUser(userId, {
+            title: '',
+            body: '',
+            translationKey: 'KYC_SUBMITTED',
+            category: 'important'
+        }).catch(err => logger.error(`KYC Submission User Notification Error: ${err.message}`));
+
+        // 2. Notification Slack Admin : "Nouvelle soumission"
+        await SlackService.sendNotification(
+            `📑 *Nouvelle soumission KYC*\n*Utilisateur*: ${user.firstName} ${user.lastName} (${user.email})\n*Document*: ${data.documentType.toUpperCase()}\n*Action*: Analyse IA lancée...`,
+            false
+        );
+
         // Déclencher l'analyse IA en arrière-plan
         this.processAIValidation(userId).catch(err =>
             logger.error(`KYC AI Background Error: ${err.message}`)
@@ -45,73 +64,124 @@ export class KYCService {
     }
 
     /**
-     * Simule la validation par IA (OCR + Face Match)
-     * À remplacer par une vraie intégration (ex: OpenAI Vision, AWS Rekognition)
+     * Analyse réelle par IA (Gemini Vision)
      */
     private static async processAIValidation(userId: string) {
-        logger.info(`Starting AI KYC Validation for user ${userId}`);
-
-        // Simulation d'un délai d'analyse
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        logger.info(`Starting Real AI KYC Validation for user ${userId}`);
 
         const user = await User.findById(userId);
-        if (!user || user.kycLevel !== 'pending') return;
+        if (!user || user.kycLevel !== 'pending' || !user.kycData) return;
 
         try {
-            // LOGIQUE IA THÉORIQUE :
-            // 1. OCR sur documentImageUrl -> extraire le nom
-            // 2. FaceMatch(documentImageUrl, selfieImageUrl) -> score > 0.8 ?
-            // 3. Liveness detection sur selfieImageUrl
+            // Télécharger les images pour les envoyer à Gemini
+            // On convertit les URLs publiques en URLs internes si nécessaire
+            const docUrl = this.getInternalUrl(user.kycData.documentImageUrl!);
+            const selfieUrl = this.getInternalUrl(user.kycData.selfieImageUrl!);
 
-            const isSuccess = true; // Simulation de succès pour la démo
+            logger.debug(`Fetching images internally: DOC=${docUrl}, SELFIE=${selfieUrl}`);
 
-            if (isSuccess) {
-                user.kycLevel = 'verified';
-                if (user.kycData) user.kycData.verifiedAt = new Date();
+            const [docBuffer, selfieBuffer] = await Promise.all([
+                axios.get(docUrl, { responseType: 'arraybuffer', timeout: 10000 }).then((res: any) => Buffer.from(res.data)),
+                axios.get(selfieUrl, { responseType: 'arraybuffer', timeout: 10000 }).then((res: any) => Buffer.from(res.data))
+            ]);
 
-                await user.save();
+            const prompt = PromptBuilder.buildKycAnalysisPrompt(user.kycData);
 
-                await AuditService.record({
-                    userId: userId as any,
-                    action: 'KYC_VERIFIED',
-                    resource: 'USER',
-                    resourceId: userId,
-                    status: 'success'
-                });
+            // Format multi-modal pour Gemini
+            const aiResult = await GeminiService.generateJSON([
+                { text: prompt },
+                {
+                    inlineData: {
+                        data: docBuffer.toString('base64'),
+                        mimeType: 'image/jpeg'
+                    }
+                },
+                {
+                    inlineData: {
+                        data: selfieBuffer.toString('base64'),
+                        mimeType: 'image/jpeg'
+                    }
+                }
+            ], 'kyc-analysis');
 
-                await NotificationService.sendToUser(userId, {
-                    title: 'KYC Approuvé !',
-                    body: 'Votre identité a été vérifiée. Vous pouvez maintenant effectuer des retraits.',
-                    category: 'important'
-                });
-            } else {
-                user.kycLevel = 'none';
-                if (user.kycData) user.kycData.rejectionReason = "La photo du document est illisible ou ne correspond pas au selfie.";
-                await user.save();
+            // Mise à jour des résultats IA (Sans valider le KYC automatiquement)
+            user.kycData.aiReport = aiResult.analysisReport;
+            user.kycData.aiConfidence = aiResult.confidenceScore;
+            user.kycData.aiAnalysisStatus = 'completed';
 
-                // Notification d'échec
-            }
+            await user.save();
+
+            // Notification Slack pour l'admin : "Analyse terminée"
+            const statusEmoji = aiResult.isMatch && aiResult.confidenceScore > 80 ? '✅' : '⚠️';
+            await SlackService.sendNotification(
+                `🤖 *Analyse IA KYC Terminée* ${statusEmoji}\n*Utilisateur*: ${user.firstName} ${user.lastName}\n*Score*: ${aiResult.confidenceScore}%\n*Rapport*: ${aiResult.analysisReport.substring(0, 500)}...\n*Lien Admin*: ${process.env.ADMIN_URL}/users/${user._id}`,
+                false
+            );
+
         } catch (error: any) {
-            logger.error(`KYC AI Processing Error: ${error.message}`);
+            const errorMsg = error.response ? `Axios Error: ${error.response.status} ${error.response.statusText}` : error.message;
+            logger.error(`KYC AI Processing Error: ${errorMsg}`, { stack: error.stack });
+
+            if (user.kycData) {
+                user.kycData.aiAnalysisStatus = 'failed';
+                await user.save();
+            }
+            await SlackService.sendNotification(`🚨 *Erreur Analyse IA KYC*\n*Utilisateur*: ${user.firstName}\n*Erreur*: ${errorMsg}`, true);
         }
     }
 
     /**
-     * Validation manuelle par un admin
+     * Convertit une URL publique MinIO en URL interne accessible par le conteneur API
      */
-    static async adminVerify(userId: string, approve: boolean, reason?: string) {
+    private static getInternalUrl(publicUrl: string): string {
+        const publicBase = process.env.MINIO_PUBLIC_URL || 'http://localhost:15010';
+        const internalBase = process.env.MINIO_ENDPOINT || 'http://minio:9000';
+
+        if (publicUrl.startsWith(publicBase)) {
+            return publicUrl.replace(publicBase, internalBase);
+        }
+        return publicUrl;
+    }
+
+    /**
+     * Validation manuelle par un admin (Point de décision final)
+     */
+    static async adminVerify(userId: string, status: 'verified' | 'none', reason?: string) {
         const user = await User.findById(userId);
         if (!user) throw new AppError('Utilisateur non trouvé', 404);
 
-        if (approve) {
-            user.kycLevel = 'verified';
+        user.kycLevel = status;
+        if (status === 'verified') {
             if (user.kycData) user.kycData.verifiedAt = new Date();
+
+            await NotificationService.sendToUser(userId, {
+                title: '',
+                body: '',
+                translationKey: 'KYC_APPROVED',
+                category: 'important'
+            });
         } else {
-            user.kycLevel = 'none';
-            if (user.kycData) user.kycData.rejectionReason = reason || "Refusé par l'administrateur";
+            if (user.kycData) user.kycData.rejectionReason = reason || "Documents non valides après examen.";
+
+            // On pourrait ajouter une clé KYC_REJECTED
+            await NotificationService.sendToUser(userId, {
+                title: 'Vérification Rejetée',
+                body: `Votre vérification KYC a été refusée. Raison : ${reason || 'Documents non conformes.'}`,
+                category: 'important'
+            });
         }
 
         await user.save();
+
+        await AuditService.record({
+            userId: userId as any,
+            action: status === 'verified' ? 'KYC_VERIFIED' : 'KYC_REJECTED',
+            resource: 'USER',
+            resourceId: userId,
+            status: 'success',
+            metadata: { reason }
+        });
+
         return user;
     }
 }
