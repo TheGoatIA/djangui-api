@@ -46,8 +46,9 @@ const consoleFormat = winston.format.combine(
     const userId = info.userId || context?.userId;
     const ctxLabel = info.context || context?.context;
 
-    return `${info.timestamp} ${info.level}: ${info.message}${userId ? ` [User: ${userId}]` : ''
-      }${requestId ? ` [Req: ${requestId}]` : ''}${ctxLabel ? ` [Context: ${ctxLabel}]` : ''}`;
+    return `${info.timestamp} ${info.level}: ${info.message}${
+      userId ? ` [User: ${userId}]` : ''
+    }${requestId ? ` [Req: ${requestId}]` : ''}${ctxLabel ? ` [Context: ${ctxLabel}]` : ''}`;
   }),
 );
 

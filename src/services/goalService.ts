@@ -49,7 +49,7 @@ export class GoalService {
       type: 'saving_transfer',
       description: `Contribution objectif : ${goal.name}`,
       paymentMethod: 'wallet',
-      metadata: { goalId: id, note }
+      metadata: { goalId: id, note },
     });
 
     // 2. Mettre à jour l'objectif

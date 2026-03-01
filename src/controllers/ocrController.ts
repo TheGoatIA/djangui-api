@@ -23,17 +23,19 @@ export class OCRController {
       const minioUrl = await StorageService.uploadFile(
         filePath,
         'kauri-uploads',
-        `receipts/${req.file.filename}`
+        `receipts/${req.file.filename}`,
       );
 
       // Nettoyage local
-      try { fs.unlinkSync(filePath); } catch (e) { }
+      try {
+        fs.unlinkSync(filePath);
+      } catch (e) {}
 
       res.status(200).json({
         success: true,
         data: {
           ...result,
-          imageUrl: minioUrl
+          imageUrl: minioUrl,
         },
       });
     } catch (err) {

@@ -59,11 +59,11 @@ export class ReportService {
       savingsRate: Math.max(0, savingsRate),
       budgetHealth: budget
         ? {
-          totalAllocated: budget.totalAllocated,
-          totalSpent: budget.totalSpent,
-          status: budget.status,
-          percentageUsed: (budget.totalSpent / budget.totalAllocated) * 100,
-        }
+            totalAllocated: budget.totalAllocated,
+            totalSpent: budget.totalSpent,
+            status: budget.status,
+            percentageUsed: (budget.totalSpent / budget.totalAllocated) * 100,
+          }
         : null,
       currency: user?.currency || 'XAF',
     };
@@ -229,12 +229,12 @@ export class ReportService {
             _id: '$type',
             count: { $sum: 1 },
             totalVolume: { $sum: '$amount' },
-            totalFees: { $sum: '$fees' }
-          }
-        }
+            totalFees: { $sum: '$fees' },
+          },
+        },
       ]),
       User.countDocuments({ 'sessions.lastActive': { $gte: yesterday } }),
-      this.calculateRealMoneyAUM()
+      this.calculateRealMoneyAUM(),
     ]);
 
     const totalVolume = transactions.reduce((acc, t) => acc + t.totalVolume, 0);
@@ -255,18 +255,18 @@ export class ReportService {
       users: { new: newUsers, active: activeSessions },
       transactions: {
         totalVolume,
-        count: transactions.reduce((acc, t) => acc + t.count, 0)
+        count: transactions.reduce((acc, t) => acc + t.count, 0),
       },
       revenue: {
         totalFees,
-        margin: totalVolume > 0 ? (totalFees / totalVolume) * 100 : 0
+        margin: totalVolume > 0 ? (totalFees / totalVolume) * 100 : 0,
       },
       health: {
         totalAUM: aumData.totalAUM,
         anomalyCount,
-        riskLevel
+        riskLevel,
       },
-      growth: { newUsers }
+      growth: { newUsers },
     };
   }
 
@@ -276,7 +276,7 @@ export class ReportService {
   static async calculateRealMoneyAUM() {
     const stats = await User.aggregate([
       { $match: { isActive: true } },
-      { $group: { _id: null, totalAUM: { $sum: '$walletBalance' } } }
+      { $group: { _id: null, totalAUM: { $sum: '$walletBalance' } } },
     ]);
     return { totalAUM: stats[0]?.totalAUM || 0 };
   }
@@ -295,27 +295,28 @@ export class ReportService {
           $group: {
             _id: '$type',
             total: { $sum: '$amount' },
-            totalFees: { $sum: '$fees' }
-          }
-        }
+            totalFees: { $sum: '$fees' },
+          },
+        },
       ]);
 
       // Calcul simple : Revenus (deposit, payout, reward) - Dépenses (withdrawal, contribution, transfer)
       let income = 0;
       let expense = 0;
 
-      stats.forEach(s => {
+      stats.forEach((s) => {
         if (['deposit', 'tontine_payout', 'challenge_reward'].includes(s._id)) {
           income += s.total;
         } else {
-          expense += (s.total + s.totalFees); // On déduit le net + les frais
+          expense += s.total + s.totalFees; // On déduit le net + les frais
         }
       });
 
       const calculatedBalance = income - expense;
       const diff = Math.abs(calculatedBalance - user.walletBalance);
 
-      if (diff > 1) { // Tolérance de 1 XAF pour les arrondis
+      if (diff > 1) {
+        // Tolérance de 1 XAF pour les arrondis
         anomalies.push({
           userId: user._id,
           email: user.email,
@@ -336,7 +337,9 @@ export class ReportService {
     const startOfMonth = new Date(year, month - 1, 1);
     const endOfMonth = new Date(year, month, 0, 23, 59, 59);
 
-    const members = await TontineMember.find({ userId, invitationStatus: 'accepted' }).populate('tontineId');
+    const members = await TontineMember.find({ userId, invitationStatus: 'accepted' }).populate(
+      'tontineId',
+    );
 
     let totalContributed = 0;
     const details = [];

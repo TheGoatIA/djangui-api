@@ -2,7 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 import { IUserChallenge } from '../types/models';
 
-export interface IUserChallengeDocument extends IUserChallenge, Document { }
+export interface IUserChallengeDocument extends IUserChallenge, Document {}
 
 const userChallengeSchema = new Schema<IUserChallenge>(
   {

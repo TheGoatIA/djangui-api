@@ -28,17 +28,19 @@ export class VoiceController {
       const minioUrl = await StorageService.uploadFile(
         filePath,
         'kauri-uploads',
-        `voice/${req.file.filename}`
+        `voice/${req.file.filename}`,
       );
 
       // Nettoyage local
-      try { fs.unlinkSync(filePath); } catch (e) { }
+      try {
+        fs.unlinkSync(filePath);
+      } catch (e) {}
 
       res.status(200).json({
         success: true,
         data: {
           ...result,
-          audioUrl: minioUrl
+          audioUrl: minioUrl,
         },
       });
     } catch (err) {

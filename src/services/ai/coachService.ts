@@ -65,7 +65,10 @@ export class CoachService {
 
     // AI Security Check
     if (user.status !== 'active') {
-      throw new AppError('Votre compte est suspendu suite à des activités suspectes avec l\'IA.', 403);
+      throw new AppError(
+        "Votre compte est suspendu suite à des activités suspectes avec l'IA.",
+        403,
+      );
     }
 
     if (GeminiService.detectAttack(userMessage)) {
@@ -80,25 +83,29 @@ export class CoachService {
       // Slack Alert
       await SlackService.sendNotification(
         `🚨 *Alerte Sécurité IA* 🚨\n*Utilisateur*: ${user.firstName} ${user.lastName} (${user.email})\n*Message*: "${userMessage}"\n*Tentatives*: ${user.aiAttackCount}/3\n*Action*: ${isSuspended ? '🔴 COMPTE SUSPENDU' : '⚠️ AVERTISSEMENT'}`,
-        true
+        true,
       );
 
       if (isSuspended) {
         // Notification push au compte suspendu
         NotificationService.sendToUser(userId, {
           title: 'Compte Suspendu ⛔',
-          body: 'Votre compte a été suspendu définitivement suite à des tentatives répétées de manipulation de l\'IA. Contactez le support.',
+          body: "Votre compte a été suspendu définitivement suite à des tentatives répétées de manipulation de l'IA. Contactez le support.",
           category: 'important',
           data: { type: 'account_suspended' },
         }).catch((err: any) => logger.error(`AI Suspension Notification Error: ${err.message}`));
 
-        throw new AppError('Votre compte a été banni définitivement après 3 tentatives de manipulation de l\'intelligence artificielle.', 403);
+        throw new AppError(
+          "Votre compte a été banni définitivement après 3 tentatives de manipulation de l'intelligence artificielle.",
+          403,
+        );
       }
 
       return JSON.stringify({
-        text: `⚠️ **Avertissement de sécurité** : Votre message a été détecté comme une tentative de manipulation de mes instructions de base. Ceci est formellement interdit. \n\nEncore **${3 - user.aiAttackCount
-          }** tentative(s) et votre compte sera **définitivement bloqué**.`,
-        actions: []
+        text: `⚠️ **Avertissement de sécurité** : Votre message a été détecté comme une tentative de manipulation de mes instructions de base. Ceci est formellement interdit. \n\nEncore **${
+          3 - user.aiAttackCount
+        }** tentative(s) et votre compte sera **définitivement bloqué**.`,
+        actions: [],
       });
     }
 
@@ -191,7 +198,11 @@ export class CoachService {
     const prompt = PromptBuilder.buildDailyAdvicePrompt(user as any, context);
 
     try {
-      const data = await GeminiService.generateJSON('Génère le conseil du jour.', 'daily-advice', prompt);
+      const data = await GeminiService.generateJSON(
+        'Génère le conseil du jour.',
+        'daily-advice',
+        prompt,
+      );
 
       // Track Activity
       UserActivity.create({
@@ -203,14 +214,20 @@ export class CoachService {
       const isEn = user.language === 'en';
       return {
         title: data.title || (isEn ? "Anne's Advice 💡" : "Conseil d'Anne 💡"),
-        body: data.body || (isEn ? "Take care of your finances today!" : "Prends soin de tes finances aujourd’hui !"),
+        body:
+          data.body ||
+          (isEn
+            ? 'Take care of your finances today!'
+            : 'Prends soin de tes finances aujourd’hui !'),
       };
     } catch (error) {
       logger.error(`Failed to generate AI advice for user ${userId}: ${error}`);
       const isEn = user.language === 'en';
       return {
         title: isEn ? "Anne's Advice 💡" : "Conseil d'Anne 💡",
-        body: isEn ? "Take care of your finances today!" : "Prends soin de tes finances aujourd’hui !",
+        body: isEn
+          ? 'Take care of your finances today!'
+          : 'Prends soin de tes finances aujourd’hui !',
       };
     }
   }

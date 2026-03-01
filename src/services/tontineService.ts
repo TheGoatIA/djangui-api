@@ -29,7 +29,10 @@ export class TontineService {
     const isPremium = user.subscription?.plan === 'premium';
 
     if (!isPremium && activeCount >= 1) {
-      throw new AppError('Les utilisateurs non-premium sont limités à une seule tontine active.', 403);
+      throw new AppError(
+        'Les utilisateurs non-premium sont limités à une seule tontine active.',
+        403,
+      );
     }
 
     const tontine = await Tontine.create({
@@ -53,7 +56,11 @@ export class TontineService {
   /**
    * Rejoindre une tontine
    */
-  static async joinTontine(userId: string, inviteCode: string, data: { displayName: string; parts: number; payoutDetails?: any }): Promise<any> {
+  static async joinTontine(
+    userId: string,
+    inviteCode: string,
+    data: { displayName: string; parts: number; payoutDetails?: any },
+  ): Promise<any> {
     const tontine = await Tontine.findOne({ inviteCode });
     if (!tontine) throw new AppError('Tontine non trouvée', 404);
     if (tontine.status !== 'pending') throw new AppError('Les adhésions sont fermées', 400);
@@ -64,10 +71,15 @@ export class TontineService {
     const isPremium = user.subscription?.plan === 'premium';
     if (!isPremium) {
       const activeCount = await Tontine.countDocuments({
-        _id: { $in: (await TontineMember.find({ userId, invitationStatus: 'accepted' })).map(m => m.tontineId) },
+        _id: {
+          $in: (await TontineMember.find({ userId, invitationStatus: 'accepted' })).map(
+            (m) => m.tontineId,
+          ),
+        },
         status: { $ne: 'completed' },
       });
-      if (activeCount >= 3) throw new AppError('Limite de 3 tontines actives pour les utilisateurs gratuits.', 403);
+      if (activeCount >= 3)
+        throw new AppError('Limite de 3 tontines actives pour les utilisateurs gratuits.', 403);
     }
 
     const member = await TontineMember.create({
@@ -85,20 +97,25 @@ export class TontineService {
       body: '',
       translationKey: 'TONTINE_JOIN',
       translationData: { name: data.displayName, tontineName: tontine.name },
-      category: 'important'
+      category: 'important',
     });
 
     return member;
   }
 
-  static async updateTontine(tontineId: string, userId: string, data: Partial<ITontine>): Promise<ITontine> {
+  static async updateTontine(
+    tontineId: string,
+    userId: string,
+    data: Partial<ITontine>,
+  ): Promise<ITontine> {
     const tontine = await Tontine.findById(tontineId);
     if (!tontine) throw new AppError('Tontine non trouvée', 404);
     if (tontine.creatorId.toString() !== userId) throw new AppError('Action non autorisée', 403);
 
     if (tontine.status === 'active') {
       const forbidden = ['contributionAmount', 'currency', 'totalParts', 'frequency'];
-      if (Object.keys(data).some(f => forbidden.includes(f))) throw new AppError('Modification interdite une fois lancée', 400);
+      if (Object.keys(data).some((f) => forbidden.includes(f)))
+        throw new AppError('Modification interdite une fois lancée', 400);
     }
 
     Object.assign(tontine, data);
@@ -108,7 +125,8 @@ export class TontineService {
 
   static async deleteTontine(tontineId: string, userId: string): Promise<void> {
     const tontine = await Tontine.findById(tontineId);
-    if (!tontine || tontine.creatorId.toString() !== userId) throw new AppError('Non autorisé', 403);
+    if (!tontine || tontine.creatorId.toString() !== userId)
+      throw new AppError('Non autorisé', 403);
 
     if (tontine.status === 'pending') {
       await TontineMember.deleteMany({ tontineId });
@@ -121,9 +139,11 @@ export class TontineService {
 
   static async removeMember(tontineId: string, creatorId: string, memberId: string): Promise<void> {
     const tontine = await Tontine.findById(tontineId);
-    if (!tontine || tontine.creatorId.toString() !== creatorId) throw new AppError('Non autorisé', 403);
+    if (!tontine || tontine.creatorId.toString() !== creatorId)
+      throw new AppError('Non autorisé', 403);
     const member = await TontineMember.findById(memberId);
-    if (member?.userId.toString() === creatorId) throw new AppError('Le créateur ne peut s\'auto-retirer', 400);
+    if (member?.userId.toString() === creatorId)
+      throw new AppError("Le créateur ne peut s'auto-retirer", 400);
     await TontineMember.findByIdAndDelete(memberId);
   }
 
@@ -142,7 +162,11 @@ export class TontineService {
 
     const base = tontine.contributionAmount * member.parts;
     let lateFee = 0;
-    const deadline = this.getTurnDeadline(tontine.startDate, tontine.frequency, tontine.currentTurn);
+    const deadline = this.getTurnDeadline(
+      tontine.startDate,
+      tontine.frequency,
+      tontine.currentTurn,
+    );
     if (new Date() > new Date(deadline.getTime() + tontine.sanctions.gracePeriodHours * 3600000)) {
       lateFee = tontine.sanctions.lateFee * member.parts;
     }
@@ -152,14 +176,16 @@ export class TontineService {
       baseAmount: base,
       convertedAmount: Math.ceil((base + lateFee) * rate),
       currency: user.currency || 'XAF',
-      lateFee
+      lateFee,
     };
   }
 
   static async updateTrustScore(memberId: string, isLate: boolean) {
     const member = await TontineMember.findById(memberId);
     if (member) {
-      member.trustScore = isLate ? Math.max(0, member.trustScore - 5) : Math.min(100, member.trustScore + 1);
+      member.trustScore = isLate
+        ? Math.max(0, member.trustScore - 5)
+        : Math.min(100, member.trustScore + 1);
       await member.save();
     }
   }
@@ -167,19 +193,24 @@ export class TontineService {
   static async getTurnSummary(tontineId: string) {
     const tontine = await Tontine.findById(tontineId);
     const members = await TontineMember.find({ tontineId, invitationStatus: 'accepted' });
-    const contributions = await TontineContribution.find({ tontineId, turnIndex: tontine?.currentTurn, validationStatus: { $in: ['ai_validated', 'completed'] } });
+    const contributions = await TontineContribution.find({
+      tontineId,
+      turnIndex: tontine?.currentTurn,
+      validationStatus: { $in: ['ai_validated', 'completed'] },
+    });
 
     return {
       collectedAmount: contributions.reduce((s, c) => s + c.amountPaid, 0),
       expectedAmount: (tontine?.contributionAmount || 0) * members.reduce((s, m) => s + m.parts, 0),
       contributorsCount: contributions.length,
-      totalMembers: members.length
+      totalMembers: members.length,
     };
   }
 
   static async startTontine(tontineId: string, creatorId: string) {
     const tontine = await Tontine.findById(tontineId);
-    if (!tontine || tontine.creatorId.toString() !== creatorId) throw new AppError('Non autorisé', 403);
+    if (!tontine || tontine.creatorId.toString() !== creatorId)
+      throw new AppError('Non autorisé', 403);
     const members = await TontineMember.find({ tontineId, invitationStatus: 'accepted' });
     if (members.length < 2) throw new AppError('Mini 2 membres', 400);
 
@@ -208,7 +239,7 @@ export class TontineService {
 
     // --- LOGIQUE FINTECH : Versement ---
     try {
-      const winner = members.find(m => (m as any).rotationOrder === tontine.currentTurn);
+      const winner = members.find((m) => (m as any).rotationOrder === tontine.currentTurn);
       if (winner) {
         const summary = await this.getTurnSummary(tontineId);
         const kauriFee = Math.floor(summary.collectedAmount * 0.01);
@@ -237,23 +268,39 @@ export class TontineService {
   }
 
   static async renewTontine(old: ITontine) {
-    const newT = await Tontine.create({ ...old.toObject(), _id: undefined, status: 'pending', currentTurn: 1, startDate: undefined });
+    const newT = await Tontine.create({
+      ...old.toObject(),
+      _id: undefined,
+      status: 'pending',
+      currentTurn: 1,
+      startDate: undefined,
+    });
     const members = await TontineMember.find({ tontineId: old._id, invitationStatus: 'accepted' });
-    for (const m of members) await TontineMember.create({ ...m.toObject(), _id: undefined, tontineId: newT._id });
+    for (const m of members)
+      await TontineMember.create({ ...m.toObject(), _id: undefined, tontineId: newT._id });
     return newT;
   }
 
-  static async sendMessage(tontineId: string, senderId: string, content: string, type: any = 'text') {
+  static async sendMessage(
+    tontineId: string,
+    senderId: string,
+    content: string,
+    type: any = 'text',
+  ) {
     return await TontineMessage.create({ tontineId, senderId, content, type });
   }
 
   static async getMessages(tontineId: string) {
-    return await TontineMessage.find({ tontineId }).populate('senderId', 'firstName lastName').sort({ createdAt: -1 });
+    return await TontineMessage.find({ tontineId })
+      .populate('senderId', 'firstName lastName')
+      .sort({ createdAt: -1 });
   }
 
   static async getUserTontines(userId: string) {
     const members = await TontineMember.find({ userId });
-    const tontines = await Tontine.find({ _id: { $in: members.map(m => m.tontineId) } }).sort({ updatedAt: -1 });
+    const tontines = await Tontine.find({ _id: { $in: members.map((m) => m.tontineId) } }).sort({
+      updatedAt: -1,
+    });
     return tontines;
   }
 
@@ -263,12 +310,23 @@ export class TontineService {
   static async processAutoDebits(): Promise<void> {
     const tontines = await Tontine.find({ status: 'active' });
     for (const tontine of tontines) {
-      const members = await TontineMember.find({ tontineId: tontine._id, invitationStatus: 'accepted' });
+      const members = await TontineMember.find({
+        tontineId: tontine._id,
+        invitationStatus: 'accepted',
+      });
       for (const member of members) {
-        const existing = await TontineContribution.findOne({ tontineId: tontine._id, memberId: member._id, turnIndex: tontine.currentTurn, validationStatus: { $in: ['completed', 'ai_validated'] } });
+        const existing = await TontineContribution.findOne({
+          tontineId: tontine._id,
+          memberId: member._id,
+          turnIndex: tontine.currentTurn,
+          validationStatus: { $in: ['completed', 'ai_validated'] },
+        });
         if (!existing) {
           try {
-            const amounts = await this.getMemberContributionAmount(tontine._id.toString(), member.userId.toString());
+            const amounts = await this.getMemberContributionAmount(
+              tontine._id.toString(),
+              member.userId.toString(),
+            );
             const tx = await WalletService.executeTransaction({
               userId: member.userId.toString(),
               amount: amounts.convertedAmount,
@@ -284,7 +342,7 @@ export class TontineService {
               currency: amounts.currency,
               paidAt: new Date(),
               validationStatus: 'completed',
-              transactionRef: tx.reference
+              transactionRef: tx.reference,
             });
             await InvoiceService.generateForTransaction(tx._id.toString());
           } catch (err: any) {
@@ -302,7 +360,7 @@ export class TontineService {
     const activeCount = await Tontine.countDocuments({ status: 'active' });
     return {
       activeCount,
-      lateRate: 5.5
+      lateRate: 5.5,
     };
   }
 
@@ -312,7 +370,10 @@ export class TontineService {
 
   static async getAdminTontineDetails(id: string) {
     const tontine = await Tontine.findById(id).populate('creatorId', 'firstName lastName');
-    const members = await TontineMember.find({ tontineId: id }).populate('userId', 'firstName lastName');
+    const members = await TontineMember.find({ tontineId: id }).populate(
+      'userId',
+      'firstName lastName',
+    );
     const contributions = await TontineContribution.find({ tontineId: id });
     return { tontine, members, contributions };
   }
@@ -321,13 +382,19 @@ export class TontineService {
     return TontineMember.find({ tontineId }).populate('userId', 'firstName lastName');
   }
 
-  static async createVote(tontineId: string, creatorId: string, question: string, options: string[], durationHours: number) {
+  static async createVote(
+    tontineId: string,
+    creatorId: string,
+    question: string,
+    options: string[],
+    durationHours: number,
+  ) {
     return TontineVote.create({
       tontineId,
       creatorId,
       question,
-      options: options.map(o => ({ text: o, count: 0 })),
-      expiresAt: new Date(Date.now() + durationHours * 3600000)
+      options: options.map((o) => ({ text: o, count: 0 })),
+      expiresAt: new Date(Date.now() + durationHours * 3600000),
     });
   }
 
@@ -346,15 +413,25 @@ export class TontineService {
     const query: any = { tontineId };
     if (turn) query.turnIndex = turn;
     const contributions = await TontineContribution.find(query).populate('memberId');
-    const fields = ['memberId.displayName', 'turnIndex', 'amountPaid', 'currency', 'paidAt', 'validationStatus'];
+    const fields = [
+      'memberId.displayName',
+      'turnIndex',
+      'amountPaid',
+      'currency',
+      'paidAt',
+      'validationStatus',
+    ];
     const parser = new Parser({ fields });
     return parser.parse(contributions);
   }
 
   static async getTontineContributions(tontineId: string, userId: string) {
     const tontine = await Tontine.findById(tontineId);
-    if (!tontine || tontine.creatorId.toString() !== userId) throw new AppError('Non autorisé', 403);
-    return TontineContribution.find({ tontineId }).populate('memberId', 'displayName').sort({ createdAt: -1 });
+    if (!tontine || tontine.creatorId.toString() !== userId)
+      throw new AppError('Non autorisé', 403);
+    return TontineContribution.find({ tontineId })
+      .populate('memberId', 'displayName')
+      .sort({ createdAt: -1 });
   }
 
   static async enforcePremiumLimits(userId: string) {
@@ -362,7 +439,7 @@ export class TontineService {
     if (user?.subscription.plan === 'free') {
       await Tontine.updateMany(
         { creatorId: userId, status: 'active' },
-        { $set: { status: 'suspended_premium_required' } }
+        { $set: { status: 'suspended_premium_required' } },
       );
     }
   }

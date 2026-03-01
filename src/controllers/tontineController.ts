@@ -155,7 +155,9 @@ export class TontineController {
       const minioUrl = await StorageService.uploadFile(file.path, bucket, destinationKey);
 
       // Nettoyage local immédiat
-      try { fs.unlinkSync(file.path); } catch (e) { }
+      try {
+        fs.unlinkSync(file.path);
+      } catch (e) {}
 
       // 5. Création de la contribution
       const isLate = memberInfo.lateFee > 0;

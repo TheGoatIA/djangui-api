@@ -43,7 +43,7 @@ export class ChallengeService {
           weekNumber: i,
           targetAmount: amountPerWeek,
           savedAmount: 0,
-          status: 'pending'
+          status: 'pending',
         });
       }
     }
@@ -53,7 +53,7 @@ export class ChallengeService {
       challengeId,
       endDate,
       weeks,
-      status: 'active'
+      status: 'active',
     });
   }
 
@@ -68,12 +68,17 @@ export class ChallengeService {
   /**
    * Permet à un utilisateur de déposer de l'argent réel pour valider une étape de challenge (ex: épargne).
    */
-  static async addChallengeDeposit(userId: string, userChallengeId: string, weekNumber: number, amount: number) {
+  static async addChallengeDeposit(
+    userId: string,
+    userChallengeId: string,
+    weekNumber: number,
+    amount: number,
+  ) {
     const userChallenge = await UserChallenge.findById(userChallengeId);
     if (!userChallenge) throw new AppError('Challenge utilisateur non trouvé', 404);
     if (userChallenge.userId.toString() !== userId) throw new AppError('Non autorisé', 403);
 
-    const week = userChallenge.weeks.find(w => w.weekNumber === weekNumber);
+    const week = userChallenge.weeks.find((w) => w.weekNumber === weekNumber);
     if (!week) throw new AppError('Semaine non trouvée', 404);
 
     // 1. Débiter le wallet (Argent Réel)
@@ -83,7 +88,7 @@ export class ChallengeService {
       type: 'saving_transfer',
       description: `Dépôt pour le challenge : Semaine ${weekNumber}`,
       paymentMethod: 'wallet',
-      metadata: { userChallengeId, weekNumber }
+      metadata: { userChallengeId, weekNumber },
     });
 
     // 2. Mettre à jour l'état du challenge (Dépôt réel)
@@ -114,7 +119,7 @@ export class ChallengeService {
       // Gamification : Points et Badges
       await GamificationService.awardChallengeCompletion(
         userChallenge.userId.toString(),
-        'Challenge Réussi'
+        'Challenge Réussi',
       );
     } else {
       userChallenge.status = 'failed';
@@ -140,7 +145,7 @@ export class ChallengeService {
           durationDays: 28,
           difficulty: 'easy',
           rewardPoints: 500,
-          icon: '🛡️'
+          icon: '🛡️',
         },
         {
           title: 'Défi Tontineur Pro',
@@ -149,7 +154,7 @@ export class ChallengeService {
           durationDays: 90,
           difficulty: 'medium',
           rewardPoints: 1000,
-          icon: '💎'
+          icon: '💎',
         },
         {
           title: 'Zéro Dépense Inutile',
@@ -158,8 +163,8 @@ export class ChallengeService {
           durationDays: 30,
           difficulty: 'hard',
           rewardPoints: 1500,
-          icon: '📉'
-        }
+          icon: '📉',
+        },
       ];
 
       await Challenge.insertMany(initialChallenges);
