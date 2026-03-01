@@ -48,7 +48,8 @@ export class TransactionService {
 
       // Update User Wallet Balance
       // Seuls les revenus numériques (dépôts) et les dépenses via Wallet impactent le solde réel.
-      const isDigitalIncome = data.type === 'income' && ['stripe', 'notchpay', 'wallet'].includes(data.paymentMethod);
+      const isDigitalIncome =
+        data.type === 'income' && ['stripe', 'notchpay', 'wallet'].includes(data.paymentMethod);
       const isWalletExpense = data.type === 'expense' && data.paymentMethod === 'wallet';
 
       if (isDigitalIncome) {
@@ -140,11 +141,11 @@ export class TransactionService {
       await session.commitTransaction();
 
       // Metrique business - Move from controller to service for bulk coverage
-      const metricType = (['income', 'deposit', 'tontine_payout', 'challenge_reward'].includes(
-        transaction.type,
-      )
-        ? 'income'
-        : 'expense') as 'income' | 'expense';
+      const metricType = (
+        ['income', 'deposit', 'tontine_payout', 'challenge_reward'].includes(transaction.type)
+          ? 'income'
+          : 'expense'
+      ) as 'income' | 'expense';
 
       MonitoringService.recordTransaction(
         metricType,
@@ -223,8 +224,11 @@ export class TransactionService {
       }
 
       // Revert old balance impact
-      const wasDigitalIncome = oldTransaction.type === 'income' && ['stripe', 'notchpay', 'wallet'].includes(oldTransaction.paymentMethod as any);
-      const wasWalletExpense = oldTransaction.type === 'expense' && oldTransaction.paymentMethod === 'wallet';
+      const wasDigitalIncome =
+        oldTransaction.type === 'income' &&
+        ['stripe', 'notchpay', 'wallet'].includes(oldTransaction.paymentMethod as any);
+      const wasWalletExpense =
+        oldTransaction.type === 'expense' && oldTransaction.paymentMethod === 'wallet';
 
       if (wasDigitalIncome) {
         await User.findByIdAndUpdate(
@@ -249,8 +253,11 @@ export class TransactionService {
 
       // Apply new balance impact
       if (updatedTransaction) {
-        const isDigitalIncome = updatedTransaction.type === 'income' && ['stripe', 'notchpay', 'wallet'].includes(updatedTransaction.paymentMethod as any);
-        const isWalletExpense = updatedTransaction.type === 'expense' && updatedTransaction.paymentMethod === 'wallet';
+        const isDigitalIncome =
+          updatedTransaction.type === 'income' &&
+          ['stripe', 'notchpay', 'wallet'].includes(updatedTransaction.paymentMethod as any);
+        const isWalletExpense =
+          updatedTransaction.type === 'expense' && updatedTransaction.paymentMethod === 'wallet';
 
         if (isDigitalIncome) {
           await User.findByIdAndUpdate(
@@ -285,7 +292,10 @@ export class TransactionService {
 
     // Sécurité Fintech : Interdiction de supprimer des transactions réelles (Wallet, NotchPay, Stripe)
     if (transaction.paymentMethod !== 'cash') {
-      throw new AppError('Les transactions financières réelles ne peuvent pas être supprimées pour des raisons d\'audit et d\'intégrité.', 403);
+      throw new AppError(
+        "Les transactions financières réelles ne peuvent pas être supprimées pour des raisons d'audit et d'intégrité.",
+        403,
+      );
     }
 
     await Transaction.deleteOne({ _id: id });

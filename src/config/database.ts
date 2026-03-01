@@ -19,7 +19,7 @@ const connectDB = async (): Promise<void> => {
       message: error.message,
       code: error.code,
       name: error.name,
-      stack: error.stack
+      stack: error.stack,
     });
     process.exit(1);
   }

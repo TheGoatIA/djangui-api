@@ -23,11 +23,13 @@ export class UploadController {
       const minioUrl = await StorageService.uploadFile(
         req.file.path,
         'kauri-uploads',
-        `receipts/${req.file.filename}`
+        `receipts/${req.file.filename}`,
       );
 
       // Nettoyage local
-      try { fs.unlinkSync(req.file.path); } catch (e) { }
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (e) {}
 
       res.status(200).json({
         success: true,
@@ -55,11 +57,13 @@ export class UploadController {
       const avatarUrl = await StorageService.uploadFile(
         req.file.path,
         'kauri-uploads',
-        `avatars/${req.file.filename}`
+        `avatars/${req.file.filename}`,
       );
 
       // Nettoyage local
-      try { fs.unlinkSync(req.file.path); } catch (e) { }
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (e) {}
 
       await User.findByIdAndUpdate(req.user._id, { avatar: avatarUrl });
 

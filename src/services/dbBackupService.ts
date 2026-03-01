@@ -66,7 +66,9 @@ export class DbBackupService {
       const minioUrl = await StorageService.uploadFile(archivePath, bucket, destinationKey);
 
       // 6. Nettoyage local (Optionnel: on peut garder le dernier backup localement ou tout supprimer)
-      try { fs.unlinkSync(archivePath); } catch (e) { }
+      try {
+        fs.unlinkSync(archivePath);
+      } catch (e) {}
 
       // Notify Slack (with MinIO info)
       await SlackService.sendNotification(

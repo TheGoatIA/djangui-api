@@ -48,7 +48,7 @@ export class ChallengeController {
         req.user._id,
         userChallengeId,
         Number(weekNumber),
-        Number(amount)
+        Number(amount),
       );
       res.status(200).json({
         success: true,

@@ -151,7 +151,9 @@ export class CronService {
     // Daily at 04:00 AM: Global Reconciliation Check
     cron.schedule(
       '0 4 * * *',
-      this.runMonitored('global_reconciliation', async () => { await ReconciliationService.checkInternalIntegrity(); }),
+      this.runMonitored('global_reconciliation', async () => {
+        await ReconciliationService.checkInternalIntegrity();
+      }),
     );
 
     // Run once on startup
@@ -356,8 +358,8 @@ export class CronService {
             </thead>
             <tbody>
               ${anomalies
-            .map(
-              (a) => `
+                .map(
+                  (a) => `
                 <tr>
                   <td style="padding: 8px; border: 1px solid #ddd;">${a.email}</td>
                   <td style="padding: 8px; border: 1px solid #ddd;">${a.walletBalance}</td>
@@ -365,8 +367,8 @@ export class CronService {
                   <td style="padding: 8px; border: 1px solid #ddd; color: red;">${a.diff.toFixed(2)}</td>
                 </tr>
               `,
-            )
-            .join('')}
+                )
+                .join('')}
             </tbody>
           </table>
         `;

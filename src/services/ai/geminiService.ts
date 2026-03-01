@@ -66,7 +66,7 @@ export class GeminiService {
       logger.warn(`Failed to fetch Gemini model setting, using default: ${error}`);
       return genAI.getGenerativeModel({
         model: 'gemini-2.5-flash',
-        systemInstruction
+        systemInstruction,
       });
     }
   }
@@ -89,10 +89,10 @@ export class GeminiService {
       /act as a/i,
       /jailbreak/i,
       / DAN /i,
-      /dev mode/i
+      /dev mode/i,
     ];
 
-    return attackPatterns.some(pattern => pattern.test(input));
+    return attackPatterns.some((pattern) => pattern.test(input));
   }
 
   private static async saveUsage(
@@ -141,7 +141,11 @@ export class GeminiService {
     }
   }
 
-  static async generateContent(prompt: any, context: string = 'unknown', systemInstruction?: string): Promise<string> {
+  static async generateContent(
+    prompt: any,
+    context: string = 'unknown',
+    systemInstruction?: string,
+  ): Promise<string> {
     const startTime = Date.now();
     let modelName = 'unknown';
     try {
@@ -164,7 +168,11 @@ export class GeminiService {
     }
   }
 
-  static async generateJSON(prompt: any, context: string = 'unknown', systemInstruction?: string): Promise<any> {
+  static async generateJSON(
+    prompt: any,
+    context: string = 'unknown',
+    systemInstruction?: string,
+  ): Promise<any> {
     const startTime = Date.now();
     let modelName = 'unknown';
     try {
@@ -258,7 +266,7 @@ export class GeminiService {
     mimeType: string,
     prompt: string,
     context: string = 'voice-analysis',
-    systemInstruction?: string
+    systemInstruction?: string,
   ): Promise<any> {
     const startTime = Date.now();
     let modelName = 'unknown';
@@ -290,7 +298,10 @@ export class GeminiService {
     }
   }
 
-  static async startChat(history: { role: string; parts: { text: string }[] }[], systemInstruction?: string) {
+  static async startChat(
+    history: { role: string; parts: { text: string }[] }[],
+    systemInstruction?: string,
+  ) {
     try {
       const model = await this.getModel(systemInstruction);
       const chat = model.startChat({ history });

@@ -474,13 +474,16 @@ export class AdminController {
       }
 
       // Notification de suspension / réactivation
-      const isSuspended = updatePayload.status === 'suspended' || updatePayload.status === 'blocked' || updatePayload.isActive === false;
+      const isSuspended =
+        updatePayload.status === 'suspended' ||
+        updatePayload.status === 'blocked' ||
+        updatePayload.isActive === false;
       const isReactivated = updatePayload.status === 'active' || updatePayload.isActive === true;
 
       if (isSuspended) {
         NotificationService.sendToUser(id, {
           title: 'Compte Suspendu ⚠️',
-          body: 'Votre compte Kauri a été suspendu par un administrateur. Contactez le support pour plus d\'informations.',
+          body: "Votre compte Kauri a été suspendu par un administrateur. Contactez le support pour plus d'informations.",
           category: 'important',
           data: { type: 'account_suspended' },
         }).catch((err: any) => logger.error(`Suspension Notification Error: ${err.message}`));
@@ -869,7 +872,7 @@ export class AdminController {
           cpuCount = quota / period;
         }
       }
-    } catch (e) { }
+    } catch (e) {}
 
     return {
       memoryLimit: memLimit,

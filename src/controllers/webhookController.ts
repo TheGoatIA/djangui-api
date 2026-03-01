@@ -55,7 +55,7 @@ export class WebhookController {
     } else if (data.event === 'transfer.complete') {
       // Le transfert est fini, on pourrait mettre à jour le statut de la transaction
       // mais WalletService.executeTransaction l'a déjà mis en completed lors de l'initiation MoMo
-      // car NotchPay Transfers est quasi instantané. 
+      // car NotchPay Transfers est quasi instantané.
       // Ici on peut envoyer une notification de succès finale.
       logger.info(`Transfer ${data.data.reference} completed successfully`);
     } else if (data.event === 'transfer.failed') {
@@ -75,7 +75,7 @@ export class WebhookController {
             type: 'deposit',
             description: `Remboursement transfert échoué (${data.data.reason || 'Erreur opérateur'})`,
             paymentMethod: 'wallet',
-            metadata: { originalReference: reference }
+            metadata: { originalReference: reference },
           });
 
           originalTx.status = 'failed';
@@ -85,7 +85,9 @@ export class WebhookController {
           logger.info(`Refund processed for failed transfer: ${reference}`);
         }
       } catch (refundErr: any) {
-        logger.error(`Critical: Failed to process refund for transfer ${reference}: ${refundErr.message}`);
+        logger.error(
+          `Critical: Failed to process refund for transfer ${reference}: ${refundErr.message}`,
+        );
       }
     }
 
