@@ -461,19 +461,41 @@ export class AdminController {
   static async updateUserStatus(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const { isActive } = req.body;
+      const { isActive, status } = req.body;
 
-      const user = await User.findByIdAndUpdate(id, { isActive }, { new: true });
+      const updatePayload: any = {};
+      if (isActive !== undefined) updatePayload.isActive = isActive;
+      if (status) updatePayload.status = status;
+
+      const user = await User.findByIdAndUpdate(id, updatePayload, { new: true });
 
       if (!user) {
         return next(new AppError('No user found with that ID', 404));
       }
 
+      // Notification de suspension / réactivation
+      const isSuspended = updatePayload.status === 'suspended' || updatePayload.status === 'blocked' || updatePayload.isActive === false;
+      const isReactivated = updatePayload.status === 'active' || updatePayload.isActive === true;
+
+      if (isSuspended) {
+        NotificationService.sendToUser(id, {
+          title: 'Compte Suspendu ⚠️',
+          body: 'Votre compte Kauri a été suspendu par un administrateur. Contactez le support pour plus d\'informations.',
+          category: 'important',
+          data: { type: 'account_suspended' },
+        }).catch((err: any) => logger.error(`Suspension Notification Error: ${err.message}`));
+      } else if (isReactivated) {
+        NotificationService.sendToUser(id, {
+          title: 'Compte Réactivé ✅',
+          body: 'Votre compte Kauri a été réactivé. Vous pouvez de nouveau accéder à toutes les fonctionnalités.',
+          category: 'important',
+          data: { type: 'account_reactivated' },
+        }).catch((err: any) => logger.error(`Reactivation Notification Error: ${err.message}`));
+      }
+
       res.status(200).json({
         status: 'success',
-        data: {
-          user,
-        },
+        data: { user },
       });
     } catch (error) {
       next(error);
@@ -847,7 +869,7 @@ export class AdminController {
           cpuCount = quota / period;
         }
       }
-    } catch (e) {}
+    } catch (e) { }
 
     return {
       memoryLimit: memLimit,
