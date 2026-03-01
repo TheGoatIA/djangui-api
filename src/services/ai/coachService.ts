@@ -14,6 +14,7 @@ import mongoose from 'mongoose';
 import logger from '../../utils/logger';
 import { MonitoringService } from '../monitoringService';
 import { SlackService } from '../slackService';
+import { NotificationService } from '../notificationService';
 
 export class CoachService {
   static async getOrCreateConversation(userId: string): Promise<IConversation> {
@@ -83,6 +84,14 @@ export class CoachService {
       );
 
       if (isSuspended) {
+        // Notification push au compte suspendu
+        NotificationService.sendToUser(userId, {
+          title: 'Compte Suspendu ⛔',
+          body: 'Votre compte a été suspendu définitivement suite à des tentatives répétées de manipulation de l\'IA. Contactez le support.',
+          category: 'important',
+          data: { type: 'account_suspended' },
+        }).catch((err: any) => logger.error(`AI Suspension Notification Error: ${err.message}`));
+
         throw new AppError('Votre compte a été banni définitivement après 3 tentatives de manipulation de l\'intelligence artificielle.', 403);
       }
 

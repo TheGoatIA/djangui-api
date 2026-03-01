@@ -24,12 +24,13 @@ export class WalletService {
         externalReference?: string;
         fees?: number;
         metadata?: Record<string, any>;
+        silent?: boolean;
     }) {
         const session = await mongoose.startSession();
         session.startTransaction();
 
         try {
-            const { userId, amount, type, description, paymentMethod, reference, externalReference, fees = 0, metadata } = data;
+            const { userId, amount, type, description, paymentMethod, reference, externalReference, fees = 0, metadata, silent = false } = data;
 
             // 1. Récupérer l'utilisateur
             const user = await User.findById(userId).session(session);
@@ -105,14 +106,16 @@ export class WalletService {
             }).catch(err => logger.error(`Alert Monitoring Error: ${err.message}`));
 
             // 7. Notification (Hors transaction car non critique)
-            NotificationService.sendToUser(userId, {
-                title: '',
-                body: '',
-                category: 'transactional',
-                translationKey: 'TRANSACTION_SUCCESS',
-                translationData: { amount, currency: user.currency, type },
-                data: { transactionRef, type },
-            }).catch(err => logger.error(`Wallet Notification Error: ${err.message}`));
+            if (!silent) {
+                NotificationService.sendToUser(userId, {
+                    title: '',
+                    body: '',
+                    category: 'transactional',
+                    translationKey: 'TRANSACTION_SUCCESS',
+                    translationData: { amount, currency: user.currency, type },
+                    data: { transactionRef, type },
+                }).catch(err => logger.error(`Wallet Notification Error: ${err.message}`));
+            }
 
             return transaction[0];
         } catch (error: any) {
