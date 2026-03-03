@@ -69,37 +69,25 @@ export class PayoutService {
     }
 
     const start = Date.now();
-    const recipientPayload = {
-      channel: channel,
-      name: user.kycData?.fullName || `${user.firstName} ${user.lastName}`,
-      phone: data.phone,
-      account_number: data.phone,
+    const transferPayload = {
+      description: data.description || 'MANUAL_CASHOUT',
+      amount: amount.toString(), // NotchPay doc exemple utilise une string pour le montant
+      currency: user.currency || 'XAF',
+      channel: 'cm.mobile', // Nouveau format demandé
+      recipient: {
+        account_number: data.phone,
+        country: 'CM',
+        name: user.kycData?.fullName || `${user.firstName} ${user.lastName}`
+      },
+      metadata: {
+        reference: transaction.reference, // Pour lier à notre transaction interne
+        source: 'kauri_app'
+      }
     };
-    logger.debug(`NotchPay Recipient Payload: ${JSON.stringify(recipientPayload)}`);
+    logger.debug(`NotchPay Transfer Payload: ${JSON.stringify(transferPayload)}`);
 
     try {
-      // STEP 1: Create or Get Recipient
-      const recipientResponse = await notchpayAdminApi.post('/recipients', recipientPayload, {
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      const recipientId = recipientResponse.data.recipient?.id || recipientResponse.data.id;
-      if (!recipientId) {
-        throw new Error('Could not retrieve recipient ID from NotchPay');
-      }
-      logger.info(`Recipient ID retrieved: ${recipientId}`);
-
-      // STEP 2: Initiate Transfer
-      // NOTE: On enlève le champ 'channel' ici car il est déjà défini dans le recipient
-      // et cause une erreur 422 "Invalid Channel" sur certains comptes NotchPay.
-      const transferPayload = {
-        amount: amount,
-        currency: user.currency || 'XAF',
-        recipient: recipientId,
-        description: data.description || `Kauri Withdrawal to ${data.phone}`,
-        reference: transaction.reference,
-      };
-
+      // Single-step Transfer API (remplace la création de recipient préalable)
       const response = await notchpayAdminApi.post('/transfers', transferPayload, {
         headers: { 'Content-Type': 'application/json' },
       });
@@ -114,9 +102,8 @@ export class PayoutService {
         data: { transactionRef: transaction.reference, type: 'withdrawal' },
       }).catch((err: any) => logger.error(`Payout Success Notification Error: ${err.message}`));
 
-      // According to doc, the ID/Ref is in transfer.reference or transfer.id
-      const transferId =
-        response.data.transfer?.reference || response.data.transfer?.id || response.data.id;
+      // Extraction de la référence NotchPay selon la nouvelle réponse
+      const transferId = response.data.transfer?.reference || response.data.transfer?.id || response.data.id;
       return {
         status: 'pending',
         transferId,
