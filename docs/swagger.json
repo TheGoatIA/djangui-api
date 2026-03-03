@@ -6969,25 +6969,40 @@
                 "tags": [
                     "Fintech"
                 ],
-                "summary": "Withdraw Funds to Mobile Money",
+                "summary": "Initiate a Withdrawal (Cashout)",
+                "description": "Initiates a mobile money withdrawal via NotchPay using the single-step transfer API.",
                 "requestBody": {
+                    "required": true,
                     "content": {
                         "application/json": {
                             "schema": {
                                 "type": "object",
+                                "required": [
+                                    "amount",
+                                    "phone",
+                                    "provider"
+                                ],
                                 "properties": {
                                     "amount": {
-                                        "type": "number"
+                                        "type": "number",
+                                        "example": 500,
+                                        "description": "Amount to withdraw in user's currency (usually XAF)"
                                     },
-                                    "phoneNumber": {
-                                        "type": "string"
+                                    "phone": {
+                                        "type": "string",
+                                        "example": "+237697000000",
+                                        "description": "Mobile money phone number"
                                     },
                                     "provider": {
                                         "type": "string",
                                         "enum": [
                                             "orange",
-                                            "mtn"
-                                        ]
+                                            "mtn",
+                                            "cm.orange",
+                                            "cm.mtn"
+                                        ],
+                                        "example": "orange",
+                                        "description": "Mobile money provider"
                                     }
                                 }
                             }
@@ -6996,24 +7011,39 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "OK. Note: Les frais sont de 3% (Standard) ou 1.5% (Premium).",
+                        "description": "Withdrawal initiated successfully",
                         "content": {
                             "application/json": {
                                 "example": {
                                     "status": "success",
                                     "message": "Demande de retrait initiée",
                                     "data": {
-                                        "transferId": "tr_12345",
-                                        "reference": "PAY-REF-99"
+                                        "transferId": "trf.test_EgJqm8zzfQQ3jrMStjN3hPmGzUHh6CN5",
+                                        "reference": "TXN-1A2B3C",
+                                        "fees": 100
                                     }
                                 }
                             }
                         }
                     },
+                    "400": {
+                        "description": "Bad Request (e.g., missing fields, insufficient funds, invalid provider)"
+                    },
                     "403": {
-                        "description": "Compte suspendu ou vérification KYC requise"
+                        "description": "Forbidden (e.g., KYC not verified)"
+                    },
+                    "404": {
+                        "description": "User not found"
+                    },
+                    "500": {
+                        "description": "Provider Error (e.g., NotchPay transfer failed)"
                     }
-                }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
             }
         },
         "/v1/fintech/invoice/{transactionId}": {
