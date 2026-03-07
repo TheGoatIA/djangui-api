@@ -1,0 +1,103 @@
+﻿node.exe : FAIL src/t
+ests/walletService.te
+st.ts (13.857 s)
+Au caractère Ligne:1 
+: 1
++ & "C:\Program Files
+\nodejs/node.exe" "C:
+\Users\tchou\AppData\
+Roaming\ ...
++ ~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~
+    + CategoryInfo   
+           : NotSpe  
+  cified: (FAIL sr   
+ c/tests/...t.ts     
+(13.857 s):Strin    
+g) [], RemoteExc    
+eption
+    + FullyQualified 
+   ErrorId : Native  
+  CommandError
+ 
+  WalletService 
+Simple Test
+    ├ù should be 
+able to execute a 
+simple deposit (7 ms)
+
+  ΓùÅ WalletService 
+Simple Test ΓÇ║ 
+should be able to 
+execute a simple 
+deposit
+
+    TypeError: 
+Cannot read 
+properties of 
+undefined (reading 
+'catch')
+
+    [0m [90m 138 
+|[39m           tran
+slationData[33m:[39
+m { 
+amount[33m,[39m 
+currency[33m:[39m u
+ser[33m.[39mcurrenc
+y[33m,[39m type 
+}[33m,[39m
+     [90m 139 
+|[39m           
+data[33m:[39m { tra
+nsactionRef[33m,[39
+m type }[33m,[39m
+    [31m[1m>[22m[
+39m[90m 140 |[39m  
+       })[33m.[39m
+[36mcatch[39m((err) 
+[33m=>[39m logger[
+33m.[39merror([32m`
+Wallet Notification 
+Error: ${err.message}
+`[39m))[33m;[39m
+     [90m     
+|[39m           
+[31m[1m^[22m[39m
+     [90m 141 
+|[39m       }
+     [90m 142 |[39m
+     [90m 143 
+|[39m       
+[36mreturn[39m tran
+saction[[35m0[39m]
+[33m;[39m[0m
+
+      at Function.exe
+cuteTransaction (src/
+services/walletServic
+e.ts:140:11)
+      at 
+Object.<anonymous> (s
+rc/tests/walletServic
+e.test.ts:46:20)
+
+Test Suites: 1 
+failed, 1 total
+Tests:       1 
+failed, 1 total
+Snapshots:   0 total
+Time:        14.252 s
+Ran all test suites 
+matching src/tests/wa
+lletService.test.ts.
+Force exiting Jest: 
+Have you considered 
+using `--detectOpenHa
+ndles` to detect 
+async operations 
+that kept running 
+after all tests 
+finished?
