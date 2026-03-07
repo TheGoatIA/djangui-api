@@ -1,0 +1,97 @@
+name: CI/CD Pipeline (Staging & Prod)
+
+on:
+  push:
+    branches: [ "main", "dev" ]
+  # Le workflow_dispatch permet de lancer le job manuellement depuis l'interface GitHub
+  workflow_dispatch:
+    inputs:
+      deploy_to:
+        description: "🚨 Environnement à déployer :"
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+jobs:
+  test:
+    name: 🧪 Run Tests
+    runs-on: ubuntu-latest
+    
+    services:
+      mongodb:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Use Node.js 20.x
+      uses: actions/setup-node@v6
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build
+      run: npm run build
+
+    - name: Run Unit Tests
+      env:
+        MONGODB_URI: mongodb://localhost:27017/kauri_test
+        REDIS_URL: redis://localhost:6379
+        JWT_ACCESS_SECRET: test_secret
+        NODE_ENV: test
+      run: npm run test
+
+  deploy_staging:
+    name: 🚀 Deploy to Staging
+    needs: test
+    # S'exécute automatiquement au push (main/dev) OU manuellement si choisi
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_to == 'staging')
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Auto-deployment script (Staging)
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.PROD_SERVER_IP }}
+        username: ${{ secrets.PROD_USERNAME }}
+        password: ${{ secrets.PROD_PASSWORD }}
+        script: |
+          # Modifie ce chemin vers le dossier où se trouve ton API de Staging sur le serveur
+          cd /var/www/kauri/staging-api
+          git pull origin main
+          docker-compose -f docker-compose.staging.yml build
+          docker-compose -f docker-compose.staging.yml up -d
+          docker image prune -a -f
+
+  deploy_production:
+    name: 💎 Deploy to Production
+    needs: test
+    # Ne s'exécute JAMAIS automatiquement, UNIQUEMENT via le bouton manuel GitHub
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_to == 'production'
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Manual-deployment script (Production)
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.PROD_SERVER_IP }}
+        username: ${{ secrets.PROD_USERNAME }}
+        password: ${{ secrets.PROD_PASSWORD }}
+        script: |
+          cd /var/www/kauri/api
+          git pull origin main
+          docker-compose -f docker-compose.prod.yml build
+          docker-compose -f docker-compose.prod.yml up -d
+          docker image prune -a -f
