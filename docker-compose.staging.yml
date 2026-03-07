@@ -49,7 +49,7 @@ services:
     networks:
       - kauri-network
     healthcheck:
-      test: [ "CMD-SHELL", "mongosh --port 27017 -u $${MONGODB_USER:-admin} -p $${MONGODB_PASSWORD:-password} --authenticationDatabase admin --quiet --eval \"db.adminCommand('ping').ok\" || mongosh --port 27017 --quiet --eval \"db.adminCommand('ping').ok || rs.initiate({_id:'rs0',members:[{_id:0,host:'127.0.0.1:27017'}]})\"" ]
+      test: [ "CMD-SHELL", "mongosh --port 27017 -u $${MONGODB_USER:-admin} -p $${MONGODB_PASSWORD:-password} --authenticationDatabase admin --quiet --eval \"db.adminCommand('ping').ok\" || (mongosh --port 27017 -u $${MONGODB_USER:-admin} -p $${MONGODB_PASSWORD:-password} --authenticationDatabase admin --quiet --eval \"rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]})\" || mongosh --port 27017 --quiet --eval \"rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]})\" && sleep 2)" ]
       interval: 10s
       timeout: 10s
       retries: 15
