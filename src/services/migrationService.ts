@@ -25,8 +25,18 @@ export class MigrationService {
     const migrationId = 'migrate-real-money-launch-v1';
 
     try {
-      const alreadyRun = await Migration.findOne({ migrationId });
-      if (alreadyRun) return;
+      try {
+        // 0. Le Lock Atomique de Migration
+        // En mode PM2 Cluster, plusieurs instances démarrent en même temps. 
+        // En forçant la création dès le début, une seule instance réussira, les autres auront l'erreur E11000.
+        await Migration.create({ migrationId });
+      } catch (err: any) {
+        if (err.code === 11000) {
+          logger.info(`[Migration] Migration ${migrationId} déjà verrouillée ou effectuée par un autre processus.`);
+          return; // Sortie silencieuse pour les autres workers PM2
+        }
+        throw err;
+      }
 
       logger.info(`[Migration] Lancement de la transition REAL MONEY : ${migrationId}...`);
 
@@ -69,8 +79,6 @@ export class MigrationService {
         body: "Kauri passe à l'argent réel. Vos anciens challenges et objectifs en cours ont été réinitialisés pour ce nouveau départ.",
         category: 'important',
       });
-
-      await Migration.create({ migrationId });
 
       logger.info(`[Migration] REAL MONEY Transition COMPLETED.`);
       logger.info(`- Challenges: ${ChallengesReset.modifiedCount} resets`);
