@@ -25,7 +25,7 @@
     "@opentelemetry/semantic-conventions": "^1.39.0",
     "@types/nodemailer": "^7.0.4",
     "@types/swagger-ui-express": "^4.1.8",
-    "axios": "^1.7.9",
+    "axios": "^1.13.6",
     "bcrypt": "^5.1.1",
     "compression": "^1.7.5",
     "cors": "^2.8.6",
