@@ -4,17 +4,26 @@ import { CountryRequestController } from '../controllers/countryRequestControlle
 import validate from '../middleware/validation';
 import { registerSchema, loginSchema, refreshTokenSchema } from '../validators/authValidator';
 import protect from '../middleware/auth';
+import rateLimit from 'express-rate-limit';
+
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 10, // Max 10 tentatives par IP par 15 minutes
+    message: 'Trop de tentatives de connexion, veuillez réessayer dans 15 minutes',
+    standardHeaders: true,
+    legacyHeaders: false,
+});
 
 const router = Router();
 
-router.post('/register', validate(registerSchema), AuthController.register);
-router.post('/login', validate(loginSchema), AuthController.login);
+router.post('/register', authLimiter, validate(registerSchema), AuthController.register);
+router.post('/login', authLimiter, validate(loginSchema), AuthController.login);
 router.post('/refresh', validate(refreshTokenSchema), AuthController.refresh);
 router.post('/firebase', AuthController.firebaseAuth);
 router.post('/google', AuthController.firebaseAuth); // Alias for backward compatibility
 router.post('/apple', AuthController.firebaseAuth); // Alias for Apple
 
-router.post('/forgot-password', AuthController.forgotPassword);
+router.post('/forgot-password', authLimiter, AuthController.forgotPassword);
 router.patch('/reset-password/:token', AuthController.resetPassword);
 router.patch('/reset-password/:token', AuthController.resetPassword);
 router.get('/verify-email', AuthController.verifyEmail);

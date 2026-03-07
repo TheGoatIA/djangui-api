@@ -123,21 +123,14 @@ export class PayoutService {
         logger.debug(`NotchPay Full Error Response: ${JSON.stringify(error.response.data)}`);
       }
 
-      // REMBOURSEMENT en cas d'échec immédiat de l'API (SILENCIEUX)
-      await WalletService.executeTransaction({
-        userId,
-        amount: totalAmount,
-        type: 'deposit',
-        description: `Remboursement : Échec retrait vers ${data.phone}`,
-        paymentMethod: 'wallet',
-        metadata: { originalReference: transaction.reference },
-        silent: true,
-      });
+      // Attention Sécurité: On ne rembourse PLUS automatiquement.
+      // Une erreur API (timeout 500, etc) ne garantit pas que NotchPay n'a pas traité le transfert.
+      // Le remboursement doit être vérifié et traité manuellement ou via webhook pour éviter une faille de double dépense.
 
       // Notification d'ÉCHEC spécifique
       NotificationService.sendToUser(userId, {
         title: 'Échec du Retrait ❌',
-        body: `Le retrait vers ${data.phone} a échoué. Les fonds (${totalAmount} ${user.currency || 'XAF'}) ont été restitués sur votre wallet.`,
+        body: `Le retrait vers ${data.phone} a rencontré une erreur réseau. Veuillez patienter ou contacter le support.`,
         category: 'important',
         data: { transactionRef: transaction.reference, type: 'withdrawal_failed' },
       }).catch((err: any) => logger.error(`Payout Failure Notification Error: ${err.message}`));

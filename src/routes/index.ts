@@ -64,9 +64,10 @@ router.post('/webhooks/notchpay', WebhookController.notchpayWebhook);
 
 // Admin Fintech Routes
 import { AdminFintechController } from '../controllers/adminFintechController';
-router.get('/admin/fintech/kyc/pending', AdminFintechController.getPendingKYC);
-router.post('/admin/fintech/kyc/verify', AdminFintechController.verifyKYC);
-router.post('/admin/fintech/reconciliation/trigger', AdminFintechController.triggerReconciliation);
-router.get('/admin/fintech/stats', AdminFintechController.getFintechStats);
+import { protect, restrictTo } from '../middleware/auth';
+router.get('/admin/fintech/kyc/pending', protect, restrictTo('admin'), AdminFintechController.getPendingKYC);
+router.post('/admin/fintech/kyc/verify', protect, restrictTo('admin'), AdminFintechController.verifyKYC);
+router.post('/admin/fintech/reconciliation/trigger', protect, restrictTo('admin'), AdminFintechController.triggerReconciliation);
+router.get('/admin/fintech/stats', protect, restrictTo('admin'), AdminFintechController.getFintechStats);
 
 export default router;
