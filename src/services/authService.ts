@@ -109,7 +109,9 @@ export class AuthService {
       let user = await User.findOne({ firebaseUid: uid });
       let isNewUser = false;
 
-      if (!user && email) {
+      const isEmailVerified = !!decodedToken.email_verified;
+
+      if (!user && email && isEmailVerified) {
         // Try to find by email if UID fails (maybe first login with Google/Email for existing account)
         user = await User.findOne({ email });
       } else if (!user && phone_number) {
