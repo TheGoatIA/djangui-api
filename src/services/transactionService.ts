@@ -47,9 +47,14 @@ export class TransactionService {
       }
 
       // Update User Wallet Balance
-      if (data.type === 'income') {
+      // Seuls les revenus numériques (dépôts) et les dépenses via Wallet impactent le solde réel.
+      const isDigitalIncome =
+        data.type === 'income' && ['stripe', 'notchpay', 'wallet'].includes(data.paymentMethod);
+      const isWalletExpense = data.type === 'expense' && data.paymentMethod === 'wallet';
+
+      if (isDigitalIncome) {
         await User.findByIdAndUpdate(userId, { $inc: { walletBalance: data.amount } }, { session });
-      } else if (data.type === 'expense') {
+      } else if (isWalletExpense) {
         await User.findByIdAndUpdate(
           userId,
           { $inc: { walletBalance: -data.amount } },
@@ -136,8 +141,14 @@ export class TransactionService {
       await session.commitTransaction();
 
       // Metrique business - Move from controller to service for bulk coverage
+      const metricType = (
+        ['income', 'deposit', 'tontine_payout', 'challenge_reward'].includes(transaction.type)
+          ? 'income'
+          : 'expense'
+      ) as 'income' | 'expense';
+
       MonitoringService.recordTransaction(
-        transaction.type,
+        metricType,
         'success',
         transaction.currency || 'XAF',
         transaction.amount,
@@ -147,7 +158,7 @@ export class TransactionService {
       TransactionService.updateRelatedChallenges(
         userId,
         transaction.amount,
-        transaction.type,
+        metricType,
         transaction.category,
       ).catch((err: any) => {
         logger.error(`Error updating challenges progress: ${err.message}`);
@@ -213,13 +224,19 @@ export class TransactionService {
       }
 
       // Revert old balance impact
-      if (oldTransaction.type === 'income') {
+      const wasDigitalIncome =
+        oldTransaction.type === 'income' &&
+        ['stripe', 'notchpay', 'wallet'].includes(oldTransaction.paymentMethod as any);
+      const wasWalletExpense =
+        oldTransaction.type === 'expense' && oldTransaction.paymentMethod === 'wallet';
+
+      if (wasDigitalIncome) {
         await User.findByIdAndUpdate(
           userId,
           { $inc: { walletBalance: -oldTransaction.amount } },
           { session },
         );
-      } else if (oldTransaction.type === 'expense') {
+      } else if (wasWalletExpense) {
         await User.findByIdAndUpdate(
           userId,
           { $inc: { walletBalance: oldTransaction.amount } },
@@ -236,13 +253,19 @@ export class TransactionService {
 
       // Apply new balance impact
       if (updatedTransaction) {
-        if (updatedTransaction.type === 'income') {
+        const isDigitalIncome =
+          updatedTransaction.type === 'income' &&
+          ['stripe', 'notchpay', 'wallet'].includes(updatedTransaction.paymentMethod as any);
+        const isWalletExpense =
+          updatedTransaction.type === 'expense' && updatedTransaction.paymentMethod === 'wallet';
+
+        if (isDigitalIncome) {
           await User.findByIdAndUpdate(
             userId,
             { $inc: { walletBalance: updatedTransaction.amount } },
             { session },
           );
-        } else if (updatedTransaction.type === 'expense') {
+        } else if (isWalletExpense) {
           await User.findByIdAndUpdate(
             userId,
             { $inc: { walletBalance: -updatedTransaction.amount } },
@@ -262,19 +285,20 @@ export class TransactionService {
   }
 
   static async deleteTransaction(id: string, userId: string) {
-    const transaction = await Transaction.findOneAndDelete({ _id: id, userId });
+    const transaction = await Transaction.findOne({ _id: id, userId });
     if (!transaction) {
       throw new AppError('Transaction not found', 404);
     }
-    // TODO: Update budget/goal if necessary
 
-    // Reverse balance update
-    if (transaction.type === 'income') {
-      await User.findByIdAndUpdate(userId, { $inc: { walletBalance: -transaction.amount } });
-    } else if (transaction.type === 'expense') {
-      await User.findByIdAndUpdate(userId, { $inc: { walletBalance: transaction.amount } });
+    // Sécurité Fintech : Interdiction de supprimer des transactions réelles (Wallet, NotchPay, Stripe)
+    if (transaction.paymentMethod !== 'cash') {
+      throw new AppError(
+        "Les transactions financières réelles ne peuvent pas être supprimées pour des raisons d'audit et d'intégrité.",
+        403,
+      );
     }
 
+    await Transaction.deleteOne({ _id: id });
     return true;
   }
 

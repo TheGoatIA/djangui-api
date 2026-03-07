@@ -18,6 +18,9 @@ const userChallengeSchema = new Schema<IUserChallenge>(
     startDate: { type: Date, default: Date.now },
     endDate: { type: Date, required: true },
     completedAt: { type: Date },
+    stakeAmount: { type: Number, default: 0 },
+    potentialReward: { type: Number, default: 0 },
+    transactionId: { type: Schema.Types.ObjectId, ref: 'Transaction' },
     weeks: [
       {
         weekNumber: { type: Number, required: true },

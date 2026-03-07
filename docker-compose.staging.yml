@@ -1,78 +1,242 @@
+# Supprimer la ligne version (obsolète)
 services:
-  api-staging:
+  api:
     build: .
     ports:
-      - "${STAGING_PORT:-5001}:5000"
-    env_file: .env.staging
+      - "${PORT:-5000}:5000"
+    env_file: .env
     environment:
-      - NODE_ENV=staging
-      - MONGODB_URI=mongodb://mongodb-staging:27017/kauri_staging?replicaSet=rs0
-      - REDIS_URL=redis://redis-staging:6379
+      - PORT=5000
+      - NODE_ENV=${NODE_ENV:-production}
+      - MONGODB_URI=${MONGODB_URI:-mongodb://${MONGODB_USER:-admin}:${MONGODB_PASSWORD:-password}@mongodb:27017/kauri?authSource=admin&replicaSet=rs0}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - NODE_OPTIONS=--max-old-space-size=1843 # Allocate ~90% of RAM to V8 heap
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     depends_on:
-      mongodb-staging:
+      mongodb:
         condition: service_healthy
-      redis-staging:
+      redis:
         condition: service_healthy
     networks:
-      - kauri-staging-network
+      - kauri-network
     volumes:
-      - ./uploads-staging:/app/uploads
+      - ./uploads:/app/uploads
+      - ./backups:/app/backups
     restart: unless-stopped
     deploy:
       resources:
         limits:
-          memory: 1G
-          cpus: '0.5'
-    healthcheck:
-      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5000/health" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
-  mongodb-staging:
-    image: mongo:7.0
-    command: [ "--replSet", "rs0", "--bind_ip_all" ]
-    ports:
-      - "${STAGING_MONGODB_PORT:-27018}:27017"
-    volumes:
-      - mongodb_staging_data:/data/db
-    networks:
-      - kauri-staging-network
-    deploy:
-      resources:
-        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
           memory: 2G
-          cpus: '1.0'
-    healthcheck:
-      test: echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb-staging:27017'}]}) }" | mongosh --port 27017 --quiet
-      interval: 10s
-      timeout: 30s
-      retries: 5
-      start_period: 40s
-    restart: unless-stopped
 
-  redis-staging:
-    image: redis:7-alpine
+  mongodb:
+    image: mongo:7.0
+    entrypoint: >
+      /bin/sh -c "cp /data/db/mongodb.key /tmp/mongodb.key && chmod 600 /tmp/mongodb.key && chown 999:999 /tmp/mongodb.key && exec /usr/local/bin/docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all --auth --keyFile /tmp/mongodb.key"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGODB_USER:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGODB_PASSWORD:-password}
     ports:
-      - "${STAGING_REDIS_PORT:-6380}:6379"
+      - "${MONGODB_PORT:-15001}:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - ./mongodb.key:/data/db/mongodb.key
     networks:
-      - kauri-staging-network
+      - kauri-network
+    healthcheck:
+      test: [ "CMD-SHELL", "mongosh --port 27017 -u $${MONGODB_USER:-admin} -p $${MONGODB_PASSWORD:-password} --authenticationDatabase admin --quiet --eval \"db.adminCommand('ping').ok\" || mongosh --port 27017 --quiet --eval \"db.adminCommand('ping').ok || rs.initiate({_id:'rs0',members:[{_id:0,host:'127.0.0.1:27017'}]})\"" ]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+    restart: unless-stopped
     deploy:
       resources:
         limits:
-          memory: 512M
-          cpus: '0.2'
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 1G
+
+  redis:
+    image: redis:7-alpine # Version spécifique
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      - kauri-network
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 3s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+
+  # Centralized Logging (Graylog)
+  opensearch:
+    image: opensearchproject/opensearch:2.11.0
+    environment:
+      - cluster.name=opensearch
+      - node.name=opensearch
+      - discovery.type=single-node
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+      - bootstrap.memory_lock=true
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+      - DISABLE_SECURITY_PLUGIN=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    networks:
+      - kauri-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+
+  graylog:
+    image: graylog/graylog:5.2
+    depends_on:
+      opensearch:
+        condition: service_started
+      mongodb:
+        condition: service_healthy
+    environment:
+      - GRAYLOG_NODE_ID_FILE=/usr/share/graylog/data/config/node-id
+      - GRAYLOG_PASSWORD_SECRET=somepasswordpepper1234567890abc
+      - GRAYLOG_ROOT_PASSWORD_SHA2=8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918
+      - GRAYLOG_HTTP_BIND_ADDRESS=0.0.0.0:9000
+      - GRAYLOG_ELASTICSEARCH_HOSTS=http://opensearch:9200
+      - GRAYLOG_MONGODB_URI=mongodb://${MONGODB_USER:-admin}:${MONGODB_PASSWORD:-password}@mongodb:27017/graylog?authSource=admin&replicaSet=rs0
+    ports:
+      - "${GRAYLOG_HTTP_PORT:-9000}:9000"
+      - "${GRAYLOG_GELF_PORT:-12201}:12201/udp"
+    networks:
+      - kauri-network
+    volumes:
+      - graylog_data:/usr/share/graylog/data
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+
+  # Monitoring (Prometheus & Grafana)
+  prometheus:
+    image: prom/prometheus:v2.48.0 # Version spécifique
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - kauri-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.2.2 # Version spécifique
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - kauri-network
+    volumes:
+      - grafana_data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=admin
+    restart: unless-stopped
+
+  # OpenTelemetry
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "${JAEGER_PORT:-16686}:16686" # Web UI
+      - "${JAEGER_COLLECTOR_HTTP_PORT:-14268}:14268" # Collector HTTP
+      - "${JAEGER_COLLECTOR_GRPC_PORT:-14250}:14250" # Collector gRPC
+    networks:
+      - kauri-network
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector:latest
+    command: [ "--config=/etc/otel-collector-config.yaml" ]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "${OTEL_PORT_GRPC:-4317}:4317" # OTLP gRPC
+      - "${OTEL_PORT_HTTP:-4318}:4318" # OTLP HTTP
+    depends_on:
+      - jaeger
+    networks:
+      - kauri-network
+    restart: unless-stopped
+
+  # MinIO Object Storage
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-kauriadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-kaurisecret}
+    volumes:
+      - minio_data:/data
+    networks:
+      - kauri-network
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # MinIO Client (Auto-config buckets)
+  mc:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c " /usr/bin/mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-kauriadmin} ${MINIO_ROOT_PASSWORD:-kaurisecret}; /usr/bin/mc mb --ignore-existing local/kauri-uploads; /usr/bin/mc mb --ignore-existing local/kauri-invoices; /usr/bin/mc mb --ignore-existing local/kauri-backups; /usr/bin/mc anonymous set public local/kauri-uploads; /usr/bin/mc anonymous set public local/kauri-invoices; exit 0; "
+    networks:
+      - kauri-network
 
 networks:
-  kauri-staging-network:
+  kauri-network:
     driver: bridge
 
 volumes:
-  mongodb_staging_data:
+  mongodb_data:
+  opensearch_data:
+  graylog_data:
+  grafana_data:
+  prometheus_data:
+  minio_data:

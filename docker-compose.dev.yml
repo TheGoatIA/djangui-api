@@ -1,0 +1,112 @@
+services:
+  api:
+    build: .
+    ports:
+      - "${PORT:-5000}:5000"
+    env_file: .env
+    environment:
+      - PORT=5000
+      - NODE_ENV=development
+      - MONGODB_URI=${MONGODB_URI:-mongodb://${MONGODB_USER:-admin}:${MONGODB_PASSWORD:-password}@mongodb:27017/kauri?authSource=admin&replicaSet=rs0}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - ENABLE_TRACING=false
+      - GRAYLOG_HOST=disabled
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - kauri-network
+    volumes:
+      - ./uploads:/app/uploads
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+
+  mongodb:
+    image: mongo:7.0
+    # On génère la clé directement dans le volume pour éviter les problèmes de permissions NTFS/Windows
+    entrypoint: |
+      /bin/sh -c "
+      if [ ! -f /data/db/mongodb.key ]; then
+        openssl rand -base64 756 > /data/db/mongodb.key
+        chmod 600 /data/db/mongodb.key
+        chown 999:999 /data/db/mongodb.key
+      fi
+      exec /usr/local/bin/docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all --auth --keyFile /data/db/mongodb.key
+      "
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGODB_USER:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGODB_PASSWORD:-password}
+    ports:
+      - "${MONGODB_PORT:-15001}:27017"
+    volumes:
+      - mongodb_dev_data:/data/db
+    networks:
+      - kauri-network
+    healthcheck:
+      test: [ "CMD-SHELL", "mongosh --port 27017 -u $${MONGO_INITDB_ROOT_USERNAME:-admin} -p $${MONGO_INITDB_ROOT_PASSWORD:-password} --authenticationDatabase admin --quiet --eval \"db.adminCommand('ping').ok\" || (mongosh --port 27017 -u $${MONGO_INITDB_ROOT_USERNAME:-admin} -p $${MONGO_INITDB_ROOT_PASSWORD:-password} --authenticationDatabase admin --quiet --eval \"rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]})\" || mongosh --port 27017 --quiet --eval \"rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]})\" && sleep 2)" ]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      - kauri-network
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-kauriadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-kaurisecret}
+    volumes:
+      - minio_dev_data:/data
+    networks:
+      - kauri-network
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  mc:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c " /usr/bin/mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-kauriadmin} ${MINIO_ROOT_PASSWORD:-kaurisecret}; /usr/bin/mc mb --ignore-existing local/kauri-uploads; /usr/bin/mc mb --ignore-existing local/kauri-invoices; /usr/bin/mc mb --ignore-existing local/kauri-backups; /usr/bin/mc anonymous set public local/kauri-uploads; /usr/bin/mc anonymous set public local/kauri-invoices; exit 0; "
+    networks:
+      - kauri-network
+
+networks:
+  kauri-network:
+    driver: bridge
+
+volumes:
+  mongodb_dev_data:
+  minio_dev_data:

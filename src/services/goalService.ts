@@ -4,6 +4,7 @@ import { AppError } from '../middleware/errorHandler';
 import mongoose from 'mongoose';
 import logger from '../utils/logger';
 import { MonitoringService } from './monitoringService';
+import { WalletService } from './walletService';
 
 export class GoalService {
   static async createGoal(userId: string, data: any) {
@@ -33,72 +34,38 @@ export class GoalService {
   }
 
   static async addContribution(id: string, userId: string, amount: number, note?: string) {
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
-    try {
-      const goal = await SavingGoal.findOne({ _id: id, userId }).session(session);
-      if (!goal) {
-        throw new AppError('Goal not found', 404);
-      }
-
-      // Add contribution to goal
-      goal.contributions.push({ amount, date: new Date(), note });
-      goal.currentAmount += amount;
-
-      const wasAlreadyHalfway = ((goal.currentAmount - amount) / goal.targetAmount) * 100 >= 50;
-      const wasAlreadyCompleted = ((goal.currentAmount - amount) / goal.targetAmount) * 100 >= 100;
-
-      await (goal as any).save({ session });
-
-      // Create a corresponding transaction
-      const Transaction = mongoose.model('Transaction');
-      const User = mongoose.model('User');
-
-      const description =
-        goal.type === 'debt'
-          ? `Remboursement dette : ${goal.name}`
-          : `Contribution objectif : ${goal.name}`;
-
-      await Transaction.create(
-        [
-          {
-            userId,
-            amount,
-            type: 'expense',
-            category: goal.type === 'debt' ? 'Dettes' : 'Épargne',
-            description,
-            date: new Date(),
-            linkedGoalId: goal._id,
-            isAutoCategorized: true,
-          },
-        ],
-        { session },
-      );
-
-      // Update User Wallet Balance
-      await User.findByIdAndUpdate(userId, { $inc: { walletBalance: -amount } }, { session });
-
-      await session.commitTransaction();
-
-      // Check for milestones after commit (to send notifications)
-      this.checkMilestones(userId, goal, wasAlreadyHalfway, wasAlreadyCompleted).catch((err) =>
-        logger.error(`Milestone check error: ${err}`),
-      );
-
-      return goal;
-    } catch (error) {
-      await session.abortTransaction();
-      throw error;
-    } finally {
-      session.endSession();
-      // Metrique business (post-transaction)
-      try {
-        // Re-fetch goal to succeed (optimized out for now, just record success)
-        MonitoringService.recordGoalEvent('contribute', 'unknown', 'success');
-        MonitoringService.recordGoalAmount('contribute', 'XAF', amount);
-      } catch (e) {}
+    const goal = await SavingGoal.findOne({ _id: id, userId });
+    if (!goal) {
+      throw new AppError('Goal not found', 404);
     }
+
+    const wasAlreadyHalfway = (goal.currentAmount / goal.targetAmount) * 100 >= 50;
+    const wasAlreadyCompleted = (goal.currentAmount / goal.targetAmount) * 100 >= 100;
+
+    // 1. Débiter le wallet et créer la transaction via WalletService (Atomique)
+    await WalletService.executeTransaction({
+      userId,
+      amount,
+      type: 'saving_transfer',
+      description: `Contribution objectif : ${goal.name}`,
+      paymentMethod: 'wallet',
+      metadata: { goalId: id, note },
+    });
+
+    // 2. Mettre à jour l'objectif
+    goal.contributions.push({ amount, date: new Date(), note });
+    goal.currentAmount += amount;
+    await goal.save();
+
+    // Check for milestones
+    this.checkMilestones(userId, goal, wasAlreadyHalfway, wasAlreadyCompleted).catch((err) =>
+      logger.error(`Milestone check error: ${err}`),
+    );
+
+    MonitoringService.recordGoalEvent('contribute', goal.type || 'unknown', 'success');
+    MonitoringService.recordGoalAmount('contribute', 'XAF', amount);
+
+    return goal;
   }
 
   /**

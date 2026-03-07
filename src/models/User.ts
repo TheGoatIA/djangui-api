@@ -120,6 +120,31 @@ const userSchema = new Schema<IUserDocument>(
       default: 0,
       min: 0,
     },
+    kycLevel: {
+      type: String,
+      enum: ['none', 'pending', 'verified'],
+      default: 'none',
+      index: true,
+    },
+    kycData: {
+      documentType: {
+        type: String,
+        enum: ['cni', 'passport', 'driver_license'],
+      },
+      documentNumber: String,
+      fullName: String,
+      documentImageUrl: String,
+      selfieImageUrl: String,
+      verifiedAt: Date,
+      rejectionReason: String,
+      aiReport: String,
+      aiConfidence: Number,
+      aiAnalysisStatus: {
+        type: String,
+        enum: ['pending', 'completed', 'failed'],
+        default: 'pending',
+      },
+    },
     xp: {
       type: Number,
       default: 0,
@@ -168,6 +193,16 @@ const userSchema = new Schema<IUserDocument>(
     appVersion: String,
     lastLogin: Date,
     refreshToken: String,
+    // AI Security
+    aiAttackCount: {
+      type: Number,
+      default: 0,
+    },
+    status: {
+      type: String,
+      enum: ['active', 'suspended', 'blocked'],
+      default: 'active',
+    },
   },
   {
     timestamps: true,

@@ -116,4 +116,12 @@ export class GamificationService {
       throw error;
     }
   }
+
+  /**
+   * Récompense pour la complétion d'un challenge
+   */
+  static async awardChallengeCompletion(userId: string, challengeTitle: string) {
+    await this.addXP(userId, 500); // 500 XP pour un challenge réussi
+    await this.awardBadge(userId, `Vainqueur : ${challengeTitle}`, '🏆');
+  }
 }
