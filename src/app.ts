@@ -44,10 +44,12 @@ const limiter = rateLimit({
   message: 'Too many requests from this IP, please try again after 15 minutes',
   standardHeaders: true,
   legacyHeaders: false,
-  store: new RedisStore({
-    // @ts-expect-error - Known issue with type definitions
-    sendCommand: (...args: string[]) => redis.call(...args),
-  }),
+  // Use memory store in tests, otherwise use Redis
+  store: process.env.NODE_ENV === 'test'
+    ? undefined
+    : new RedisStore({
+      sendCommand: (...args: string[]) => redis.call(...args),
+    }),
 });
 
 // Middlewares

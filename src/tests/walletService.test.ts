@@ -2,12 +2,16 @@ import { WalletService } from '../services/walletService';
 import User from '../models/User';
 import Transaction from '../models/Transaction';
 import mongoose from 'mongoose';
+import { NotificationService } from '../services/notificationService';
+import { FinancialAlertService } from '../services/financialAlertService';
 
 // Mock minimaliste
 jest.mock('../models/User');
 jest.mock('../models/Transaction');
 jest.mock('../services/auditService');
+jest.mock('../utils/logger');
 jest.mock('../services/notificationService');
+jest.mock('../services/financialAlertService');
 jest.mock('../utils/logger');
 
 describe('WalletService Simple Test', () => {
@@ -22,6 +26,8 @@ describe('WalletService Simple Test', () => {
     };
     // Mock global mongoose.startSession
     jest.spyOn(mongoose, 'startSession').mockResolvedValue(mockSession as any);
+    (NotificationService.sendToUser as jest.Mock).mockResolvedValue(true);
+    (FinancialAlertService.monitorTransaction as jest.Mock).mockResolvedValue(true);
   });
 
   afterEach(() => {
@@ -39,6 +45,8 @@ describe('WalletService Simple Test', () => {
     (User.findById as jest.Mock).mockReturnValue({
       session: jest.fn().mockResolvedValue(mockUser),
     });
+
+    (Transaction.create as jest.Mock).mockResolvedValue([{ _id: 'tx123', reference: 'REF123' }]);
 
     (Transaction.create as jest.Mock).mockResolvedValue([{ _id: 'tx123', reference: 'REF123' }]);
 

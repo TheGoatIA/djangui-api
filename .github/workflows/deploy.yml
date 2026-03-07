@@ -71,8 +71,8 @@ jobs:
           # Modifie ce chemin vers le dossier où se trouve ton API de Staging sur le serveur
           cd /var/www/kauri/staging-api
           git pull origin main
-          docker-compose -f docker-compose.staging.yml build
-          docker-compose -f docker-compose.staging.yml up -d
+          docker compose -f docker-compose.staging.yml build
+          docker compose -f docker-compose.staging.yml up -d
           docker image prune -a -f
 
   deploy_production:
@@ -92,6 +92,6 @@ jobs:
         script: |
           cd /var/www/kauri/api
           git pull origin main
-          docker-compose -f docker-compose.prod.yml build
-          docker-compose -f docker-compose.prod.yml up -d
+          docker compose -f docker-compose.prod.yml build
+          docker compose -f docker-compose.prod.yml up -d
           docker image prune -a -f

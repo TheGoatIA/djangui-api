@@ -2,6 +2,7 @@ import request from 'supertest';
 import mongoose from 'mongoose';
 import app from '../../src/app';
 import User from '../../src/models/User';
+import redis from '../../src/config/redis';
 
 describe('Authentication Integration Tests', () => {
     const testUser = {
@@ -18,7 +19,12 @@ describe('Authentication Integration Tests', () => {
 
     afterAll(async () => {
         await User.deleteMany({});
-        await mongoose.connection.close();
+        await mongoose.connection.close(true);
+
+        // Also close Redis connection opened by app/rateLimiter
+        if (redis.status === 'ready' || redis.status === 'connect') {
+            redis.disconnect();
+        }
     });
 
     beforeEach(async () => {
@@ -40,13 +46,13 @@ describe('Authentication Integration Tests', () => {
         });
 
         it('should fail if email already exists', async () => {
-            await User.create(testUser);
+            await request(app).post('/api/v1/auth/register').send(testUser);
             const res = await request(app)
                 .post('/api/v1/auth/register')
                 .send(testUser);
 
             expect(res.statusCode).toBe(409);
-            expect(res.body.success).toBe(false);
+            expect(res.body.status).toBe('error');
         });
     });
 
