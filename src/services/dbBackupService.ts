@@ -5,6 +5,7 @@ import { promisify } from 'util';
 import logger from '../utils/logger';
 import { EmailService } from './emailService';
 import { SlackService } from './slackService';
+import { StorageService } from './storageService';
 import mongoose from 'mongoose';
 
 const execPromise = promisify(exec);
@@ -59,15 +60,25 @@ export class DbBackupService {
          ${statsHtml}`,
       );
 
-      // Notify Slack
+      // 5. Upload vers MinIO (Bucket kauri-backups)
+      const bucket = 'kauri-backups';
+      const destinationKey = `database/${path.basename(archivePath)}`;
+      const minioUrl = await StorageService.uploadFile(archivePath, bucket, destinationKey);
+
+      // 6. Nettoyage local (Optionnel: on peut garder le dernier backup localement ou tout supprimer)
+      try {
+        fs.unlinkSync(archivePath);
+      } catch (e) {}
+
+      // Notify Slack (with MinIO info)
       await SlackService.sendNotification(
-        `📦 *DB Backup Success*\n*File*: ${path.basename(archivePath)}\n*Status*: Completed and saved.`,
+        `📦 *DB Backup Success (Cloud)*\n*File*: ${path.basename(archivePath)}\n*Status*: Uploaded to MinIO.`,
       );
 
-      // 5. Cleanup old backups (15 days)
+      // 7. Cleanup old backups (15 days - now in MinIO scope if we implement it there too)
       await this.cleanupOldBackups(15);
 
-      return { success: true, path: archivePath, stats };
+      return { success: true, path: minioUrl, stats };
     } catch (error: any) {
       logger.error(`Database backup failed: ${error.message}`);
       await EmailService.sendEmail(

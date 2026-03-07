@@ -214,61 +214,71 @@ export class ReportService {
   }
 
   /**
-   * Get global application stats for the last 24 hours (Admin Report)
+   * Get global application stats for the last 24 hours (Admin Report) - UPGRADED
    */
   static async getGlobalDailyStats() {
     const now = new Date();
     const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-    const [newUsers, transactions, activeSessions] = await Promise.all([
-      // 1. New Users
+    const [newUsers, transactions, activeSessions, aumData] = await Promise.all([
       User.countDocuments({ createdAt: { $gte: yesterday } }),
-
-      // 2. Transactions (Count & Volume)
       Transaction.aggregate([
-        { $match: { date: { $gte: yesterday } } },
+        { $match: { date: { $gte: yesterday }, status: 'completed' } },
         {
           $group: {
             _id: '$type',
             count: { $sum: 1 },
-            totalAmount: { $sum: '$amount' },
+            totalVolume: { $sum: '$amount' },
+            totalFees: { $sum: '$fees' },
           },
         },
       ]),
-
-      // 3. Active Users (Users who had session activity in last 24h)
       User.countDocuments({ 'sessions.lastActive': { $gte: yesterday } }),
+      this.calculateRealMoneyAUM(),
     ]);
 
-    const incomeStats = transactions.find((t) => t._id === 'income') || {
-      count: 0,
-      totalAmount: 0,
-    };
-    const expenseStats = transactions.find((t) => t._id === 'expense') || {
-      count: 0,
-      totalAmount: 0,
-    };
+    const totalVolume = transactions.reduce((acc, t) => acc + t.totalVolume, 0);
+    const totalFees = transactions.reduce((acc, t) => acc + t.totalFees, 0);
+    const anomalies = await this.checkFinancialIntegrity();
+    const anomalyCount = anomalies.length;
+
+    // Calcul du niveau de risque
+    let riskLevel: 'low' | 'medium' | 'high' = 'low';
+    if (anomalyCount > 10 || totalVolume > aumData.totalAUM * 0.5) {
+      riskLevel = 'high';
+    } else if (anomalyCount > 0 || totalVolume > aumData.totalAUM * 0.2) {
+      riskLevel = 'medium';
+    }
 
     return {
-      period: {
-        start: yesterday,
-        end: now,
-      },
-      users: {
-        new: newUsers,
-        active: activeSessions,
-      },
+      period: { start: yesterday, end: now },
+      users: { new: newUsers, active: activeSessions },
       transactions: {
-        income: {
-          count: incomeStats.count,
-          volume: incomeStats.totalAmount,
-        },
-        expense: {
-          count: expenseStats.count,
-          volume: expenseStats.totalAmount,
-        },
+        totalVolume,
+        count: transactions.reduce((acc, t) => acc + t.count, 0),
       },
+      revenue: {
+        totalFees,
+        margin: totalVolume > 0 ? (totalFees / totalVolume) * 100 : 0,
+      },
+      health: {
+        totalAUM: aumData.totalAUM,
+        anomalyCount,
+        riskLevel,
+      },
+      growth: { newUsers },
     };
+  }
+
+  /**
+   * Calcule le montant total d'argent réel "sous gestion" (Total des balances wallet)
+   */
+  static async calculateRealMoneyAUM() {
+    const stats = await User.aggregate([
+      { $match: { isActive: true } },
+      { $group: { _id: null, totalAUM: { $sum: '$walletBalance' } } },
+    ]);
+    return { totalAUM: stats[0]?.totalAUM || 0 };
   }
 
   /**
@@ -280,22 +290,33 @@ export class ReportService {
 
     for (const user of activeUsers) {
       const stats = await Transaction.aggregate([
-        { $match: { userId: user._id } },
+        { $match: { userId: user._id, status: 'completed' } },
         {
           $group: {
             _id: '$type',
             total: { $sum: '$amount' },
+            totalFees: { $sum: '$fees' },
           },
         },
       ]);
 
-      const income = stats.find((s) => s._id === 'income')?.total || 0;
-      const expense = stats.find((s) => s._id === 'expense')?.total || 0;
-      const calculatedBalance = income - expense;
+      // Calcul simple : Revenus (deposit, payout, reward) - Dépenses (withdrawal, contribution, transfer)
+      let income = 0;
+      let expense = 0;
 
-      // Check if calculated balance matches walletBalance (allowing minor floating point difference)
+      stats.forEach((s) => {
+        if (['deposit', 'tontine_payout', 'challenge_reward'].includes(s._id)) {
+          income += s.total;
+        } else {
+          expense += s.total + s.totalFees; // On déduit le net + les frais
+        }
+      });
+
+      const calculatedBalance = income - expense;
       const diff = Math.abs(calculatedBalance - user.walletBalance);
-      if (diff > 0.01) {
+
+      if (diff > 1) {
+        // Tolérance de 1 XAF pour les arrondis
         anomalies.push({
           userId: user._id,
           email: user.email,
@@ -304,13 +325,6 @@ export class ReportService {
           diff,
         });
       }
-    }
-
-    if (anomalies.length > 0) {
-      logger.warn(`Financial Integrity Check: Found ${anomalies.length} anomalies.`);
-      // We'll alert this in CronService
-    } else {
-      logger.info('Financial Integrity Check: No anomalies found.');
     }
 
     return anomalies;
@@ -328,7 +342,6 @@ export class ReportService {
     );
 
     let totalContributed = 0;
-    let totalReceived = 0;
     const details = [];
 
     for (const member of members) {
@@ -344,15 +357,18 @@ export class ReportService {
       details.push({
         tontineName: (member.tontineId as any).name,
         contributed,
-        received: 0, // Logic to be added for cagnottes received
         trustScore: member.trustScore,
       });
     }
 
-    return {
-      totalContributed,
-      totalReceived,
-      details,
-    };
+    return { totalContributed, details };
+  }
+
+  /**
+   * Génère un rapport financier complet pour l'admin
+   */
+  static async getExecutiveFinancialReport(period: 'daily' | 'weekly' | 'monthly' = 'daily') {
+    const stats = await this.getGlobalDailyStats();
+    return stats;
   }
 }

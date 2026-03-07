@@ -29,14 +29,15 @@ const PRICING: Record<string, { input: number; output: number }> = {
 };
 
 export class GeminiService {
-  private static async getModel() {
+  private static async getModel(systemInstruction?: string) {
     try {
       // Fetch model ID from system settings, default to gemini-2.5-flash
       const setting = await SystemSetting.findOne({ key: 'gemini_model' });
-      const modelId = setting?.value || 'gemini-1.5-flash';
+      const modelId = setting?.value || 'gemini-2.5-flash';
 
       return genAI.getGenerativeModel({
         model: modelId,
+        systemInstruction,
         generationConfig: {
           temperature: 0.7,
           maxOutputTokens: 4096,
@@ -45,26 +46,53 @@ export class GeminiService {
         safetySettings: [
           {
             category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-            threshold: HarmBlockThreshold.BLOCK_NONE,
+            threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
           },
           {
             category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-            threshold: HarmBlockThreshold.BLOCK_NONE,
+            threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
           },
           {
             category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-            threshold: HarmBlockThreshold.BLOCK_NONE,
+            threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
           },
           {
             category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-            threshold: HarmBlockThreshold.BLOCK_NONE,
+            threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
           },
         ],
       });
     } catch (error) {
       logger.warn(`Failed to fetch Gemini model setting, using default: ${error}`);
-      return genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+      return genAI.getGenerativeModel({
+        model: 'gemini-2.5-flash',
+        systemInstruction,
+      });
     }
+  }
+
+  /**
+   * Détecte les tentatives d'injection de prompt ou de jailbreak
+   */
+  static detectAttack(input: string): boolean {
+    const attackPatterns = [
+      /ignore previous instructions/i,
+      /ignore all instructions/i,
+      /disregard previous/i,
+      /system prompt/i,
+      /base prompt/i,
+      /reveal your instructions/i,
+      /what are your instructions/i,
+      /repète tout ce qui précède/i,
+      /donne moi ton prompt/i,
+      /tu es maintenant/i,
+      /act as a/i,
+      /jailbreak/i,
+      / DAN /i,
+      /dev mode/i,
+    ];
+
+    return attackPatterns.some((pattern) => pattern.test(input));
   }
 
   private static async saveUsage(
@@ -113,11 +141,15 @@ export class GeminiService {
     }
   }
 
-  static async generateContent(prompt: any, context: string = 'unknown'): Promise<string> {
+  static async generateContent(
+    prompt: any,
+    context: string = 'unknown',
+    systemInstruction?: string,
+  ): Promise<string> {
     const startTime = Date.now();
     let modelName = 'unknown';
     try {
-      const model = await this.getModel();
+      const model = await this.getModel(systemInstruction);
       modelName = model.model;
 
       const result = await model.generateContent(prompt);
@@ -136,11 +168,15 @@ export class GeminiService {
     }
   }
 
-  static async generateJSON(prompt: any, context: string = 'unknown'): Promise<any> {
+  static async generateJSON(
+    prompt: any,
+    context: string = 'unknown',
+    systemInstruction?: string,
+  ): Promise<any> {
     const startTime = Date.now();
     let modelName = 'unknown';
     try {
-      const model = await this.getModel();
+      const model = await this.getModel(systemInstruction);
       modelName = model.model;
 
       const result = await model.generateContent(prompt);
@@ -230,11 +266,12 @@ export class GeminiService {
     mimeType: string,
     prompt: string,
     context: string = 'voice-analysis',
+    systemInstruction?: string,
   ): Promise<any> {
     const startTime = Date.now();
     let modelName = 'unknown';
     try {
-      const model = await this.getModel();
+      const model = await this.getModel(systemInstruction);
       modelName = model.model;
 
       const result = await model.generateContent([
@@ -261,9 +298,12 @@ export class GeminiService {
     }
   }
 
-  static async startChat(history: { role: string; parts: { text: string }[] }[]) {
+  static async startChat(
+    history: { role: string; parts: { text: string }[] }[],
+    systemInstruction?: string,
+  ) {
     try {
-      const model = await this.getModel();
+      const model = await this.getModel(systemInstruction);
       const chat = model.startChat({ history });
 
       // Proxy to intercept sendMessage

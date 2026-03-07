@@ -68,9 +68,26 @@ Consultez la documentation Swagger complète à l'adresse `/api-docs` pour plus 
 ## 🛠️ Installation & Configuration
 
 ### Quickstart Docker (Recommandé)
-```bash
-docker-compose up --build
-```
+
+Le projet supporte plusieurs environnements via Docker Compose :
+
+- **Développement Local (Léger)** :
+  ```bash
+  docker-compose -f docker-compose.dev.yml up --build
+  ```
+  *Inclus : api, mongodb, redis, minio. Optimisé pour la RAM.*
+
+- **Staging / Pré-production (Complet)** :
+  ```bash
+  docker-compose -f docker-compose.staging.yml up --build
+  ```
+  *Inclus : toute la stack (Graylog, Prometheus, Jaeger, etc.).*
+
+- **Production** :
+  ```bash
+  docker-compose up -d
+  ```
+  *Utilise le fichier par défaut `docker-compose.yml`.*
 
 ### Installation Manuelle
 1. Installer les dépendances : `npm install`

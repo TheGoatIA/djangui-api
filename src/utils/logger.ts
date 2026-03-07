@@ -94,24 +94,28 @@ const transports = [
 // Graylog Transport
 // Graylog Transport - Disabled temporarily due to DNS crash on startup
 
-if (process.env.GRAYLOG_HOST) {
-  transports.push(
-    new Graylog2({
-      name: 'Graylog',
-      level: 'info',
-      silent: false,
-      handleExceptions: true,
-      graylog: {
-        servers: [
-          { host: process.env.GRAYLOG_HOST, port: parseInt(process.env.GRAYLOG_PORT || '12201') },
-        ],
-        hostname: 'kauri-api',
-        facility: 'Node.js',
-        bufferSize: 1400,
-      },
-      staticMeta: { env: process.env.NODE_ENV || 'development' },
-    }) as any,
-  );
+if (process.env.GRAYLOG_HOST && process.env.GRAYLOG_HOST !== 'disabled') {
+  try {
+    transports.push(
+      new Graylog2({
+        name: 'Graylog',
+        level: 'info',
+        silent: false,
+        handleExceptions: true,
+        graylog: {
+          servers: [
+            { host: process.env.GRAYLOG_HOST, port: parseInt(process.env.GRAYLOG_PORT || '12201') },
+          ],
+          hostname: 'kauri-api',
+          facility: 'Node.js',
+          bufferSize: 1400,
+        },
+        staticMeta: { env: process.env.NODE_ENV || 'development' },
+      }) as any,
+    );
+  } catch (err) {
+    console.error('Failed to initialize Graylog transport:', err);
+  }
 }
 
 // Custom Transport for Email Alerts (Critical Errors)
