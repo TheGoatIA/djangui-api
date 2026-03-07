@@ -36,8 +36,15 @@ services:
 
   mongodb:
     image: mongo:7.0
-    entrypoint: >
-      /bin/sh -c "cp /data/db/mongodb.key /tmp/mongodb.key && chmod 600 /tmp/mongodb.key && chown 999:999 /tmp/mongodb.key && exec /usr/local/bin/docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all --auth --keyFile /tmp/mongodb.key"
+    entrypoint: |
+      /bin/sh -c "
+      if [ ! -f /data/db/mongodb.key ]; then
+        openssl rand -base64 756 > /data/db/mongodb.key
+        chmod 600 /data/db/mongodb.key
+        chown 999:999 /data/db/mongodb.key
+      fi
+      exec /usr/local/bin/docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all --auth --keyFile /data/db/mongodb.key
+      "
     environment:
       - MONGO_INITDB_ROOT_USERNAME=${MONGODB_USER:-admin}
       - MONGO_INITDB_ROOT_PASSWORD=${MONGODB_PASSWORD:-password}
@@ -47,11 +54,10 @@ services:
       - "${MONGODB_PORT:-15001}:27017"
     volumes:
       - mongodb_data:/data/db
-      - ./mongodb.key:/data/db/mongodb.key
     networks:
       - kauri-network
     healthcheck:
-      test: [ "CMD-SHELL", "mongosh --port 27017 -u $${MONGODB_USER:-admin} -p $${MONGODB_PASSWORD:-password} --authenticationDatabase admin --quiet --eval \"db.adminCommand('ping').ok\" || (mongosh --port 27017 -u $${MONGODB_USER:-admin} -p $${MONGODB_PASSWORD:-password} --authenticationDatabase admin --quiet --eval \"rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]})\" || mongosh --port 27017 --quiet --eval \"rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]})\" && sleep 2)" ]
+      test: [ "CMD-SHELL", "mongosh --port 27017 -u $${MONGODB_USER:-admin} -p $${MONGODB_PASSWORD:-password} --authenticationDatabase admin --quiet --eval \"rs.status().ok\" || mongosh --port 27017 -u $${MONGODB_USER:-admin} -p $${MONGODB_PASSWORD:-password} --authenticationDatabase admin --quiet --eval \"rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]})\"" ]
       interval: 10s
       timeout: 10s
       retries: 15
