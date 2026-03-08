@@ -24,6 +24,7 @@ router.get('/:id/export', TontineController.exportReport);
 router.get('/:id/members', TontineController.getMembers);
 router.get('/:id/contributions', TontineController.getContributions);
 router.delete('/:id/members/:memberId', TontineController.removeMember);
+router.patch('/:id/members/:memberId/auto-debit/toggle', TontineController.toggleAutoDebit);
 
 // Gouvernance (Votes)
 router.post('/:id/votes', TontineController.createVote);

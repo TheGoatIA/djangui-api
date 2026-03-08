@@ -147,6 +147,28 @@ export class TontineService {
     await TontineMember.findByIdAndDelete(memberId);
   }
 
+  static async toggleAutoDebit(
+    tontineId: string,
+    memberId: string,
+    userId: string,
+    enabled: boolean,
+  ): Promise<any> {
+    const tontine = await Tontine.findById(tontineId);
+    if (!tontine) throw new AppError('Tontine non trouvée', 404);
+
+    const member = await TontineMember.findOne({ _id: memberId, tontineId });
+    if (!member) throw new AppError('Membre non trouvé dans cette tontine', 404);
+
+    // Seul l'utilisateur lui-même ou le créateur peut modifier ce paramètre
+    if (member.userId.toString() !== userId && tontine.creatorId.toString() !== userId) {
+      throw new AppError('Non autorisé', 403);
+    }
+
+    member.isAutoDebitEnabled = enabled;
+    await member.save();
+    return member;
+  }
+
   static getTurnDeadline(startDate: Date, frequency: string, turnIndex: number): Date {
     const deadline = new Date(startDate);
     const days = frequency === 'weekly' ? 7 : frequency === 'bi-weekly' ? 14 : 30;
@@ -313,6 +335,7 @@ export class TontineService {
       const members = await TontineMember.find({
         tontineId: tontine._id,
         invitationStatus: 'accepted',
+        isAutoDebitEnabled: { $ne: false }, // Actif par défaut ou si true
       });
       for (const member of members) {
         const existing = await TontineContribution.findOne({

@@ -20,5 +20,6 @@ router
   .delete(GoalController.delete);
 
 router.post('/:id/contribute', GoalController.addContribution);
+router.post('/:id/redeem', GoalController.redeem);
 
 export default router;

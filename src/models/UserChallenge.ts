@@ -2,7 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 import { IUserChallenge } from '../types/models';
 
-export interface IUserChallengeDocument extends IUserChallenge, Document {}
+export interface IUserChallengeDocument extends IUserChallenge, Document { }
 
 const userChallengeSchema = new Schema<IUserChallenge>(
   {
@@ -10,7 +10,7 @@ const userChallengeSchema = new Schema<IUserChallenge>(
     challengeId: { type: Schema.Types.ObjectId, ref: 'Challenge', required: true },
     status: {
       type: String,
-      enum: ['active', 'completed', 'failed', 'abandoned'],
+      enum: ['active', 'completed', 'failed', 'abandoned', 'redeemed'],
       default: 'active',
     },
     progress: { type: Number, default: 0 },
