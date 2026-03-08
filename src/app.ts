@@ -45,11 +45,12 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   // Use memory store in tests, otherwise use Redis
-  store: process.env.NODE_ENV === 'test'
-    ? undefined
-    : new RedisStore({
-      sendCommand: (...args: string[]) => redis.call(...args),
-    }),
+  store:
+    process.env.NODE_ENV === 'test'
+      ? undefined
+      : new RedisStore({
+          sendCommand: (...args: string[]) => redis.call(...args),
+        }),
 });
 
 // Middlewares

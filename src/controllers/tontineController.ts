@@ -157,7 +157,7 @@ export class TontineController {
       // Nettoyage local immédiat
       try {
         fs.unlinkSync(file.path);
-      } catch (e) { }
+      } catch (e) {}
 
       // 5. Création de la contribution
       const isLate = memberInfo.lateFee > 0;

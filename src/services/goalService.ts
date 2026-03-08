@@ -156,7 +156,7 @@ export class GoalService {
     }
 
     if (redeemAmount > goal.currentAmount) {
-      throw new AppError('Montant supérieur au solde actuel de l\'objectif', 400);
+      throw new AppError("Montant supérieur au solde actuel de l'objectif", 400);
     }
 
     // Check for early withdrawal penalty (0.5%)
