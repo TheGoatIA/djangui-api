@@ -113,11 +113,7 @@ export class ChallengeController {
     try {
       const { id } = req.params;
       const { weekNumber } = req.body;
-      const userChallenge = await ChallengeService.skipWeek(
-        req.user._id,
-        id,
-        Number(weekNumber),
-      );
+      const userChallenge = await ChallengeService.skipWeek(req.user._id, id, Number(weekNumber));
       res.status(200).json({
         success: true,
         data: userChallenge,

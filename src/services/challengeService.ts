@@ -134,9 +134,10 @@ export class ChallengeService {
     weekNumber: number,
     data?: { proofImageUrl?: string; note?: string; amount?: number },
   ) {
-    const uc = await UserChallenge.findOne({ _id: userChallengeId, userId }).populate('challengeId');
-    if (!uc)
-      throw new AppError('Challenge non trouvé ou non autorisé', 404);
+    const uc = await UserChallenge.findOne({ _id: userChallengeId, userId }).populate(
+      'challengeId',
+    );
+    if (!uc) throw new AppError('Challenge non trouvé ou non autorisé', 404);
 
     const week = uc.weeks.find((w) => w.weekNumber === weekNumber);
     if (!week) throw new AppError('Semaine non trouvée', 404);
@@ -218,8 +219,7 @@ export class ChallengeService {
    */
   static async postponeWeek(userId: string, userChallengeId: string, weekNumber: number) {
     const uc = await UserChallenge.findOne({ _id: userChallengeId, userId });
-    if (!uc)
-      throw new AppError('Challenge non trouvé ou non autorisé', 404);
+    if (!uc) throw new AppError('Challenge non trouvé ou non autorisé', 404);
 
     if (uc.flexibility.postponementsUsed >= uc.flexibility.postponementsMax) {
       throw new AppError('Limite de reports atteinte pour ce challenge', 400);
@@ -227,7 +227,8 @@ export class ChallengeService {
 
     const week = uc.weeks.find((w) => w.weekNumber === weekNumber);
     if (!week) throw new AppError('Semaine non trouvée', 404);
-    if (week.status !== 'pending') throw new AppError('Seule une semaine en attente peut être reportée', 400);
+    if (week.status !== 'pending')
+      throw new AppError('Seule une semaine en attente peut être reportée', 400);
 
     week.status = 'postponed';
     uc.flexibility.postponementsUsed += 1;
@@ -244,8 +245,7 @@ export class ChallengeService {
    */
   static async skipWeek(userId: string, userChallengeId: string, weekNumber: number) {
     const uc = await UserChallenge.findOne({ _id: userChallengeId, userId });
-    if (!uc)
-      throw new AppError('Challenge non trouvé ou non autorisé', 404);
+    if (!uc) throw new AppError('Challenge non trouvé ou non autorisé', 404);
 
     if (uc.flexibility.skipsUsed >= uc.flexibility.skipsMax) {
       throw new AppError('Limite de "skips" atteinte pour ce challenge', 400);
@@ -253,13 +253,16 @@ export class ChallengeService {
 
     const week = uc.weeks.find((w) => w.weekNumber === weekNumber);
     if (!week) throw new AppError('Semaine non trouvée', 404);
-    if (week.status !== 'pending') throw new AppError('Seule une semaine en attente peut être sautée', 400);
+    if (week.status !== 'pending')
+      throw new AppError('Seule une semaine en attente peut être sautée', 400);
 
     week.status = 'skipped';
     uc.flexibility.skipsUsed += 1;
 
     // Mise à jour de la progression (considéré comme "fait" mais sans gain)
-    const processedWeeks = uc.weeks.filter((w) => ['completed', 'skipped'].includes(w.status)).length;
+    const processedWeeks = uc.weeks.filter((w) =>
+      ['completed', 'skipped'].includes(w.status),
+    ).length;
     uc.progress = Math.round((processedWeeks / uc.weeks.length) * 100);
 
     await uc.save();

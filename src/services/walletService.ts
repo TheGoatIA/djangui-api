@@ -18,12 +18,12 @@ export class WalletService {
     userId: string;
     amount: number;
     type:
-    | 'deposit'
-    | 'withdrawal'
-    | 'tontine_contribution'
-    | 'tontine_payout'
-    | 'saving_transfer'
-    | 'challenge_reward';
+      | 'deposit'
+      | 'withdrawal'
+      | 'tontine_contribution'
+      | 'tontine_payout'
+      | 'saving_transfer'
+      | 'challenge_reward';
     description: string;
     paymentMethod: 'stripe' | 'notchpay' | 'wallet';
     reference?: string;

@@ -27,12 +27,14 @@ export class MigrationService {
     try {
       try {
         // 0. Le Lock Atomique de Migration
-        // En mode PM2 Cluster, plusieurs instances démarrent en même temps. 
+        // En mode PM2 Cluster, plusieurs instances démarrent en même temps.
         // En forçant la création dès le début, une seule instance réussira, les autres auront l'erreur E11000.
         await Migration.create({ migrationId });
       } catch (err: any) {
         if (err.code === 11000) {
-          logger.info(`[Migration] Migration ${migrationId} déjà verrouillée ou effectuée par un autre processus.`);
+          logger.info(
+            `[Migration] Migration ${migrationId} déjà verrouillée ou effectuée par un autre processus.`,
+          );
           return; // Sortie silencieuse pour les autres workers PM2
         }
         throw err;

@@ -77,12 +77,12 @@ export class PayoutService {
       recipient: {
         account_number: data.phone,
         country: 'CM',
-        name: user.kycData?.fullName || `${user.firstName} ${user.lastName}`
+        name: user.kycData?.fullName || `${user.firstName} ${user.lastName}`,
       },
       metadata: {
         reference: transaction.reference, // Pour lier à notre transaction interne
-        source: 'kauri_app'
-      }
+        source: 'kauri_app',
+      },
     };
     logger.debug(`NotchPay Transfer Payload: ${JSON.stringify(transferPayload)}`);
 
@@ -103,7 +103,8 @@ export class PayoutService {
       }).catch((err: any) => logger.error(`Payout Success Notification Error: ${err.message}`));
 
       // Extraction de la référence NotchPay selon la nouvelle réponse
-      const transferId = response.data.transfer?.reference || response.data.transfer?.id || response.data.id;
+      const transferId =
+        response.data.transfer?.reference || response.data.transfer?.id || response.data.id;
       return {
         status: 'pending',
         transferId,

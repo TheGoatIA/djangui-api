@@ -11,7 +11,7 @@ if (process.env.NODE_ENV === 'test') {
     on: jest.fn(),
     quit: jest.fn().mockResolvedValue('OK'),
     disconnect: jest.fn(),
-    status: 'ready'
+    status: 'ready',
   };
 } else {
   redis = new Redis(redisURL);

@@ -49,7 +49,9 @@ export class InvoiceService {
       if (updatedInvoice?.pdfUrl) {
         logger.info(`[FINTECH] PDF generation SUCCESS: ${updatedInvoice.pdfUrl}`);
       } else {
-        logger.warn(`[FINTECH] PDF generation finished but pdfUrl is still missing on invoice ${invoice.id}`);
+        logger.warn(
+          `[FINTECH] PDF generation finished but pdfUrl is still missing on invoice ${invoice.id}`,
+        );
       }
       return updatedInvoice || invoice;
     } catch (err: any) {
@@ -245,7 +247,7 @@ export class InvoiceService {
       // 4. Nettoyage local (Optionnel, mais recommandé si on veut être full cloud)
       try {
         fs.unlinkSync(filePath);
-      } catch (e) { }
+      } catch (e) {}
 
       invoice.pdfUrl = publicUrl;
       await invoice.save();
