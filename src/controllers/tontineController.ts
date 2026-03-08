@@ -405,6 +405,25 @@ export class TontineController {
   }
 
   /**
+   * Activer/Désactiver l'auto-débit
+   */
+  static async toggleAutoDebit(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id, memberId } = req.params;
+      const { enabled } = req.body;
+      const member = await TontineService.toggleAutoDebit(
+        id,
+        memberId,
+        (req as any).user.id,
+        enabled,
+      );
+      res.json({ status: 'success', data: member });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Obtenir la liste des tontines de l'utilisateur courant
    */
   static async getUserTontines(req: Request, res: Response, next: NextFunction) {

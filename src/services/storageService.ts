@@ -32,6 +32,23 @@ export class StorageService {
   }
 
   /**
+   * Ensure a bucket exists, create it if not
+   */
+  static async ensureBucketExists(bucket: string): Promise<void> {
+    const { CreateBucketCommand, HeadBucketCommand } = require('@aws-sdk/client-s3');
+    try {
+      await this.getClient().send(new HeadBucketCommand({ Bucket: bucket }));
+    } catch (err: any) {
+      if (err.name === 'NotFound' || err.$metadata?.httpStatusCode === 404) {
+        logger.info(`[STORAGE] Bucket ${bucket} not found, creating it...`);
+        await this.getClient().send(new CreateBucketCommand({ Bucket: bucket }));
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  /**
    * Upload a file from local path to MinIO
    */
   static async uploadFile(
@@ -40,6 +57,7 @@ export class StorageService {
     destinationKey: string,
   ): Promise<string> {
     try {
+      await this.ensureBucketExists(bucket);
       const fileStream = fs.createReadStream(localPath);
       const parallelUploads3 = new Upload({
         client: this.getClient(),
@@ -75,6 +93,7 @@ export class StorageService {
     contentType: string,
   ): Promise<string> {
     try {
+      await this.ensureBucketExists(bucket);
       const command = new PutObjectCommand({
         Bucket: bucket,
         Key: destinationKey,

@@ -277,19 +277,81 @@ export class AuthController {
     try {
       const { token } = req.query;
       if (!token || typeof token !== 'string') {
-        throw new AppError('Token is invalid', 400);
+        return res.status(400).send(`
+          <!DOCTYPE html>
+          <html lang="fr">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>Erreur de vérification</title>
+              <style>
+                  body { font-family: sans-serif; text-align: center; padding: 50px; background: #0b0f14; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+                  .logo { width: 60px; height: 60px; background: #EF4444; color: #fff; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; margin-bottom: 24px; }
+                  p { color: #94a3b8; max-width: 300px; line-height: 1.5; }
+              </style>
+          </head>
+          <body>
+              <div class="logo">X</div>
+              <h1>Lien invalide</h1>
+              <p>Le lien de vérification est invalide ou a expiré.</p>
+          </body>
+          </html>
+        `);
       }
-      const { user, tokens } = await AuthService.verifyEmail(token);
 
-      res.status(200).json({
-        success: true,
-        data: {
-          user,
-          tokens,
-        },
-      });
-    } catch (err) {
-      next(err);
+      await AuthService.verifyEmail(token);
+
+      const deepLink = `kauri://login`;
+
+      res.status(200).send(`
+        <!DOCTYPE html>
+        <html lang="fr">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Email vérifié</title>
+            <style>
+                body { font-family: sans-serif; text-align: center; padding: 50px; background: #0b0f14; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+                .logo { width: 60px; height: 60px; background: #1DB954; color: #000; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; margin-bottom: 24px; }
+                .btn { display: inline-block; padding: 14px 28px; background: #1DB954; color: #000; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 24px; }
+                p { color: #94a3b8; max-width: 300px; line-height: 1.5; }
+            </style>
+        </head>
+        <body>
+            <div class="logo">K</div>
+            <h1>Email vérifié avec succès !</h1>
+            <p>Votre compte a été vérifié. Vous pouvez maintenant retourner à l'application pour vous connecter.</p>
+            <a href="${deepLink}" class="btn">Aller à la page de connexion</a>
+            <script>
+                window.location.href = "${deepLink}";
+                setTimeout(() => {
+                    window.location.href = "${deepLink}";
+                }, 500);
+            </script>
+        </body>
+        </html>
+      `);
+    } catch (err: any) {
+      res.status(400).send(`
+        <!DOCTYPE html>
+        <html lang="fr">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Erreur de vérification</title>
+            <style>
+                body { font-family: sans-serif; text-align: center; padding: 50px; background: #0b0f14; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+                .logo { width: 60px; height: 60px; background: #EF4444; color: #fff; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; margin-bottom: 24px; }
+                p { color: #94a3b8; max-width: 300px; line-height: 1.5; }
+            </style>
+        </head>
+        <body>
+            <div class="logo">X</div>
+            <h1>Erreur</h1>
+            <p>${err.message || 'Le lien de vérification est invalide ou a expiré.'}</p>
+        </body>
+        </html>
+      `);
     }
   }
 

@@ -10,7 +10,7 @@ const userChallengeSchema = new Schema<IUserChallenge>(
     challengeId: { type: Schema.Types.ObjectId, ref: 'Challenge', required: true },
     status: {
       type: String,
-      enum: ['active', 'completed', 'failed', 'abandoned'],
+      enum: ['active', 'completed', 'failed', 'abandoned', 'redeemed'],
       default: 'active',
     },
     progress: { type: Number, default: 0 },

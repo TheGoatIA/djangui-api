@@ -112,12 +112,76 @@ export class GoalService {
   }
 
   static async deleteGoal(id: string, userId: string) {
-    const goal = await SavingGoal.findOneAndDelete({ _id: id, userId });
+    const goal = await SavingGoal.findOne({ _id: id, userId });
     if (!goal) {
       throw new AppError('Goal not found', 404);
     }
 
+    // Si l'objectif contient de l'argent, on rembourse avant de supprimer
+    if (goal.currentAmount > 0) {
+      let fees = 0;
+      // Pénalité de 0.5% si retrait avant la deadline (si elle existe)
+      if (goal.deadline && new Date() < new Date(goal.deadline) && goal.status !== 'completed') {
+        fees = goal.currentAmount * 0.005;
+      }
+
+      await WalletService.executeTransaction({
+        userId,
+        amount: goal.currentAmount,
+        fees,
+        type: 'deposit',
+        description: `Remboursement (Suppression Objectif) : ${goal.name}`,
+        paymentMethod: 'wallet',
+        metadata: { goalId: id, action: 'delete_refund', penaltyApplied: fees > 0 },
+      });
+    }
+
+    await SavingGoal.findByIdAndDelete(id);
     MonitoringService.recordGoalEvent('delete', goal.type || 'unknown');
     return true;
+  }
+
+  /**
+   * Récupérer les fonds d'un objectif vers le portefeuille
+   */
+  static async redeemGoal(id: string, userId: string, amount?: number) {
+    const goal = await SavingGoal.findOne({ _id: id, userId });
+    if (!goal) {
+      throw new AppError('Objectif non trouvé', 404);
+    }
+
+    const redeemAmount = amount || goal.currentAmount;
+    if (redeemAmount <= 0) {
+      throw new AppError('Le montant à récupérer doit être supérieur à zéro', 400);
+    }
+
+    if (redeemAmount > goal.currentAmount) {
+      throw new AppError("Montant supérieur au solde actuel de l'objectif", 400);
+    }
+
+    // Check for early withdrawal penalty (0.5%)
+    let fees = 0;
+    if (goal.deadline && new Date() < new Date(goal.deadline)) {
+      fees = redeemAmount * 0.005; // 0.5% penalty
+    }
+
+    // 1. Créditer le wallet via WalletService
+    await WalletService.executeTransaction({
+      userId,
+      amount: redeemAmount,
+      fees, // Pénalité appliquée si retrait anticipé
+      type: 'deposit',
+      description: `Rachat de fonds : ${goal.name}`,
+      paymentMethod: 'wallet',
+      metadata: { goalId: id, action: 'redeem', earlyWithdrawal: fees > 0 },
+    });
+
+    // 2. Mettre à jour l'objectif
+    goal.currentAmount -= redeemAmount;
+    await goal.save();
+
+    MonitoringService.recordGoalEvent('redeem', goal.type || 'unknown', 'success');
+
+    return goal;
   }
 }

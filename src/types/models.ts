@@ -109,7 +109,7 @@ export interface IChallenge {
 export interface IUserChallenge {
   userId: mongoose.Types.ObjectId;
   challengeId: mongoose.Types.ObjectId;
-  status: 'active' | 'completed' | 'failed' | 'abandoned';
+  status: 'active' | 'completed' | 'failed' | 'abandoned' | 'redeemed';
   progress: number;
   currentValue: number;
   startDate: Date;

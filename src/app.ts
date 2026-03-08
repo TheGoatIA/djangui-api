@@ -45,11 +45,12 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   // Use memory store in tests, otherwise use Redis
-  store: process.env.NODE_ENV === 'test'
-    ? undefined
-    : new RedisStore({
-      sendCommand: (...args: string[]) => redis.call(...args),
-    }),
+  store:
+    process.env.NODE_ENV === 'test'
+      ? undefined
+      : new RedisStore({
+          sendCommand: (...args: string[]) => redis.call(...args),
+        }),
 });
 
 // Middlewares
@@ -70,11 +71,17 @@ app.use(MonitoringService.metricsMiddleware.bind(MonitoringService));
 app.use(requestLogger);
 app.use(
   helmet({
+    contentSecurityPolicy: {
+      directives: {
+        ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+        'script-src': ["'self'", "'unsafe-inline'"],
+        'style-src': ["'self'", "'unsafe-inline'"],
+        'img-src': ["'self'", 'data:', 'https://validator.swagger.io'],
+      },
+    },
     crossOriginResourcePolicy: false,
   }),
 );
-
-app.use(compression());
 
 app.use(compression());
 
@@ -342,21 +349,20 @@ app.get('/api-docs/json', swaggerAuth, (req, res) => {
   }
 });
 
-// Swagger UI (Dynamic load)
-app.use('/api-docs', swaggerAuth, swaggerUi.serve, (req: any, res: any, next: any) => {
+// Swagger UI Setup
+const swaggerOptions = {
+  explorer: true,
+  swaggerOptions: {
+    url: '/api-docs/json',
+  },
+};
+
+app.use('/api-docs', swaggerAuth, swaggerUi.serve);
+app.get('/api-docs', swaggerAuth, (req, res, next) => {
   try {
     const swaggerFile = path.resolve(__dirname, '../docs/swagger.json');
     const swaggerDoc = JSON.parse(fs.readFileSync(swaggerFile, 'utf8'));
-
-    // allow explorer so user can see the URL to the json
-    const options = {
-      explorer: true,
-      swaggerOptions: {
-        url: '/api-docs/json',
-      },
-    };
-
-    swaggerUi.setup(swaggerDoc, options)(req, res, next);
+    swaggerUi.setup(swaggerDoc, swaggerOptions)(req, res, next);
   } catch (err) {
     next(err);
   }

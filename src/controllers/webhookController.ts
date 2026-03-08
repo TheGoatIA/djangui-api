@@ -62,9 +62,9 @@ export class WebhookController {
       const reference = data.data.reference;
       logger.error(`Transfer ${reference} failed: ${data.data.reason}`);
 
-      // Logique de remboursement automatique
-      const Transaction = require('../models/Transaction').default;
+      // Logique de remboursement automatique via WalletService
       const { WalletService } = require('../services/walletService');
+      const Transaction = require('../models/Transaction').default;
 
       try {
         const originalTx = await Transaction.findOne({ reference });
