@@ -79,4 +79,17 @@ export class GoalController {
       next(err);
     }
   }
+
+  static async redeem(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const { amount } = req.body;
+      const goal = await GoalService.redeemGoal(req.params.id, req.user._id, amount);
+      res.status(200).json({
+        success: true,
+        data: goal,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
 }

@@ -16,6 +16,7 @@ export interface ITontineMember extends Document {
     accountName: string;
   };
   isActive: boolean;
+  isAutoDebitEnabled: boolean;
   joinedAt: Date;
 }
 
@@ -40,6 +41,7 @@ const tontineMemberSchema = new Schema<ITontineMember>(
       accountName: { type: String },
     },
     isActive: { type: Boolean, default: true },
+    isAutoDebitEnabled: { type: Boolean, default: true },
     joinedAt: { type: Date, default: Date.now },
   },
   { timestamps: true },

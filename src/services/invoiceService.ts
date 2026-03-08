@@ -12,39 +12,49 @@ export class InvoiceService {
    */
   static async generateForTransaction(transactionId: string) {
     // Vérifier si une facture existe déjà pour cette transaction
-    const existingInvoice = await Invoice.findOne({ transactionId });
-    if (existingInvoice) return existingInvoice;
+    let invoice = await Invoice.findOne({ transactionId });
+    if (invoice && invoice.pdfUrl) {
+      return invoice;
+    }
 
-    const transaction = await Transaction.findById(transactionId).populate('userId');
-    if (!transaction) throw new AppError('Transaction non trouvée', 404);
+    if (!invoice) {
+      const transaction = await Transaction.findById(transactionId).populate('userId');
+      if (!transaction) throw new AppError('Transaction non trouvée', 404);
 
-    const user = transaction.userId as any;
-    const invoiceNumber = `INV-${new Date().getFullYear()}-${uuidv4().split('-')[0].toUpperCase()}`;
+      const user = transaction.userId as any;
+      const invoiceNumber = `INV-${new Date().getFullYear()}-${uuidv4().split('-')[0].toUpperCase()}`;
 
-    // 1. Créer l'entrée en base de données
-    const invoice = await Invoice.create({
-      userId: user._id,
-      transactionId: transaction._id,
-      invoiceNumber,
-      amount: transaction.amount,
-      currency: transaction.currency,
-      status: 'issued',
-      metadata: {
-        paymentMethod: transaction.paymentMethod,
-        transactionType: transaction.type,
-        userName: user.kycData?.fullName || `${user.firstName} ${user.lastName}`,
-      },
-    });
+      // 1. Créer l'entrée en base de données
+      invoice = await Invoice.create({
+        userId: user._id,
+        transactionId: transaction._id,
+        invoiceNumber,
+        amount: transaction.amount,
+        currency: transaction.currency,
+        status: 'issued',
+        metadata: {
+          paymentMethod: transaction.paymentMethod,
+          transactionType: transaction.type,
+          userName: user.kycData?.fullName || `${user.firstName} ${user.lastName}`,
+        },
+      });
+    }
 
     // 2. Génération physique du PDF (Synchrone pour garantir l'URL au premier appel)
     try {
+      logger.info(`[FINTECH] Starting PDF generation for invoice ${invoice.id}`);
       await this.createPhysicalPDF(invoice.id);
       // Recharger la facture pour avoir l'URL mise à jour
       const updatedInvoice = await Invoice.findById(invoice.id);
+      if (updatedInvoice?.pdfUrl) {
+        logger.info(`[FINTECH] PDF generation SUCCESS: ${updatedInvoice.pdfUrl}`);
+      } else {
+        logger.warn(`[FINTECH] PDF generation finished but pdfUrl is still missing on invoice ${invoice.id}`);
+      }
       return updatedInvoice || invoice;
     } catch (err: any) {
       logger.error(`[FINTECH] Synchronous PDF Generation FAILED: ${err.message}`);
-      return invoice; // Retourne quand même l'objet même sans URL en cas de pépin
+      throw err; // On propage l'erreur au lieu de renvoyer une facture vide
     }
   }
 
@@ -72,6 +82,8 @@ export class InvoiceService {
 
       const stream = fs.createWriteStream(filePath);
       doc.pipe(stream);
+
+      logger.info(`[FINTECH] Header generation...`);
 
       // --- HEADER ---
       // Logo Officiel Kauri
@@ -233,7 +245,7 @@ export class InvoiceService {
       // 4. Nettoyage local (Optionnel, mais recommandé si on veut être full cloud)
       try {
         fs.unlinkSync(filePath);
-      } catch (e) {}
+      } catch (e) { }
 
       invoice.pdfUrl = publicUrl;
       await invoice.save();
@@ -243,7 +255,8 @@ export class InvoiceService {
 
       logger.info(`Invoice PDF generated real-world: ${publicUrl}`);
     } catch (err: any) {
-      logger.error(`PDFKit Error: ${err.message}`);
+      logger.error(`[FINTECH] createPhysicalPDF Error: ${err.message}`);
+      throw err; // On relance pour que generateForTransaction le voit
     }
   }
 

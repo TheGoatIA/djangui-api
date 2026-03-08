@@ -15,12 +15,12 @@ export interface IUser {
   firebaseUid?: string;
   preferences: {
     coachTone:
-      | 'encouraging'
-      | 'firm'
-      | 'balanced'
-      | 'billionaire_mentor'
-      | 'strict_accountant'
-      | 'kind_auntie';
+    | 'encouraging'
+    | 'firm'
+    | 'balanced'
+    | 'billionaire_mentor'
+    | 'strict_accountant'
+    | 'kind_auntie';
     notificationFrequency: 'high' | 'medium' | 'low';
     budgetAlertThreshold: number;
   };
@@ -109,7 +109,7 @@ export interface IChallenge {
 export interface IUserChallenge {
   userId: mongoose.Types.ObjectId;
   challengeId: mongoose.Types.ObjectId;
-  status: 'active' | 'completed' | 'failed' | 'abandoned';
+  status: 'active' | 'completed' | 'failed' | 'abandoned' | 'redeemed';
   progress: number;
   currentValue: number;
   startDate: Date;
@@ -178,14 +178,14 @@ export interface ITransaction {
   amount: number;
   currency: string;
   type:
-    | 'income'
-    | 'expense'
-    | 'deposit'
-    | 'withdrawal'
-    | 'tontine_contribution'
-    | 'tontine_payout'
-    | 'saving_transfer'
-    | 'challenge_reward';
+  | 'income'
+  | 'expense'
+  | 'deposit'
+  | 'withdrawal'
+  | 'tontine_contribution'
+  | 'tontine_payout'
+  | 'saving_transfer'
+  | 'challenge_reward';
   category: string;
   subcategory?: string;
   description: string;
@@ -257,14 +257,14 @@ export interface ISavingGoal {
   priority: 'high' | 'medium' | 'low';
   strategy: {
     type:
-      | '50-30-20'
-      | 'progressive'
-      | 'roundup'
-      | 'pay-yourself-first'
-      | 'envelope'
-      | 'custom'
-      | 'snowball'
-      | 'avalanche';
+    | '50-30-20'
+    | 'progressive'
+    | 'roundup'
+    | 'pay-yourself-first'
+    | 'envelope'
+    | 'custom'
+    | 'snowball'
+    | 'avalanche';
     details?: any;
   };
   autoSaveRules: {

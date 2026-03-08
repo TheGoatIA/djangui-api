@@ -48,16 +48,18 @@ export class TransactionService {
 
       // Update User Wallet Balance
       // Seuls les revenus numériques (dépôts) et les dépenses via Wallet impactent le solde réel.
+      const incomeTypes = ['income', 'deposit', 'tontine_payout', 'challenge_reward'];
       const isDigitalIncome =
-        data.type === 'income' && ['stripe', 'notchpay', 'wallet'].includes(data.paymentMethod);
+        incomeTypes.includes(data.type) && ['stripe', 'notchpay', 'wallet'].includes(data.paymentMethod);
       const isWalletExpense = data.type === 'expense' && data.paymentMethod === 'wallet';
 
       if (isDigitalIncome) {
         await User.findByIdAndUpdate(userId, { $inc: { walletBalance: data.amount } }, { session });
-      } else if (isWalletExpense) {
+      } else if (isWalletExpense || data.type === 'withdrawal') {
+        const incValue = -data.amount;
         await User.findByIdAndUpdate(
           userId,
-          { $inc: { walletBalance: -data.amount } },
+          { $inc: { walletBalance: incValue } },
           { session },
         );
       }

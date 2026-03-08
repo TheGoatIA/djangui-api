@@ -157,7 +157,7 @@ export class TontineController {
       // Nettoyage local immédiat
       try {
         fs.unlinkSync(file.path);
-      } catch (e) {}
+      } catch (e) { }
 
       // 5. Création de la contribution
       const isLate = memberInfo.lateFee > 0;
@@ -399,6 +399,25 @@ export class TontineController {
         (req as any).user.id,
       );
       res.json({ status: 'success', data: contributions });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Activer/Désactiver l'auto-débit
+   */
+  static async toggleAutoDebit(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id, memberId } = req.params;
+      const { enabled } = req.body;
+      const member = await TontineService.toggleAutoDebit(
+        id,
+        memberId,
+        (req as any).user.id,
+        enabled,
+      );
+      res.json({ status: 'success', data: member });
     } catch (error) {
       next(error);
     }

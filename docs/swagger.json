@@ -2045,6 +2045,58 @@
                 }
             }
         },
+        "/v1/tontines/{id}/members/{memberId}/auto-debit/toggle": {
+            "patch": {
+                "tags": [
+                    "Tontines"
+                ],
+                "summary": "Activer/Désactiver l'auto-débit pour un membre",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "memberId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "enabled": {
+                                        "type": "boolean"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Statut de l'auto-débit mis à jour",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GenericResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/tontines/{id}": {
             "get": {
                 "tags": [
@@ -5485,6 +5537,51 @@
                 }
             }
         },
+        "/v1/goals/{id}/redeem": {
+            "post": {
+                "tags": [
+                    "Goals"
+                ],
+                "summary": "Récupérer les fonds d'un objectif vers le portefeuille",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "amount": {
+                                        "type": "number",
+                                        "description": "Montant à récupérer (tous les fonds si non spécifié)"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Fonds récupérés avec succès",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Goal"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/goals": {
             "get": {
                 "tags": [
@@ -6598,6 +6695,179 @@
                                             }
                                         }
                                     ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/challenges/{id}/validate-week": {
+            "post": {
+                "tags": [
+                    "Challenges"
+                ],
+                "summary": "Valider une semaine de challenge (avec prélèvement wallet si épargne)",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "weekNumber": {
+                                        "type": "integer"
+                                    },
+                                    "amount": {
+                                        "type": "number",
+                                        "description": "Optionnel: montant à épargner (par défaut targetAmount de la semaine)"
+                                    },
+                                    "proofImageUrl": {
+                                        "type": "string"
+                                    },
+                                    "note": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Semaine validée et fonds transférés",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GenericResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/challenges/{id}/redeem": {
+            "post": {
+                "tags": [
+                    "Challenges"
+                ],
+                "summary": "Récupérer les fonds d'un challenge terminé",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Fonds récupérés vers le wallet",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GenericResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/challenges/{id}/postpone": {
+            "post": {
+                "tags": [
+                    "Challenges"
+                ],
+                "summary": "Reporter une deadline de challenge",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "weekNumber": {
+                                        "type": "integer"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Deadline reportée",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GenericResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/challenges/{id}/skip": {
+            "post": {
+                "tags": [
+                    "Challenges"
+                ],
+                "summary": "Passer une semaine de challenge",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "weekNumber": {
+                                        "type": "integer"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Semaine passée",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GenericResponse"
                                 }
                             }
                         }
