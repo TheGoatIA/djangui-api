@@ -58,6 +58,71 @@ export class ChallengeController {
       next(err);
     }
   }
+
+  static async validateWeek(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const { weekNumber, proofImageUrl, note, amount } = req.body;
+      const userChallenge = await ChallengeService.validateWeek(
+        req.user._id,
+        id,
+        Number(weekNumber),
+        { proofImageUrl, note, amount: amount ? Number(amount) : undefined },
+      );
+      res.status(200).json({
+        success: true,
+        data: userChallenge,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async redeem(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const result = await ChallengeService.redeemChallenge(req.user._id, id);
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async postpone(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const { weekNumber } = req.body;
+      const userChallenge = await ChallengeService.postponeWeek(
+        req.user._id,
+        id,
+        Number(weekNumber),
+      );
+      res.status(200).json({
+        success: true,
+        data: userChallenge,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async skip(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const { weekNumber } = req.body;
+      const userChallenge = await ChallengeService.skipWeek(req.user._id, id, Number(weekNumber));
+      res.status(200).json({
+        success: true,
+        data: userChallenge,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
   static async unjoin(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;

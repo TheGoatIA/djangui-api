@@ -5,6 +5,7 @@ import { PayoutService } from '../services/payoutService';
 import { InvoiceService } from '../services/invoiceService';
 import { ChallengeService } from '../services/challengeService';
 import Transaction from '../models/Transaction';
+import Invoice from '../models/Invoice';
 import { catchAsync } from '../utils';
 import { AppError } from '../middleware/errorHandler';
 
@@ -94,7 +95,19 @@ export class FintechController {
    */
   static getInvoice = catchAsync(async (req: Request, res: Response) => {
     const { transactionId } = req.params;
-    const invoice = await InvoiceService.generateForTransaction(transactionId);
+    let invoice = await Invoice.findOne({ transactionId });
+
+    // Si la facture n'existe pas OU si l'URL du PDF est absente, on tente une (re)génération
+    if (!invoice || !invoice.pdfUrl) {
+      invoice = await InvoiceService.generateForTransaction(transactionId);
+    }
+
+    if (!invoice || !invoice.pdfUrl) {
+      throw new AppError(
+        "Le reçu n'a pas pu être généré ou n'est pas encore disponible sur le stockage.",
+        404,
+      );
+    }
 
     res.status(200).json({
       status: 'success',

@@ -18,12 +18,12 @@ export class WalletService {
     userId: string;
     amount: number;
     type:
-    | 'deposit'
-    | 'withdrawal'
-    | 'tontine_contribution'
-    | 'tontine_payout'
-    | 'saving_transfer'
-    | 'challenge_reward';
+      | 'deposit'
+      | 'withdrawal'
+      | 'tontine_contribution'
+      | 'tontine_payout'
+      | 'saving_transfer'
+      | 'challenge_reward';
     description: string;
     paymentMethod: 'stripe' | 'notchpay' | 'wallet';
     reference?: string;
@@ -59,19 +59,21 @@ export class WalletService {
       // 2. Vérifier le solde si c'est un débit du wallet
       const isDebit =
         type === 'withdrawal' || type === 'tontine_contribution' || type === 'saving_transfer';
-      if (isDebit || paymentMethod === 'wallet') {
-        // Si c'est un dépôt (remboursement), on ne vérifie JAMAIS le solde
-        if (type !== 'deposit') {
-          const totalDebit = amount;
-          if (user.walletBalance < totalDebit) {
-            throw new AppError('Solde insuffisant dans le portefeuille', 400);
-          }
-          user.walletBalance -= totalDebit;
+      const isCredit =
+        type === 'deposit' || type === 'tontine_payout' || type === 'challenge_reward';
+
+      // On débite seulement si c'est un type de débit explicite
+      // OU si le mode est wallet ET que ce n'est PAS un type de crédit
+      if (isDebit || (paymentMethod === 'wallet' && !isCredit)) {
+        const totalDebit = amount;
+        if (user.walletBalance < totalDebit) {
+          throw new AppError('Solde insuffisant dans le portefeuille', 400);
         }
+        user.walletBalance -= totalDebit;
       }
 
       // 3. Créditer le solde si c'est un crédit wallet
-      if (type === 'deposit' || type === 'tontine_payout' || type === 'challenge_reward') {
+      if (isCredit) {
         user.walletBalance += netAmount;
       }
 
