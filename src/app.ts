@@ -428,8 +428,31 @@ app.get('/api/health', async (req, res) => {
   res.status(statusCode).json(healthCheck);
 });
 
-// Prometheus Metrics Endpoint
-app.get('/metrics', MonitoringService.getMetrics.bind(MonitoringService));
+// Prometheus Metrics Endpoint — protected (IP whitelist or internal bearer token)
+const metricsAuth = (req: any, res: any, next: any) => {
+  const metricsToken = process.env.METRICS_TOKEN;
+  const allowedIPs = (process.env.METRICS_ALLOWED_IPS || '127.0.0.1,::1,::ffff:127.0.0.1').split(',');
+
+  const clientIP = (req.ip || req.connection?.remoteAddress || '') as string;
+  const isAllowedIP = allowedIPs.some((ip: string) => clientIP.includes(ip.trim()));
+
+  if (isAllowedIP) return next();
+
+  if (metricsToken) {
+    const authHeader = (req.headers.authorization || '') as string;
+    if (authHeader === `Bearer ${metricsToken}`) return next();
+    return res.status(403).json({ message: 'Forbidden' });
+  }
+
+  // In production without a token configured, block non-whitelisted IPs
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(403).json({ message: 'Forbidden' });
+  }
+
+  next();
+};
+
+app.get('/metrics', metricsAuth, MonitoringService.getMetrics.bind(MonitoringService));
 
 // Payment Callbacks (Frontend URL handling)
 import { PaymentController } from './controllers/paymentController';
