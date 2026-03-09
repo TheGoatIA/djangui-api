@@ -1,0 +1,297 @@
+groups:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # HTTP & Availability
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: http_availability
+    rules:
+      - alert: HighHttp5xxErrorRate
+        expr: |
+          sum(rate(http_requests_total{status_code=~"5.."}[5m]))
+          /
+          sum(rate(http_requests_total[5m])) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "HTTP 5xx error rate > 1% ({{ $value | humanizePercentage }})"
+          description: "The 5xx error rate has exceeded 1% over the last 5 minutes. Check application logs immediately."
+          runbook: "https://wiki.kauri-app.com/runbooks/high-5xx-rate"
+
+      - alert: HighP99Latency
+        expr: |
+          histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[10m])) by (le, route))
+          > 2
+        for: 10m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "P99 HTTP latency > 2s on route {{ $labels.route }}"
+          description: "The 99th percentile latency is {{ $value | humanizeDuration }} on {{ $labels.route }}."
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Node.js Runtime
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: nodejs_runtime
+    rules:
+      - alert: EventLoopLagHigh
+        expr: nodejs_eventloop_lag_seconds > 0.2
+        for: 3m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "Node.js event loop lag > 200ms ({{ $value | humanizeDuration }})"
+          description: "Event loop is blocked. This may cause cascading timeouts across all requests."
+
+      - alert: HeapMemoryHighUsage
+        expr: |
+          nodejs_heap_size_used_bytes / nodejs_heap_size_total_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Node.js heap usage > 90%"
+          description: "Heap is at {{ $value | humanizePercentage }}. Risk of OOM crash."
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Database
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: database
+    rules:
+      - alert: DbConnectionPoolExhausted
+        expr: db_connection_pool_waiting > 10
+        for: 2m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "DB connection pool: {{ $value }} requests waiting"
+          description: "More than 10 requests are waiting for a DB connection. This will cause request timeouts."
+
+      - alert: DbHighSlowQueryRate
+        expr: rate(db_slow_queries_total[1m]) > 20
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Slow DB queries rate > 20/min"
+          description: "{{ $value | humanize }} slow queries (>500ms) per minute. Check indexes and query plans."
+
+      - alert: DbHighErrorRate
+        expr: rate(db_errors_total[5m]) > 1
+        for: 5m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "Database error rate > 1/min ({{ $value | humanize }}/s)"
+          description: "High database error rate detected. Check MongoDB replica set health."
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Financial Transactions (CRITIQUE)
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: transactions_critical
+    rules:
+      - alert: TransactionSuccessRateLow
+        expr: transaction_success_rate < 0.90
+        for: 10m
+        labels:
+          severity: critical
+          team: fintech
+        annotations:
+          summary: "Transaction success rate < 90% for {{ $labels.payment_provider }} / {{ $labels.transaction_type }}"
+          description: "Success rate is {{ $value | humanizePercentage }}. Investigate payment provider status."
+          runbook: "https://wiki.kauri-app.com/runbooks/low-success-rate"
+
+      - alert: PendingTransactionsStagnant
+        expr: |
+          pending_transactions_gauge > 0
+          and
+          (pending_transactions_gauge offset 15m) == pending_transactions_gauge
+        for: 1m
+        labels:
+          severity: critical
+          team: fintech
+        annotations:
+          summary: "{{ $value }} transactions stuck in pending state > 15 minutes (provider: {{ $labels.payment_provider }})"
+          description: "Transactions are not progressing. May indicate a payment provider outage or webhook failure."
+
+      - alert: HighTransactionFailureRate
+        expr: rate(transaction_failure_total[10m]) > 5
+        for: 5m
+        labels:
+          severity: critical
+          team: fintech
+        annotations:
+          summary: "Transaction failure rate > 5/min"
+          description: "High failure rate on provider {{ $labels.payment_provider }} / {{ $labels.transaction_type }}: reason={{ $labels.reason }}"
+
+      - alert: NegativeBalanceSpikeDetected
+        expr: |
+          rate(negative_balance_attempts_total[5m])
+          > 10 * avg_over_time(rate(negative_balance_attempts_total[5m])[1h:5m])
+        for: 2m
+        labels:
+          severity: critical
+          team: fintech
+        annotations:
+          summary: "Negative balance attempt rate spike (> 10x normal)"
+          description: "Abnormal spike in insufficient-funds attempts. Possible fraud or application bug."
+
+      - alert: FraudAlertHigh
+        expr: rate(fraud_alerts_total{severity="high"}[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          team: security
+        annotations:
+          summary: "High-severity fraud alert triggered"
+          description: "Rule {{ $labels.rule_triggered }} fired {{ $value | humanize }} times/s."
+
+      - alert: IdempotencyCollisionsHigh
+        expr: rate(idempotency_key_collisions_total[5m]) > 1
+        for: 5m
+        labels:
+          severity: warning
+          team: fintech
+        annotations:
+          summary: "High idempotency key collision rate on {{ $labels.endpoint }}"
+          description: "Double-submission attempts detected. May indicate client retry bugs or replay attacks."
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Payment Providers
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: payment_providers
+    rules:
+      - alert: PaymentProviderDown
+        expr: payment_provider_availability == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: fintech
+        annotations:
+          summary: "Payment provider {{ $labels.provider }} is DOWN"
+          description: "Provider {{ $labels.provider }} has been unavailable for > 1 minute. All payments via this provider will fail."
+
+      - alert: PaymentProviderHighLatency
+        expr: |
+          histogram_quantile(0.95, sum(rate(payment_provider_latency_seconds_bucket[5m])) by (le, provider, operation))
+          > 5
+        for: 5m
+        labels:
+          severity: warning
+          team: fintech
+        annotations:
+          summary: "{{ $labels.provider }} P95 latency > 5s for {{ $labels.operation }}"
+          description: "Payment provider response times are degraded."
+
+      - alert: WebhookRetryQueueHigh
+        expr: webhook_retry_queue_size > 100
+        for: 5m
+        labels:
+          severity: warning
+          team: fintech
+        annotations:
+          summary: "Webhook retry queue > 100 items for {{ $labels.provider }}"
+          description: "Many webhooks are failing to process. Check webhook handler and provider connectivity."
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Authentication & Security
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: auth_security
+    rules:
+      - alert: HighAuthFailureRate
+        expr: |
+          sum(rate(auth_failures_total[10m])) by (method)
+          /
+          sum(rate(auth_attempts_total[10m])) by (method) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "Auth failure rate > 5% via {{ $labels.method }}"
+          description: "{{ $value | humanizePercentage }} of authentication attempts are failing. Possible brute-force attack."
+
+      - alert: AccountLockoutSpike
+        expr: rate(account_lockouts_total[5m]) > 5
+        for: 3m
+        labels:
+          severity: critical
+          team: security
+        annotations:
+          summary: "High account lockout rate: {{ $value | humanize }}/s"
+          description: "Unusually high number of account lockouts. May indicate a coordinated brute-force attack."
+
+      - alert: RateLimitingHighHits
+        expr: rate(rate_limit_hits_total[5m]) > 50
+        for: 5m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "Rate limiter blocking > 50 req/s"
+          description: "High rate of blocked requests on {{ $labels.endpoint }}. May indicate DDoS or misconfigured client."
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Background Jobs
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: background_jobs
+    rules:
+      - alert: ScheduledJobMissed
+        expr: |
+          (time() - scheduled_job_last_success_timestamp) > 86400
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Scheduled job {{ $labels.job_name }} has not run successfully in > 24h"
+          description: "Last success was {{ $value | humanizeDuration }} ago. Check cron service."
+
+      - alert: JobFailureRateHigh
+        expr: rate(job_failed_total[30m]) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Background job {{ $labels.job_name }} failing ({{ $value | humanize }}/s)"
+          description: "Reason: {{ $labels.reason }}. Check background job logs."
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Wallets
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: wallets
+    rules:
+      - alert: WalletReconciliationDiscrepancy
+        expr: increase(wallet_reconciliation_discrepancies_total[1h]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          team: fintech
+        annotations:
+          summary: "Wallet reconciliation discrepancy detected"
+          description: "Balance discrepancy found during reconciliation. Immediate investigation required."
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Notifications
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: notifications
+    rules:
+      - alert: NotificationFailureRateHigh
+        expr: |
+          sum(rate(notification_failures_total[10m])) by (channel)
+          /
+          (sum(rate(notifications_sent_total[10m])) by (channel) + 0.001) > 0.10
+        for: 10m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Notification failure rate > 10% on {{ $labels.channel }}"
+          description: "Reason: {{ $labels.reason }}. Check notification provider status."
