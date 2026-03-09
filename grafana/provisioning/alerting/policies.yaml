@@ -1,0 +1,42 @@
+apiVersion: 1
+
+policies:
+  - orgId: 1
+    # Default catch-all → slack-warnings
+    receiver: slack-warnings
+    group_by: ['alertname', 'grafana_folder', 'team']
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 6h
+    routes:
+      # Critical → email + Slack critical
+      - receiver: slack-critical
+        object_matchers:
+          - ['severity', '=', 'critical']
+        group_wait: 10s
+        repeat_interval: 1h
+        routes:
+          # Fintech critical → fintech channel too
+          - receiver: slack-fintech
+            object_matchers:
+              - ['severity', '=', 'critical']
+              - ['team', '=', 'fintech']
+            repeat_interval: 30m
+          # Security critical
+          - receiver: slack-security
+            object_matchers:
+              - ['severity', '=', 'critical']
+              - ['team', '=', 'security']
+            repeat_interval: 30m
+
+      # Warning → slack-warnings (default, already set above)
+      - receiver: slack-warnings
+        object_matchers:
+          - ['severity', '=', 'warning']
+        repeat_interval: 6h
+
+      # Security team (any severity)
+      - receiver: slack-security
+        object_matchers:
+          - ['team', '=', 'security']
+        repeat_interval: 2h

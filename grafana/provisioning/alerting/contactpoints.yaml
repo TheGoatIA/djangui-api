@@ -1,0 +1,81 @@
+apiVersion: 1
+
+contactPoints:
+  # ── Email — Critical ────────────────────────────────────────────────────────
+  - orgId: 1
+    name: email-critical
+    receivers:
+      - uid: email-critical-receiver
+        type: email
+        settings:
+          addresses: '{{ env "GRAFANA_ALERT_EMAIL_TO" | default "ops@kauri-app.com" }}'
+          subject: '[CRITICAL] {{ template "default.title" . }}'
+          message: |
+            {{ template "default.message" . }}
+          singleEmail: false
+        disableResolveMessage: false
+
+  # ── Slack — Critical ────────────────────────────────────────────────────────
+  - orgId: 1
+    name: slack-critical
+    receivers:
+      - uid: slack-critical-receiver
+        type: slack
+        settings:
+          url: '{{ env "GRAFANA_SLACK_WEBHOOK_CRITICAL" | default "https://hooks.slack.com/services/CHANGE/ME" }}'
+          recipient: '#alerts-critical'
+          title: '🚨 [CRITICAL] {{ template "default.title" . }}'
+          text: '{{ template "default.message" . }}'
+          username: 'Kauri Alerting'
+          icon_emoji: ':rotating_light:'
+          color: '#FF0000'
+          mentionChannel: 'here'
+        disableResolveMessage: false
+
+  # ── Slack — Warnings ────────────────────────────────────────────────────────
+  - orgId: 1
+    name: slack-warnings
+    receivers:
+      - uid: slack-warnings-receiver
+        type: slack
+        settings:
+          url: '{{ env "GRAFANA_SLACK_WEBHOOK_WARNINGS" | default "https://hooks.slack.com/services/CHANGE/ME" }}'
+          recipient: '#alerts-warnings'
+          title: '⚠️ [WARNING] {{ template "default.title" . }}'
+          text: '{{ template "default.message" . }}'
+          username: 'Kauri Alerting'
+          icon_emoji: ':warning:'
+          color: '#FFA500'
+        disableResolveMessage: false
+
+  # ── Slack — Fintech ─────────────────────────────────────────────────────────
+  - orgId: 1
+    name: slack-fintech
+    receivers:
+      - uid: slack-fintech-receiver
+        type: slack
+        settings:
+          url: '{{ env "GRAFANA_SLACK_WEBHOOK_FINTECH" | default "https://hooks.slack.com/services/CHANGE/ME" }}'
+          recipient: '#alerts-fintech'
+          title: '💳 [FINTECH] {{ template "default.title" . }}'
+          text: '{{ template "default.message" . }}'
+          username: 'Kauri Alerting'
+          icon_emoji: ':money_with_wings:'
+          color: '#FF6600'
+        disableResolveMessage: false
+
+  # ── Slack — Security ─────────────────────────────────────────────────────────
+  - orgId: 1
+    name: slack-security
+    receivers:
+      - uid: slack-security-receiver
+        type: slack
+        settings:
+          url: '{{ env "GRAFANA_SLACK_WEBHOOK_SECURITY" | default "https://hooks.slack.com/services/CHANGE/ME" }}'
+          recipient: '#alerts-security'
+          title: '🔒 [SECURITY] {{ template "default.title" . }}'
+          text: '{{ template "default.message" . }}'
+          username: 'Kauri Alerting'
+          icon_emoji: ':lock:'
+          color: '#8B0000'
+        disableResolveMessage: false
