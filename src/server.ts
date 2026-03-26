@@ -59,8 +59,13 @@ const startServer = async () => {
     MonitoringService.init();
 
     // Initialize Cron Jobs
-    logger.info('Step 4: Init Cron...');
-    CronService.init();
+    // Prevent multiple executions in PM2 cluster mode by only running on instance 0
+    if (!process.env.NODE_APP_INSTANCE || process.env.NODE_APP_INSTANCE === '0') {
+      logger.info('Step 4: Init Cron...');
+      CronService.init();
+    } else {
+      logger.info(`Step 4: Skipped Cron init on PM2 cluster instance ${process.env.NODE_APP_INSTANCE}`);
+    }
 
     const server = app.listen(PORT, () => {
       logger.info(`Server is running on port ${PORT} in ${process.env.NODE_ENV} mode`);
