@@ -52,7 +52,7 @@ const consoleFormat = winston.format.combine(
   }),
 );
 
-// Global metadata formatter (Ensures requestId/userId are always in the metadata object)
+// Global metadata formatter (Ensures requestId/userId and service metadata are in every log)
 const contextFormat = winston.format((info) => {
   const context = RequestContext.getStore();
   if (context) {
@@ -62,6 +62,9 @@ const contextFormat = winston.format((info) => {
       info.context = context.context;
     }
   }
+  // Service-level metadata for production-ready structured logging
+  if (!info.service) info.service = 'kauri-api';
+  if (!info.environment) info.environment = process.env.NODE_ENV || 'development';
   return info;
 });
 

@@ -59,11 +59,11 @@ export class ReportService {
       savingsRate: Math.max(0, savingsRate),
       budgetHealth: budget
         ? {
-            totalAllocated: budget.totalAllocated,
-            totalSpent: budget.totalSpent,
-            status: budget.status,
-            percentageUsed: (budget.totalSpent / budget.totalAllocated) * 100,
-          }
+          totalAllocated: budget.totalAllocated,
+          totalSpent: budget.totalSpent,
+          status: budget.status,
+          percentageUsed: (budget.totalSpent / budget.totalAllocated) * 100,
+        }
         : null,
       currency: user?.currency || 'XAF',
     };
@@ -305,7 +305,7 @@ export class ReportService {
       let expense = 0;
 
       stats.forEach((s) => {
-        if (['deposit', 'tontine_payout', 'challenge_reward'].includes(s._id)) {
+        if (['income', 'deposit', 'tontine_payout', 'challenge_reward'].includes(s._id)) {
           income += s.total;
         } else {
           expense += s.total + s.totalFees; // On déduit le net + les frais

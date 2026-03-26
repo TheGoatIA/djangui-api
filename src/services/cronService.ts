@@ -156,6 +156,9 @@ export class CronService {
       }),
     );
 
+    // Every 5 min: Update production metrics gauges (pending tx, daily volume, success rate)
+    cron.schedule('*/5 * * * *', this.runMonitored('metrics_gauge_update', () => this.updateProductionMetricsGauges()));
+
     // Run once on startup
     this.processSubscriptionsRenewal().catch((err) =>
       logger.error(`Startup renewal error: ${err.message}`),
@@ -179,14 +182,72 @@ export class CronService {
       try {
         await fn();
         MonitoringService.recordCronJob(name, 'success');
+        // Extended job metrics (additive)
+        MonitoringService.recordBackgroundJob(name, 'success');
+        MonitoringService.updateScheduledJobLastSuccess(name);
       } catch (error: any) {
         MonitoringService.recordCronJob(name, 'failure');
+        MonitoringService.recordBackgroundJob(name, 'failure');
+        MonitoringService.recordJobFailed(name, error.code || error.message?.slice(0, 50) || 'unknown');
         logger.error(`Cron Job [${name}] failed: ${error.message}`);
       } finally {
         const duration = (Date.now() - start) / 1000;
         MonitoringService.observeCronJobDuration(name, duration);
+        MonitoringService.observeBackgroundJobDuration(name, duration);
       }
     };
+  }
+
+  /**
+   * Update gauges that require periodic MongoDB queries:
+   * pending_transactions_gauge, daily_transaction_volume, transaction_success_rate
+   */
+  private static async updateProductionMetricsGauges() {
+    try {
+      const now = new Date();
+      const since24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+      // Pending transactions by payment method (used as provider proxy)
+      const pendingByProvider = await Transaction.aggregate([
+        { $match: { status: 'pending' } },
+        { $group: { _id: { provider: '$paymentMethod' }, count: { $sum: 1 } } },
+      ]);
+      for (const row of pendingByProvider) {
+        MonitoringService.updatePendingTransactions(row._id.provider || 'unknown', row.count);
+      }
+
+      // Daily transaction volume by currency
+      const volumeByCurrency = await Transaction.aggregate([
+        { $match: { status: 'completed', date: { $gte: since24h } } },
+        { $group: { _id: '$currency', total: { $sum: '$amount' } } },
+      ]);
+      for (const row of volumeByCurrency) {
+        MonitoringService.updateDailyTransactionVolume(row._id || 'XAF', row.total);
+      }
+
+      // Transaction success rate by payment method (last 24h)
+      const ratioByProvider = await Transaction.aggregate([
+        { $match: { date: { $gte: since24h }, paymentMethod: { $ne: 'cash' } } },
+        {
+          $group: {
+            _id: '$paymentMethod',
+            total: { $sum: 1 },
+            success: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
+          },
+        },
+      ]);
+      for (const row of ratioByProvider) {
+        if (row.total > 0) {
+          MonitoringService.updateTransactionSuccessRate(
+            row._id || 'unknown',
+            'all',
+            row.success / row.total,
+          );
+        }
+      }
+    } catch (error: any) {
+      logger.error(`updateProductionMetricsGauges error: ${error.message}`);
+    }
   }
 
   /**
