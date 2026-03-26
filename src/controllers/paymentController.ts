@@ -30,23 +30,63 @@ export class PaymentController {
   }
 
   static async handlePaymentSuccess(req: Request, res: Response) {
-    const { ref, status } = req.query;
-    res.send(`
-      <html>
-        <body style="font-family: sans-serif; text-align: center; padding: 50px;">
-          <h1 style="color: green;">Paiement Réussi !</h1>
-          <p>Référence: ${ref}</p>
-          <p>Statut: ${status || 'Complété'}</p>
-          <p>Retour automatique vers l'application...</p>
-          <script>
-             setTimeout(() => {
-                window.location.href = "kauri://payment/success?ref=${ref}&status=${status || 'completed'}";
-             }, 1500);
-          </script>
-          <a href="kauri://payment/success?ref=${ref}" style="display:inline-block; margin-top:20px; padding:10px 20px; background:#4CAF50; color:white; text-decoration:none; border-radius:5px;">Retourner à l'App</a>
-        </body>
-      </html>
-    `);
+    const { ref } = req.query;
+
+    if (!ref) {
+      return res.status(400).send('Référence de paiement manquante.');
+    }
+
+    try {
+      // 1. Verify actual status from DB/Provider
+      const result = await PaymentService.verifyTransaction(ref as string);
+      const isActuallySuccessful = result.status === 'completed';
+
+      // 2. Prepare UI based on status
+      const title = isActuallySuccessful ? 'Paiement Réussi !' : 'Paiement en attente ou échoué';
+      const color = isActuallySuccessful ? '#1DB954' : '#f44336';
+      const icon = isActuallySuccessful ? '✓' : '⚠';
+      const deepLink = isActuallySuccessful
+        ? `kauri://payment/success?ref=${ref}`
+        : `kauri://payment/failure?ref=${ref}&status=${result.status}`;
+
+      res.send(`
+        <html>
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>${title}</title>
+            <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+            <style>
+              body { font-family: 'Outfit', sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; background-color: #0b0f14; color: white; padding: 20px; text-align: center; }
+              .card { background: rgba(255, 255, 255, 0.05); padding: 40px; border-radius: 24px; border: 1px solid rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px); max-width: 400px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+              .icon { font-size: 60px; color: ${color}; margin-bottom: 20px; }
+              h1 { margin: 0 0 10px; color: ${color}; font-weight: 800; }
+              p { color: #94a3b8; line-height: 1.6; }
+              .ref { font-family: monospace; background: rgba(0,0,0,0.3); padding: 5px 10px; border-radius: 5px; color: white; margin: 15px 0; display: inline-block; }
+              .btn { display: inline-block; margin-top: 30px; padding: 12px 30px; background: ${color}; color: black; text-decoration: none; border-radius: 12px; font-weight: 600; transition: transform 0.2s; }
+              .btn:hover { transform: scale(1.05); }
+            </style>
+          </head>
+          <body>
+            <div class="card">
+              <div class="icon">${icon}</div>
+              <h1>${title}</h1>
+              <p>${isActuallySuccessful ? 'Votre transaction a été confirmée.' : "Nous n'avons pas pu confirmer votre paiement pour le moment."}</p>
+              <div class="ref">Réf: ${ref}</div>
+              <p>Retour automatique vers l'application...</p>
+              <a href="${deepLink}" class="btn">Retourner à l'App</a>
+            </div>
+            <script>
+              setTimeout(() => {
+                window.location.href = "${deepLink}";
+              }, 3000);
+            </script>
+          </body>
+        </html>
+      `);
+    } catch (err) {
+      res.status(500).send('Erreur lors de la vérification du paiement.');
+    }
   }
 
   static async handlePaymentCancel(req: Request, res: Response) {
