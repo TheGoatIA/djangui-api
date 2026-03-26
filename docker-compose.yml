@@ -144,32 +144,86 @@ services:
 
   # Monitoring (Prometheus & Grafana)
   prometheus:
-    image: prom/prometheus:v2.48.0 # Version spécifique
+    image: prom/prometheus:v2.48.0
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./alerts/rules.yaml:/etc/prometheus/alerts/rules.yaml
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    networks:
+      - kauri-network
+    restart: unless-stopped
+
+  # Alertmanager — routes Prometheus alerts to Email + Slack
+  alertmanager:
+    image: prom/alertmanager:v0.26.0
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:${ALERTMANAGER_PORT:-9093}'
+    environment:
+      # SMTP
+      - ALERTMANAGER_SMTP_HOST=${ALERTMANAGER_SMTP_HOST:-smtp.gmail.com:587}
+      - ALERTMANAGER_SMTP_FROM=${ALERTMANAGER_SMTP_FROM:-alerts@kauri-app.com}
+      - ALERTMANAGER_SMTP_USER=${ALERTMANAGER_SMTP_USER:-alerts@kauri-app.com}
+      - ALERTMANAGER_SMTP_PASSWORD=${ALERTMANAGER_SMTP_PASSWORD:-changeme}
+      # Recipients
+      - ALERTMANAGER_EMAIL_TO=${ALERTMANAGER_EMAIL_TO:-ops@kauri-app.com}
+      - ALERTMANAGER_FINTECH_EMAIL=${ALERTMANAGER_FINTECH_EMAIL:-fintech@kauri-app.com}
+      - ALERTMANAGER_SECURITY_EMAIL=${ALERTMANAGER_SECURITY_EMAIL:-security@kauri-app.com}
+      # Slack webhooks
+      - ALERTMANAGER_SLACK_WEBHOOK_URL=${ALERTMANAGER_SLACK_WEBHOOK_URL:-https://hooks.slack.com/services/CHANGE/ME}
     networks:
       - kauri-network
     restart: unless-stopped
 
   grafana:
-    image: grafana/grafana:10.2.2 # Version spécifique
+    image: grafana/grafana:10.2.2
     ports:
       - "${GRAFANA_PORT:-3001}:3000"
     depends_on:
       - prometheus
+      - alertmanager
     networks:
       - kauri-network
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/etc/grafana/dashboards
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_SECURITY_ADMIN_USER=admin
+      # Admin credentials
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      # SMTP for Grafana Unified Alerting
+      - GF_SMTP_ENABLED=true
+      - GF_SMTP_HOST=${GRAFANA_SMTP_HOST:-smtp.gmail.com:587}
+      - GF_SMTP_USER=${GRAFANA_SMTP_USER:-alerts@kauri-app.com}
+      - GF_SMTP_PASSWORD=${GRAFANA_SMTP_PASSWORD:-changeme}
+      - GF_SMTP_FROM_ADDRESS=${GRAFANA_SMTP_FROM:-alerts@kauri-app.com}
+      - GF_SMTP_FROM_NAME=Kauri Alerting
+      - GF_SMTP_STARTTLS_POLICY=MandatoryStartTLS
+      # Unified Alerting — point to Alertmanager
+      - GF_UNIFIED_ALERTING_ENABLED=true
+      - GF_ALERTING_ENABLED=false
+      - GF_UNIFIED_ALERTING_ALERTMANAGER_ENABLED=true
+      - GF_UNIFIED_ALERTING_ALERTMANAGER_URL=http://alertmanager:9093
+      # Contact point Slack webhooks (used by provisioning templates)
+      - GRAFANA_SLACK_WEBHOOK_CRITICAL=${GRAFANA_SLACK_WEBHOOK_CRITICAL:-https://hooks.slack.com/services/CHANGE/ME}
+      - GRAFANA_SLACK_WEBHOOK_WARNINGS=${GRAFANA_SLACK_WEBHOOK_WARNINGS:-https://hooks.slack.com/services/CHANGE/ME}
+      - GRAFANA_SLACK_WEBHOOK_FINTECH=${GRAFANA_SLACK_WEBHOOK_FINTECH:-https://hooks.slack.com/services/CHANGE/ME}
+      - GRAFANA_SLACK_WEBHOOK_SECURITY=${GRAFANA_SLACK_WEBHOOK_SECURITY:-https://hooks.slack.com/services/CHANGE/ME}
+      - GRAFANA_ALERT_EMAIL_TO=${GRAFANA_ALERT_EMAIL_TO:-ops@kauri-app.com}
+      # Grafana base URL (needed for alert links in notifications)
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3001}
     restart: unless-stopped
 
   # OpenTelemetry
@@ -239,4 +293,5 @@ volumes:
   graylog_data:
   grafana_data:
   prometheus_data:
+  alertmanager_data:
   minio_data:
