@@ -19,6 +19,7 @@ const connectDB = async (): Promise<void> => {
     // ── Connection pool metrics (additive, no logic change) ──────────────────
     const collectPoolStats = async () => {
       try {
+        if (!mongoose.connection.db) return;
         const adminDb = mongoose.connection.db.admin();
         const status = await adminDb.serverStatus();
         const conn = status.connections;
