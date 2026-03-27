@@ -701,10 +701,20 @@
       "options": { "tooltip": { "mode": "multi" }, "legend": { "showLegend": true, "displayMode": "table", "placement": "bottom" } },
       "fieldConfig": { "defaults": { "custom": { "lineWidth": 2, "fillOpacity": 8, "drawStyle": "line", "showPoints": "never" } }, "overrides": [{ "matcher": { "id": "byName", "options": "Hit Rate" }, "properties": [{ "id": "unit", "value": "percentunit" }, { "id": "custom.axisPlacement", "value": "right" }, { "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }, { "id": "custom.lineWidth", "value": 3 }] }, { "matcher": { "id": "byRegexp", "options": "^(?!Hit Rate).*" }, "properties": [{ "id": "unit", "value": "ops" }] }] }
     },
+    {
+      "id": 123, "type": "timeseries", "title": "Consommation de Tokens IA",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 152 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(ai_tokens_total[$interval])) by (service, type)", "legendFormat": "{{service}} ({{type}})", "refId": "A" }
+      ],
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "showLegend": true, "displayMode": "table", "placement": "right" } },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "lineWidth": 2, "fillOpacity": 10, "drawStyle": "line", "showPoints": "never" } }, "overrides": [] }
+    },
 
     {
       "id": 130, "type": "row", "title": "🏦 Métriques Métier — Tontines & Objectifs",
-      "collapsed": true, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 152 },
+      "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 160 },
       "panels": [
         {
           "id": 131, "type": "timeseries", "title": "Actions sur Tontines",

@@ -11,6 +11,7 @@ if (firebaseConfig.projectId && firebaseConfig.clientEmail && firebaseConfig.pri
   try {
     admin.initializeApp({
       credential: admin.credential.cert(firebaseConfig),
+      storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
     });
     logger.info('Firebase Admin initialized successfully');
   } catch (error: any) {
