@@ -282,11 +282,18 @@ export class PaymentService {
   }
 
   /**
-   * Manually verify transaction status with provider
+   * Manually verify transaction status with provider.
+   * @param reference Internal payment reference
+   * @param requestingUserId If provided, enforces ownership — only the payment owner can verify
    */
-  static async verifyTransaction(reference: string) {
+  static async verifyTransaction(reference: string, requestingUserId?: string) {
     const payment = await Payment.findOne({ reference });
     if (!payment) throw new AppError('Payment not found', 404);
+
+    // Ownership check: prevent IDOR — user A cannot verify user B's payment
+    if (requestingUserId && payment.userId.toString() !== requestingUserId.toString()) {
+      throw new AppError('Access denied', 403);
+    }
 
     if (payment.status === 'completed') {
       return { status: 'completed', payment };

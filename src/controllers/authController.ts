@@ -228,7 +228,9 @@ export class AuthController {
   static async logout(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const { refreshToken } = req.body;
-      await AuthService.logout(req.user._id, refreshToken);
+      // Extract the access token to blacklist it immediately in Redis
+      const accessToken = req.headers.authorization?.split(' ')[1];
+      await AuthService.logout(req.user._id, refreshToken, accessToken);
 
       res.status(200).json({
         success: true,

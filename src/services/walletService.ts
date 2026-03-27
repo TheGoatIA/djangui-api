@@ -9,6 +9,33 @@ import { FinancialAlertService } from './financialAlertService';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger';
 
+// AML transaction limits per plan (in XAF / FCFA)
+const AML_LIMITS = {
+  free: {
+    MAX_SINGLE_TRANSACTION: 50_000,  // 50 000 FCFA par transaction
+    MAX_DAILY_TOTAL: 100_000,        // 100 000 FCFA par jour
+  },
+  premium: {
+    MAX_SINGLE_TRANSACTION: 50_000,  // 50 000 FCFA par transaction
+    MAX_DAILY_TOTAL: 300_000,        // 300 000 FCFA par jour
+  },
+};
+
+/** Retourne les limites AML applicables selon le plan de l'utilisateur. */
+const getUserLimits = (user: { subscription?: { plan?: string; status?: string; endDate?: Date } }) => {
+  const isPremium =
+    user.subscription?.plan === 'premium' &&
+    user.subscription?.status === 'active' &&
+    (!user.subscription?.endDate || new Date(user.subscription.endDate) >= new Date());
+  return isPremium ? AML_LIMITS.premium : AML_LIMITS.free;
+};
+
+/**
+ * Round a financial amount to 2 decimal places to avoid float precision errors.
+ * For zero-decimal currencies (XAF, JPY) this is effectively Math.round().
+ */
+const roundAmount = (n: number): number => Math.round(n * 100) / 100;
+
 export class WalletService {
   /**
    * Effectue un transfert de fonds sécurisé entre deux entités (ou wallet -> banque)
@@ -49,32 +76,77 @@ export class WalletService {
         silent = false,
       } = data;
 
-      // 1. Récupérer l'utilisateur
+      // Guard: amount must be a finite positive number
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new AppError('Montant invalide', 400);
+      }
+
+      // 1. Récupérer l'utilisateur (nécessaire avant les vérifications AML pour connaître le plan)
       const user = await User.findById(userId).session(session);
       if (!user) throw new AppError('Utilisateur non trouvé', 404);
 
-      const netAmount = amount - fees;
-      const transactionRef = reference || `TXN-${uuidv4().split('-')[0].toUpperCase()}`;
+      // Limites AML selon le plan de l'utilisateur
+      const limits = getUserLimits(user);
+      const planLabel = user.subscription?.plan === 'premium' ? 'premium' : 'gratuit';
 
-      // 2. Vérifier le solde si c'est un débit du wallet
+      // AML: limite par transaction unique
+      if (amount > limits.MAX_SINGLE_TRANSACTION) {
+        throw new AppError(
+          `Montant dépasse la limite par transaction pour les comptes ${planLabel} (${limits.MAX_SINGLE_TRANSACTION.toLocaleString()} FCFA)`,
+          400,
+        );
+      }
+
+      // AML: daily cumulative limit for debits
       const isDebit =
         type === 'withdrawal' || type === 'tontine_contribution' || type === 'saving_transfer';
       const isCredit =
         type === 'deposit' || type === 'tontine_payout' || type === 'challenge_reward';
 
+      if (isDebit) {
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+
+        const dailyTotal = await Transaction.aggregate([
+          {
+            $match: {
+              userId: new mongoose.Types.ObjectId(userId),
+              type: { $in: ['expense', 'withdrawal'] },
+              status: 'completed',
+              date: { $gte: startOfDay },
+            },
+          },
+          { $group: { _id: null, total: { $sum: '$amount' } } },
+        ]).session(session);
+
+        const todaySpent = dailyTotal[0]?.total || 0;
+        if (todaySpent + amount > limits.MAX_DAILY_TOTAL) {
+          throw new AppError(
+            `Limite journalière de transactions atteinte pour les comptes ${planLabel} (${limits.MAX_DAILY_TOTAL.toLocaleString()} FCFA/jour)`,
+            400,
+          );
+        }
+      }
+
+      // Use rounded amounts to prevent float precision drift
+      const safeAmount = roundAmount(amount);
+      const safeFees = roundAmount(fees);
+      const netAmount = roundAmount(safeAmount - safeFees);
+      const transactionRef = reference || `TXN-${uuidv4().split('-')[0].toUpperCase()}`;
+
       // On débite seulement si c'est un type de débit explicite
       // OU si le mode est wallet ET que ce n'est PAS un type de crédit
       if (isDebit || (paymentMethod === 'wallet' && !isCredit)) {
-        const totalDebit = amount;
+        const totalDebit = safeAmount;
         if (user.walletBalance < totalDebit) {
           throw new AppError('Solde insuffisant dans le portefeuille', 400);
         }
-        user.walletBalance -= totalDebit;
+        user.walletBalance = roundAmount(user.walletBalance - totalDebit);
       }
 
       // 3. Créditer le solde si c'est un crédit wallet
       if (isCredit) {
-        user.walletBalance += netAmount;
+        user.walletBalance = roundAmount(user.walletBalance + netAmount);
       }
 
       await user.save({ session });
@@ -105,7 +177,7 @@ export class WalletService {
       );
 
       // 5. Audit Log & Metrics
-      MonitoringService.recordTransaction(type, 'success', user.currency || 'XAF', amount);
+      MonitoringService.recordTransaction(type, 'success', user.currency || 'XAF', safeAmount);
 
       await AuditService.record({
         userId: userId as any,
@@ -113,7 +185,7 @@ export class WalletService {
         resource: 'WALLET',
         resourceId: transactionRef,
         status: 'success',
-        metadata: { amount, fees, netAmount, paymentMethod },
+        metadata: { amount: safeAmount, fees: safeFees, netAmount, paymentMethod },
       });
 
       await session.commitTransaction();
@@ -124,7 +196,7 @@ export class WalletService {
       // 6. Monitoring d'Alerte (Async)
       FinancialAlertService.monitorTransaction({
         userId,
-        amount,
+        amount: safeAmount,
         type,
         reference: transactionRef,
         status: 'success',
@@ -137,7 +209,7 @@ export class WalletService {
           body: '',
           category: 'transactional',
           translationKey: 'TRANSACTION_SUCCESS',
-          translationData: { amount, currency: user.currency, type },
+          translationData: { amount: safeAmount, currency: user.currency, type },
           data: { transactionRef, type },
         }).catch((err) => logger.error(`Wallet Notification Error: ${err.message}`));
       }
@@ -145,7 +217,7 @@ export class WalletService {
       return transaction[0];
     } catch (error: any) {
       await session.abortTransaction();
-      MonitoringService.recordTransaction(data.type, 'failure', 'XAF', data.amount);
+      MonitoringService.recordTransaction(data.type, 'failure', 'XAF', roundAmount(data.amount));
       logger.error(
         `[FINTECH] Wallet Transaction FAILED: ${error.message} (User: ${data.userId}, Type: ${data.type})`,
       );
