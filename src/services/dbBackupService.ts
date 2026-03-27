@@ -111,6 +111,45 @@ export class DbBackupService {
   }
 
   /**
+   * Restore database from a backup file
+   */
+  static async restoreBackup(filename: string) {
+    const backupPath = path.join(this.BACKUP_DIR, filename);
+
+    if (!fs.existsSync(backupPath)) {
+      throw new Error(`Backup file not found: ${filename}`);
+    }
+
+    try {
+      const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/kauri';
+      const toolsPath = process.env.MONGODB_TOOLS_PATH
+        ? path.join(process.env.MONGODB_TOOLS_PATH, 'mongorestore')
+        : 'mongorestore';
+
+      logger.warn(`STARTING DATABASE RESTORE from: ${filename}`);
+
+      // Command: mongorestore --uri="<uri>" --archive="<path>" --gzip --drop
+      // --drop is used to clear existing collections before restore
+      await execPromise(`"${toolsPath}" --uri="${uri}" --archive="${backupPath}" --gzip --drop`);
+
+      logger.info(`Database restored successfully from ${filename}`);
+
+      // Notify Slack
+      await SlackService.sendNotification(
+        `⚠️ *DB RESTORE SUCCESS*\n*File*: ${filename}\n*Status*: Database has been replaced by backup.`,
+      );
+
+      return { success: true, file: filename };
+    } catch (error: any) {
+      logger.error(`Database restore failed: ${error.message}`);
+      await SlackService.sendNotification(
+        `🚨 *DB RESTORE FAILED*\n*File*: ${filename}\n*Error*: ${error.message}`,
+      );
+      throw error;
+    }
+  }
+
+  /**
    * Upload a file to Firebase Storage
    */
   private static async uploadToFirebase(localPath: string, destination: string): Promise<string> {
