@@ -9,10 +9,25 @@ import { FinancialAlertService } from './financialAlertService';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger';
 
-// AML transaction limits (in XAF equivalent)
+// AML transaction limits per plan (in XAF / FCFA)
 const AML_LIMITS = {
-  MAX_SINGLE_TRANSACTION: 5_000_000, // 5 million XAF per single transaction
-  MAX_DAILY_TOTAL: 10_000_000, // 10 million XAF cumulative per day
+  free: {
+    MAX_SINGLE_TRANSACTION: 50_000,  // 50 000 FCFA par transaction
+    MAX_DAILY_TOTAL: 100_000,        // 100 000 FCFA par jour
+  },
+  premium: {
+    MAX_SINGLE_TRANSACTION: 50_000,  // 50 000 FCFA par transaction
+    MAX_DAILY_TOTAL: 300_000,        // 300 000 FCFA par jour
+  },
+};
+
+/** Retourne les limites AML applicables selon le plan de l'utilisateur. */
+const getUserLimits = (user: { subscription?: { plan?: string; status?: string; endDate?: Date } }) => {
+  const isPremium =
+    user.subscription?.plan === 'premium' &&
+    user.subscription?.status === 'active' &&
+    (!user.subscription?.endDate || new Date(user.subscription.endDate) >= new Date());
+  return isPremium ? AML_LIMITS.premium : AML_LIMITS.free;
 };
 
 /**
@@ -66,17 +81,21 @@ export class WalletService {
         throw new AppError('Montant invalide', 400);
       }
 
-      // AML: single transaction limit
-      if (amount > AML_LIMITS.MAX_SINGLE_TRANSACTION) {
+      // 1. Récupérer l'utilisateur (nécessaire avant les vérifications AML pour connaître le plan)
+      const user = await User.findById(userId).session(session);
+      if (!user) throw new AppError('Utilisateur non trouvé', 404);
+
+      // Limites AML selon le plan de l'utilisateur
+      const limits = getUserLimits(user);
+      const planLabel = user.subscription?.plan === 'premium' ? 'premium' : 'gratuit';
+
+      // AML: limite par transaction unique
+      if (amount > limits.MAX_SINGLE_TRANSACTION) {
         throw new AppError(
-          `Montant dépasse la limite par transaction (${AML_LIMITS.MAX_SINGLE_TRANSACTION.toLocaleString()} XAF)`,
+          `Montant dépasse la limite par transaction pour les comptes ${planLabel} (${limits.MAX_SINGLE_TRANSACTION.toLocaleString()} FCFA)`,
           400,
         );
       }
-
-      // 1. Récupérer l'utilisateur
-      const user = await User.findById(userId).session(session);
-      if (!user) throw new AppError('Utilisateur non trouvé', 404);
 
       // AML: daily cumulative limit for debits
       const isDebit =
@@ -101,9 +120,9 @@ export class WalletService {
         ]).session(session);
 
         const todaySpent = dailyTotal[0]?.total || 0;
-        if (todaySpent + amount > AML_LIMITS.MAX_DAILY_TOTAL) {
+        if (todaySpent + amount > limits.MAX_DAILY_TOTAL) {
           throw new AppError(
-            `Limite journalière de transactions atteinte (${AML_LIMITS.MAX_DAILY_TOTAL.toLocaleString()} XAF/jour)`,
+            `Limite journalière de transactions atteinte pour les comptes ${planLabel} (${limits.MAX_DAILY_TOTAL.toLocaleString()} FCFA/jour)`,
             400,
           );
         }
