@@ -1,102 +1,120 @@
-# 🏦 Kauri - API de Gestion Financière Intelligente
+# 🏦 Kauri - Excellence en Ingénierie Financière (Fintech API)
 
-Kauri est une API REST complète et prête pour la production destinée à la gestion des finances personnelles. Elle utilise l'IA pour fournir des analyses financières approfondies, automatiser la budgétisation et scanner les reçus physiques, créant ainsi un écosystème financier fluide.
-
----
-
-## 🌟 Fonctionnalités Clés
-
-### 1. 🛡️ Système d'Authentification Avancé
-- **Accès Sécurisé** : Authentification basée sur JWT.
-- **Gestion des Sessions** : Système à double jeton (Access & Refresh) pour des sessions sécurisées à long terme.
-- **Protection** : Protection contre la force brute via la limitation du débit (rate limiting) et des en-têtes sécurisés (Helmet).
-- **Synchronisation Appareil** : Intégration de Firebase Cloud Messaging (FCM) pour les notifications push.
-
-### 2. 💰 Gestion Intelligente des Transactions
-- **Suivi des Transactions** : CRUD complet pour les revenus et dépenses avec tags et catégories.
-- **Automatisation** : Identification des transactions récurrentes (abonnements, factures).
-- **Historique** : Accès paginé aux données historiques avec filtres puissants (dates, types, catégories).
-
-### 3. 📊 Budgétisation Intelligente
-- **Budgets Périodiques** : Planification budgétaire mensuelle et annuelle.
-- **Allocation par Catégorie** : Contrôle granulaire des limites de dépenses par catégorie.
-- **Mois Automatique** : Transition automatisée vers le mois suivant, conservant vos catégories financières.
-
-### 4. 🎯 Objectifs d'Épargne
-- **Définition d'Objectifs** : Suivi de l'épargne pour des projets spécifiques (Fonds d'urgence, Vacances, etc.).
-- **Stratégies Intelligentes** : Support pour les stratégies "50-30-20", "Payez-vous d'abord", et personnalisées.
-- **Suivi des Progrès** : Visualisation en temps réel de l'avancement et historique des contributions.
-
-### 5. 🤖 Coach Financier IA (Gemini 2.0)
-- **Conseils en Temps Réel** : Posez des questions spécifiques sur vos dépenses ou votre santé financière.
-- **Conscient du Contexte** : Le coach analyse vos transactions récentes pour fournir des conseils personnalisés.
-- **Choix du Ton** : Choisissez entre un style "encourageant", "ferme" ou "équilibré".
-
-### 6. 📸 Scan de Reçus par IA (OCR)
-- **Saisie Instantanée** : Téléchargez une photo d'un reçu et l'IA extrait automatiquement le commerçant, le montant, la catégorie et la date.
-- **Précision** : Propulsé par Gemini 2.0 Flash pour une extraction de texte haute précision.
-
-### 7. 🏆 Gamification & Défis
-- **Défis Communautaires** : Rejoignez des défis prédéfinis (ex: "7 jours sans livraison").
-- **Récompenses** : Gagnez des points et suivez votre progression sur un classement personnel.
-
-### 8. 💳 Paiements Intégrés
-- **Multi-Passerelles** : Support pour Stripe (International) et NotchPay (Local/Cameroun).
-- **Abonnements Premium** : Gestion automatisée des statuts premium.
-
-### 9. 🌍 Support Multi-Pays & Devises
-- **Expansion Dynamique** : Kauri est conçu pour l'international, permettant la gestion des pays supportés.
-- **Conversion Automatique** : Lors du changement de pays, vos soldes, transactions, budgets et objectifs sont automatiquement convertis dans la nouvelle devise.
+Kauri est une API REST de pointe, conçue pour révolutionner la gestion des finances personnelles grâce à l'intelligence artificielle. Ce projet combine une architecture robuste, une observabilité totale et une intégration poussée de l'IA pour offrir une expérience financière fluide, sécurisée et intelligente.
 
 ---
 
-## 🛣️ Guide des Endpoints API
+## 🚀 Vision du Projet
 
-Consultez la documentation Swagger complète à l'adresse `/api-docs` pour plus de détails.
-
-### 🔐 Authentification (`/api/v1/auth`)
-- `POST /register` : Créer un nouveau compte.
-- `POST /login` : Générer les jetons JWT.
-- `POST /firebase` : Authentification via Google/Firebase.
-- `POST /request-country-change` : Demander un changement de pays de résidence.
-
-### 🌍 Système (`/api/v1/system`)
-- `GET /countries` : Liste des pays actifs et leurs devises.
+Kauri n'est pas seulement une API de suivi de dépenses. C'est un moteur financier complet capable de :
+- **Analyser** vos comportements via un Coach IA (Gemini 2.0).
+- **Scanner** vos reçus physiques avec une précision chirurgicale (OCR).
+- **Convertir** dynamiquement vos avoirs entre plusieurs devises.
+- **Sécuriser** chaque centime via des protocoles d'idempotence et d'anti-fraude.
 
 ---
 
-## 🛠️ Installation & Configuration
+## 🏗️ Architecture & Stack Technique
 
-### Quickstart Docker (Recommandé)
+Le projet repose sur une pile technologique moderne et éprouvée :
 
-Le projet supporte plusieurs environnements via Docker Compose :
+| Composant | Technologie | Rôle |
+| :-- | :-- | :-- |
+| **Backend** | Node.js (TypeScript) | Logique métier & API REST |
+| **Base de données** | MongoDB (v7.0) | Stockage persistant & Réplication |
+| **Cache & Pub/Sub** | Redis (v7.0) | Performance, Verrouillage & Rate Limiting |
+| **Fichiers** | MinIO (S3 Compatible) | Stockage des reçus & Factures |
+| **IA & Vision** | Google Gemini 2.0 | Coach financier & OCR |
+| **Observabilité** | Prometheus / Grafana | Métriques en temps réel & Tableaux de bord |
+| **Traces & Logs** | Jaeger / Graylog | Debugging distribué & Centralisation des logs |
 
-- **Développement Local (Léger)** :
+---
+
+## 🛠️ Installation & Guide Pratique
+
+### 1. Prérequis
+- **Docker & Docker Compose** (Recommandé)
+- **Node.js v18+** (pour le développement local)
+- **Clé API Gemini** (obligatoire pour les fonctions IA)
+- **Firebase Admin SDK** (pour les notifications push)
+
+### 2. Configuration (`.env`)
+Copiez le fichier `.env.example` et renseignez les variables critiques :
+```bash
+# Sécurité
+JWT_ACCESS_SECRET=votre_secret_tres_long
+METRICS_TOKEN=votre_jeton_de_monitoring
+
+# IA & Cloud
+GEMINI_API_KEY=AIza...
+FIREBASE_PRIVATE_KEY=votre_cle_privee
+
+# Paiements
+STRIPE_SECRET_KEY=sk_test_...
+NOTCHPAY_PUBLIC_KEY=sb.pk_...
+```
+
+### 3. Lancement via Docker (Processus Standard)
+
+Kauri propose trois modes d'exécution optimisés :
+
+- **Mode Développement** (*Léger - 2GB RAM*) :
   ```bash
   docker-compose -f docker-compose.dev.yml up --build
   ```
-  *Inclus : api, mongodb, redis, minio. Optimisé pour la RAM.*
+  *Idéal pour coder. Inclut API, Mongo, Redis et MinIO.*
 
-- **Staging / Pré-production (Complet)** :
+- **Mode Staging** (*Complet - Observabilité totale*) :
   ```bash
   docker-compose -f docker-compose.staging.yml up --build
   ```
-  *Inclus : toute la stack (Graylog, Prometheus, Jaeger, etc.).*
+  *Inclut toute la stack de monitoring pour tester en conditions réelles.*
 
-- **Production** :
+- **Mode Production** (*Stable - Performance maximale*) :
   ```bash
   docker-compose up -d
   ```
-  *Utilise le fichier par défaut `docker-compose.yml`.*
-
-### Installation Manuelle
-1. Installer les dépendances : `npm install`
-2. Configurer le `.env`
-3. Build : `npm run build`
-4. Lancer : `npm start`
 
 ---
 
-## � Licence
-Ce projet est sous licence **MIT**. Voir le fichier `LICENSE` pour plus de détails.
-Développé par **Boris Gauty**.
+## 📈 Guide de l'Observabilité (Fintech Monitoring)
+
+Le projet intègre une plateforme de monitoring de niveau bancaire.
+
+### Accès aux outils :
+- **Prometheus** : `http://localhost:9090` (Scraping des métriques)
+- **Grafana** : `http://localhost:3001` (Visualisation des Dashboards)
+- **Jaeger** : `http://localhost:16686` (Traces des transactions)
+- **Graylog** : `http://localhost:9000` (Analyse de logs)
+
+### Dashboard Grafana Critique :
+Le tableau de bord **"Kauri API — Production"** permet de surveiller :
+- **Santé des Transactions** : Taux de succès, volumes par devise (XAF, EUR, USD).
+- **Sécurité** : Alertes fraude, collisions d'idempotence, tentatives d'intrusion.
+- **IA** : Latence du Coach Gemini et efficacité du scan de reçus.
+- **Finance** : Réconciliation des wallets et échecs de paiements Stripe/NotchPay.
+
+---
+
+## 🔒 Sécurité & Maintenance
+
+1. **Jeton de Métriques** : L'accès à `/metrics` est protégé. Générez un jeton avec `openssl rand -hex 32` et configurez-le dans `METRICS_TOKEN`.
+2. **Backups** : Les données MongoDB sont persistées dans le volume `mongodb_data`. Utilisez le service de backup intégré pour des sauvegardes régulières.
+3. **Idempotence** : Utilisez l'en-tête `X-Idempotency-Key` pour toutes les opérations financières critiques afin d'éviter les doubles paiements.
+
+---
+
+## 📖 Documentation API (Swagger)
+
+Une fois l'application lancée, la documentation interactive est disponible sur :
+👉 [http://localhost:5000/api-docs](http://localhost:5000/api-docs)
+
+---
+
+## 👨‍💻 Contribution
+Les Pull Requests sont les bienvenues. Pour des changements majeurs, veuillez ouvrir une "Issue" pour discuter de ce que vous aimeriez changer.
+
+---
+
+**Auteur** : Boris Gauty  
+**Licence** : [MIT](LICENSE)
