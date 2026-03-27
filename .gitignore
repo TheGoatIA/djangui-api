@@ -4,3 +4,4 @@ dist
 logs
 uploads
 backups
+metrics_token

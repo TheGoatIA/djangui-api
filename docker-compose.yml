@@ -10,6 +10,7 @@ services:
       - NODE_ENV=${NODE_ENV:-production}
       - MONGODB_URI=${MONGODB_URI:-mongodb://${MONGODB_USER:-admin}:${MONGODB_PASSWORD:-password}@mongodb:27017/kauri?authSource=admin&replicaSet=rs0}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - METRICS_TOKEN=${METRICS_TOKEN}
       - NODE_OPTIONS=--max-old-space-size=1843 # Allocate ~90% of RAM to V8 heap
     ulimits:
       nofile:
@@ -154,6 +155,7 @@ services:
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
       - ./alerts/rules.yaml:/etc/prometheus/alerts/rules.yaml
+      - ./metrics_token:/etc/prometheus/metrics_token:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
