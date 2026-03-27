@@ -4,6 +4,7 @@ import { AppError } from './errorHandler';
 import User from '../models/User';
 import logger from '../utils/logger';
 import RequestContext from '../utils/context';
+import redis from '../config/redis';
 
 export interface AuthRequest extends Request {
   user?: any;
@@ -21,8 +22,14 @@ const protect = async (req: AuthRequest, res: Response, next: NextFunction) => {
       return next(new AppError('You are not logged in! Please log in to get access.', 401));
     }
 
-    // 2) Verification token
-    const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET || 'super-secret') as {
+    // 2) Check if token has been explicitly revoked (blacklisted on logout)
+    const isBlacklisted = await redis.exists(`blacklist:${token}`);
+    if (isBlacklisted) {
+      return next(new AppError('Token has been revoked. Please log in again.', 401));
+    }
+
+    // 3) Verification token
+    const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET!) as {
       id: string;
     };
 
@@ -84,7 +91,7 @@ const identify = async (req: AuthRequest, res: Response, next: NextFunction) => 
 
     if (!token) return next();
 
-    const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET || 'super-secret') as {
+    const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET!) as {
       id: string;
     };
 

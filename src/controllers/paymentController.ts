@@ -2,6 +2,18 @@ import { Request, Response, NextFunction } from 'express';
 import { PaymentService } from '../services/paymentService';
 import { AuthRequest } from '../middleware/auth';
 
+/**
+ * Escape special HTML characters to prevent XSS injection.
+ */
+const escapeHtml = (str: string): string =>
+  str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
+    .replace(/\//g, '&#x2F;');
+
 export class PaymentController {
   static async checkoutStripe(req: AuthRequest, res: Response, next: NextFunction) {
     try {
@@ -32,22 +44,31 @@ export class PaymentController {
   static async handlePaymentSuccess(req: Request, res: Response) {
     const { ref } = req.query;
 
-    if (!ref) {
+    if (!ref || typeof ref !== 'string') {
       return res.status(400).send('Référence de paiement manquante.');
+    }
+
+    // Validate reference format to reject obviously malicious inputs early
+    if (!/^[A-Z0-9\-]{3,64}$/.test(ref)) {
+      return res.status(400).send('Référence de paiement invalide.');
     }
 
     try {
       // 1. Verify actual status from DB/Provider
-      const result = await PaymentService.verifyTransaction(ref as string);
+      const result = await PaymentService.verifyTransaction(ref);
       const isActuallySuccessful = result.status === 'completed';
 
-      // 2. Prepare UI based on status
+      // 2. Escape ref for safe HTML/JS injection
+      const safeRef = escapeHtml(ref);
+      const safeDeepLinkRef = encodeURIComponent(ref);
+
+      // 3. Prepare UI based on status
       const title = isActuallySuccessful ? 'Paiement Réussi !' : 'Paiement en attente ou échoué';
       const color = isActuallySuccessful ? '#1DB954' : '#f44336';
       const icon = isActuallySuccessful ? '✓' : '⚠';
       const deepLink = isActuallySuccessful
-        ? `kauri://payment/success?ref=${ref}`
-        : `kauri://payment/failure?ref=${ref}&status=${result.status}`;
+        ? `kauri://payment/success?ref=${safeDeepLinkRef}`
+        : `kauri://payment/failure?ref=${safeDeepLinkRef}&status=${encodeURIComponent(result.status)}`;
 
       res.send(`
         <html>
@@ -72,14 +93,15 @@ export class PaymentController {
               <div class="icon">${icon}</div>
               <h1>${title}</h1>
               <p>${isActuallySuccessful ? 'Votre transaction a été confirmée.' : "Nous n'avons pas pu confirmer votre paiement pour le moment."}</p>
-              <div class="ref">Réf: ${ref}</div>
+              <div class="ref">Réf: ${safeRef}</div>
               <p>Retour automatique vers l'application...</p>
               <a href="${deepLink}" class="btn">Retourner à l'App</a>
             </div>
             <script>
-              setTimeout(() => {
-                window.location.href = "${deepLink}";
-              }, 3000);
+              (function() {
+                var dest = ${JSON.stringify(deepLink)};
+                setTimeout(function() { window.location.href = dest; }, 3000);
+              })();
             </script>
           </body>
         </html>
@@ -103,7 +125,8 @@ export class PaymentController {
   static async verifyTransaction(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const { reference } = req.params;
-      const result = await PaymentService.verifyTransaction(reference);
+      // Pass the authenticated user's ID to enforce ownership (IDOR prevention)
+      const result = await PaymentService.verifyTransaction(reference, req.user._id.toString());
       res.status(200).json({
         success: true,
         data: result,

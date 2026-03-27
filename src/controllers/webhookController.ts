@@ -62,26 +62,37 @@ export class WebhookController {
       const reference = data.data.reference;
       logger.error(`Transfer ${reference} failed: ${data.data.reason}`);
 
-      // Logique de remboursement automatique via WalletService
       const { WalletService } = require('../services/walletService');
       const Transaction = require('../models/Transaction').default;
 
       try {
-        const originalTx = await Transaction.findOne({ reference });
-        if (originalTx && originalTx.status !== 'failed') {
+        // Atomic status transition: only process refund if status transitions from non-failed to failed.
+        // findOneAndUpdate with $ne guard prevents race conditions from duplicate webhook deliveries.
+        const originalTx = await Transaction.findOneAndUpdate(
+          { reference, status: { $ne: 'failed' } },
+          {
+            $set: {
+              status: 'failed',
+              'metadata.failureReason': data.data.reason,
+              'metadata.failedAt': new Date().toISOString(),
+            },
+          },
+          { new: false }, // Return the OLD doc to confirm it was actually updated
+        );
+
+        if (!originalTx) {
+          // Either not found or already failed — idempotent, no action needed
+          logger.warn(`Transfer ${reference}: skipping refund (already processed or not found)`);
+        } else {
+          // Atomically claimed the transition — safe to issue refund exactly once
           await WalletService.executeTransaction({
             userId: originalTx.userId.toString(),
-            amount: originalTx.amount, // Montant total (Net + Frais)
+            amount: originalTx.amount,
             type: 'deposit',
             description: `Remboursement transfert échoué (${data.data.reason || 'Erreur opérateur'})`,
             paymentMethod: 'wallet',
             metadata: { originalReference: reference },
           });
-
-          originalTx.status = 'failed';
-          originalTx.metadata = { ...originalTx.metadata, failureReason: data.data.reason };
-          await originalTx.save();
-
           logger.info(`Refund processed for failed transfer: ${reference}`);
         }
       } catch (refundErr: any) {

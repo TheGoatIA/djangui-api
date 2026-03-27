@@ -61,13 +61,15 @@ export const requestLogger = (req: AuthenticatedRequest, res: Response, next: Ne
         context: 'AccessLog',
       };
 
-      // Add detailed metadata for debug/troubleshooting
-      if (Object.keys(req.query).length > 0) {
-        logData.queryParams = sanitize(req.query);
-      }
-
-      if (req.body && Object.keys(req.body).length > 0) {
-        logData.requestBody = sanitize(req.body);
+      // In development, log request body and query params for debugging.
+      // In production, omit body to avoid accidental PII leakage in logs.
+      if (process.env.NODE_ENV !== 'production') {
+        if (Object.keys(req.query).length > 0) {
+          logData.queryParams = sanitize(req.query);
+        }
+        if (req.body && Object.keys(req.body).length > 0) {
+          logData.requestBody = sanitize(req.body);
+        }
       }
 
       if (statusCode >= 400) {

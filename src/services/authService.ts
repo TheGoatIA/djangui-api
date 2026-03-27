@@ -9,6 +9,7 @@ import { EmailService } from './emailService';
 import { SlackService } from './slackService';
 import { AuditService } from './auditService';
 import Country from '../models/Country';
+import redis from '../config/redis';
 
 const signToken = (id: string, secret: string, expiresIn: any) => {
   return jwt.sign({ id }, secret, {
@@ -19,13 +20,13 @@ const signToken = (id: string, secret: string, expiresIn: any) => {
 export const createSendToken = (user: IUserDocument) => {
   const accessToken = signToken(
     user._id.toString(),
-    process.env.JWT_ACCESS_SECRET || 'super-secret',
+    process.env.JWT_ACCESS_SECRET!,
     process.env.JWT_ACCESS_EXPIRATION || '15m',
   );
 
   const refreshToken = signToken(
     user._id.toString(),
-    process.env.JWT_REFRESH_SECRET || 'super-secret-refresh',
+    process.env.JWT_REFRESH_SECRET!,
     process.env.JWT_REFRESH_EXPIRATION || '7d',
   );
 
@@ -321,7 +322,7 @@ export class AuthService {
       // 1) Verify refresh token
       const decoded = jwt.verify(
         refreshToken,
-        process.env.JWT_REFRESH_SECRET || 'super-secret-refresh',
+        process.env.JWT_REFRESH_SECRET!,
       ) as { id: string };
 
       // 2) Check if user still exists and HAS this session
@@ -358,7 +359,7 @@ export class AuthService {
     }
   }
 
-  static async logout(userId: string, refreshToken?: string) {
+  static async logout(userId: string, refreshToken?: string, accessToken?: string) {
     const user = await User.findById(userId);
     if (user) {
       // Find the session to record duration
@@ -394,6 +395,24 @@ export class AuthService {
 
       MonitoringService.recordAuthEvent('logout', 'jwt', 'success', user.country);
     }
+
+    // Blacklist the access token in Redis so it cannot be reused before its natural expiry.
+    // TTL is set to the token's remaining validity window.
+    if (accessToken) {
+      try {
+        const decoded = jwt.decode(accessToken) as { exp?: number } | null;
+        if (decoded?.exp) {
+          const ttlSeconds = decoded.exp - Math.floor(Date.now() / 1000);
+          if (ttlSeconds > 0) {
+            await redis.setex(`blacklist:${accessToken}`, ttlSeconds, '1');
+          }
+        }
+      } catch {
+        // Non-fatal — the token will expire naturally via its own exp claim
+        logger.warn('Could not blacklist access token on logout');
+      }
+    }
+
     return true;
   }
 
@@ -410,8 +429,12 @@ export class AuthService {
 
   static async forgotPassword(email: string) {
     const user = await User.findOne({ email });
+
+    // Return silently if user not found to prevent user enumeration.
+    // The response is identical whether the email exists or not.
     if (!user) {
-      throw new AppError('There is no user with this email address.', 404);
+      MonitoringService.recordAuthEvent('forgot_password', 'email', 'not_found', 'unknown');
+      return;
     }
 
     const resetToken = crypto.randomBytes(32).toString('hex');
@@ -586,10 +609,29 @@ export class AuthService {
   }
 
   static async deleteAccount(userId: string) {
-    const user = await User.findByIdAndDelete(userId);
+    const user = await User.findById(userId);
     if (!user) throw new AppError('User not found', 404);
 
-    // TODO: Cleanup other user data (transactions, goals, etc.) if needed
+    // Prevent deletion if user has a positive wallet balance
+    if (user.walletBalance > 0) {
+      throw new AppError(
+        'Impossible de supprimer un compte avec un solde positif. Veuillez d\'abord retirer vos fonds.',
+        400,
+      );
+    }
+
+    // Cascade delete all user data (RGPD right to erasure)
+    const { default: Transaction } = await import('../models/Transaction');
+    const { default: Payment } = await import('../models/Payment');
+    const { default: AuditLog } = await import('../models/AuditLog');
+
+    await Promise.all([
+      Transaction.deleteMany({ userId }),
+      Payment.deleteMany({ userId }),
+      AuditLog.deleteMany({ userId }),
+      User.findByIdAndDelete(userId),
+    ]);
+
     MonitoringService.recordSensitiveAction('account_delete', 'success');
     return true;
   }
