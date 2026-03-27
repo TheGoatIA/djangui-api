@@ -3,6 +3,61 @@ dotenv.config();
 
 import logger from './utils/logger';
 
+/**
+ * Validate critical environment variables before starting the server.
+ * Missing secrets cause immediate process exit to prevent insecure startup.
+ */
+const validateEnvironment = () => {
+  const required: { key: string; minLength?: number }[] = [
+    { key: 'JWT_ACCESS_SECRET', minLength: 32 },
+    { key: 'JWT_REFRESH_SECRET', minLength: 32 },
+    { key: 'MONGODB_URI' },
+  ];
+
+  const weakDefaults = ['super-secret', 'super-secret-refresh', 'changeme', 'password', 'secret'];
+  const errors: string[] = [];
+
+  for (const { key, minLength } of required) {
+    const value = process.env[key];
+    if (!value) {
+      errors.push(`Missing required environment variable: ${key}`);
+      continue;
+    }
+    if (minLength && value.length < minLength) {
+      errors.push(`${key} is too short (min ${minLength} chars, got ${value.length})`);
+    }
+    if (weakDefaults.some((d) => value.toLowerCase().includes(d))) {
+      errors.push(`${key} contains a weak/default value — use a strong random secret`);
+    }
+  }
+
+  // Warn (non-fatal) for optional but sensitive vars
+  const recommended = ['METRICS_TOKEN', 'STRIPE_WEBHOOK_SECRET'];
+  for (const key of recommended) {
+    if (!process.env[key]) {
+      console.warn(`[WARN] Environment variable ${key} is not set`);
+    }
+  }
+
+  // Swagger password: fatal in production if unset or using the known default
+  if (process.env.NODE_ENV === 'production') {
+    const swaggerPassword = process.env.SWAGGER_PASSWORD;
+    if (!swaggerPassword || swaggerPassword === 'kauri2026' || swaggerPassword.length < 12) {
+      errors.push(
+        'SWAGGER_PASSWORD must be set to a strong password (min 12 chars) in production',
+      );
+    }
+  }
+
+  if (errors.length > 0) {
+    console.error('FATAL: Environment validation failed:');
+    errors.forEach((e) => console.error(` - ${e}`));
+    process.exit(1);
+  }
+};
+
+validateEnvironment();
+
 // Global Error Handlers (CRITICAL: Capture any crash before/during startup)
 process.on('uncaughtException', (error) => {
   console.error('CRITICAL: Uncaught Exception:', error);

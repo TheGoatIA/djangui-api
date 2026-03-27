@@ -14,17 +14,25 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Dedicated rate limiter for token refresh — tighter than global to prevent abuse
+const refreshLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30, // Max 30 refresh attempts per IP — covers normal multi-device usage
+  message: 'Trop de tentatives de rafraîchissement, veuillez réessayer dans 15 minutes',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 const router = Router();
 
 router.post('/register', authLimiter, validate(registerSchema), AuthController.register);
 router.post('/login', authLimiter, validate(loginSchema), AuthController.login);
-router.post('/refresh', validate(refreshTokenSchema), AuthController.refresh);
+router.post('/refresh', refreshLimiter, validate(refreshTokenSchema), AuthController.refresh);
 router.post('/firebase', AuthController.firebaseAuth);
 router.post('/google', AuthController.firebaseAuth); // Alias for backward compatibility
 router.post('/apple', AuthController.firebaseAuth); // Alias for Apple
 
 router.post('/forgot-password', authLimiter, AuthController.forgotPassword);
-router.patch('/reset-password/:token', AuthController.resetPassword);
 router.patch('/reset-password/:token', AuthController.resetPassword);
 router.get('/verify-email', AuthController.verifyEmail);
 router.post('/resend-verification', AuthController.resendVerificationEmail);

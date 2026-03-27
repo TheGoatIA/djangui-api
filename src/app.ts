@@ -21,16 +21,26 @@ import { AuthController } from './controllers/authController';
 
 const app = express();
 
+const productionOrigins = [
+  'https://kauri-app.com',
+  'https://api.kauri-app.com',
+  'https://admin.kauri-app.com',
+];
+
+const developmentOrigins = [
+  'http://localhost:3000',
+  'http://localhost:5000',
+  'http://localhost:5173',
+];
+
+const allowedOrigins =
+  process.env.NODE_ENV === 'production'
+    ? productionOrigins
+    : [...productionOrigins, ...developmentOrigins];
+
 app.use(
   cors({
-    origin: [
-      'https://kauri-app.com',
-      'https://api.kauri-app.com',
-      'https://admin.kauri-app.com',
-      'http://localhost:3000',
-      'http://localhost:5000',
-      'http://localhost:5173',
-    ],
+    origin: allowedOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
@@ -69,7 +79,26 @@ app.use(
 app.use(limiter);
 app.use(MonitoringService.metricsMiddleware.bind(MonitoringService));
 app.use(requestLogger);
+// Strict CSP for all routes — no unsafe-inline
 app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+        'script-src': ["'self'"],
+        'style-src': ["'self'"],
+        'img-src': ["'self'", 'data:', 'https://validator.swagger.io'],
+        'connect-src': ["'self'"],
+        'frame-ancestors': ["'none'"],
+      },
+    },
+    crossOriginResourcePolicy: { policy: 'same-origin' },
+  }),
+);
+
+// Relaxed CSP only for Swagger UI (requires inline scripts/styles to render)
+app.use(
+  '/api-docs',
   helmet({
     contentSecurityPolicy: {
       directives: {
@@ -79,7 +108,6 @@ app.use(
         'img-src': ["'self'", 'data:', 'https://validator.swagger.io'],
       },
     },
-    crossOriginResourcePolicy: false,
   }),
 );
 
@@ -369,58 +397,33 @@ app.get('/api-docs', swaggerAuth, (req, res, next) => {
 });
 
 app.get('/api/health', async (req, res) => {
-  const isContainer = fs.existsSync('/.dockerenv');
-  const memoryUsage = process.memoryUsage();
-
-  const healthCheck = {
+  // Public health check — exposes only operational status, no internal details
+  const healthCheck: any = {
     status: 'success',
     timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    containerized: isContainer,
-    system: {
-      platform: process.platform,
-      node_version: process.version,
-      memory: {
-        process_rss_mb: Math.floor(memoryUsage.rss / 1024 / 1024),
-        process_heap_used_mb: Math.floor(memoryUsage.heapUsed / 1024 / 1024),
-        process_heap_total_mb: Math.floor(memoryUsage.heapTotal / 1024 / 1024),
-        // System memory (can be host memory in Docker)
-        system_total_mb: Math.floor(os.totalmem() / 1024 / 1024),
-        system_free_mb: Math.floor(os.freemem() / 1024 / 1024),
-      },
-      cpu_load: os.loadavg(),
-    },
     services: {
-      database: {
-        status: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-        details: {
-          host: mongoose.connection.host,
-        },
-      },
-      cache: {
-        status: 'unknown',
-        latency: '0ms',
-      },
-      api: {
-        version: require('../package.json').version,
-        env: process.env.NODE_ENV,
-      },
+      database: { status: 'unknown' },
+      cache: { status: 'unknown' },
     },
   };
 
-  // Check Redis latency
-  const redisStart = Date.now();
+  // Database check
+  healthCheck.services.database.status =
+    mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
+
+  // Redis check
   try {
     const pingResponse = await redis.ping();
     healthCheck.services.cache.status = pingResponse === 'PONG' ? 'connected' : 'unhealthy';
-    healthCheck.services.cache.latency = `${Date.now() - redisStart}ms`;
   } catch (err) {
     healthCheck.services.cache.status = 'disconnected';
-    healthCheck.status = 'failure';
   }
 
-  // Final status decision
-  if (healthCheck.services.database.status !== 'connected') {
+  // Final status
+  if (
+    healthCheck.services.database.status !== 'connected' ||
+    healthCheck.services.cache.status !== 'connected'
+  ) {
     healthCheck.status = 'failure';
   }
 

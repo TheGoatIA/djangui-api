@@ -15,7 +15,10 @@ scrape_configs:
     static_configs:
       - targets: ['api:5000']
     metrics_path: '/metrics'
-    bearer_token: 'eef6fd9adddbef26192805664cf1a3b402327b3fee6ea98fc72e61ce3fdbf380'
+    # Token injected at runtime via mounted file (never commit the actual token)
+    # Generate: openssl rand -hex 32 > /run/secrets/metrics_token
+    # Then set METRICS_TOKEN env var on the api container to the same value
+    bearer_token_file: /etc/prometheus/metrics_token
 
   - job_name: 'otel-collector'
     static_configs:
