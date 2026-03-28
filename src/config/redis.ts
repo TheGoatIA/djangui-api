@@ -14,15 +14,35 @@ if (process.env.NODE_ENV === 'test') {
     status: 'ready',
   };
 } else {
-  redis = new Redis(redisURL);
+  const options: any = {
+    maxRetriesPerRequest: null,
+    retryStrategy(times: number) {
+      const delay = Math.min(times * 200, 2000);
+      return delay;
+    },
+    enableOfflineQueue: true,
+  };
+
+  // Fallback: If REDIS_PASSWORD is set but not included in REDIS_URL, add it to options
+  const hasUserPass = redisURL.includes('@');
+  if (process.env.REDIS_PASSWORD && !hasUserPass) {
+    options.password = process.env.REDIS_PASSWORD;
+  }
+
+  redis = new Redis(redisURL, options);
 }
 
 redis.on('connect', () => {
   logger.info('Connected to Redis');
 });
 
-redis.on('error', (err: Error) => {
-  logger.error(`Redis connection error: ${err.message}`);
+// Explicitly handle authentication errors to provide better feedback
+redis.on('error', (err: any) => {
+  if (err.message.includes('NOAUTH')) {
+    logger.error('CRITICAL: Redis requires authentication but none was provided or it was incorrect.');
+  } else {
+    logger.error(`Redis connection error: ${err.message}`);
+  }
 });
 
 export default redis;
