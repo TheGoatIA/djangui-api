@@ -16,13 +16,11 @@ import { AppError } from '../middleware/errorHandler';
 import { exec } from 'child_process';
 import path from 'path';
 import fs from 'fs';
-import Redis from 'ioredis';
 import os from 'os';
 import { AuditService } from '../services/auditService';
 import { EmailService } from '../services/emailService';
 import { DbBackupService } from '../services/dbBackupService';
-
-const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+import redis from '../config/redis';
 
 export class AdminController {
   // --- AI ANALYTICS ---
@@ -1025,7 +1023,7 @@ export class AdminController {
       try {
         const info = await redis.info();
         // Parse redis info string into object
-        redisInfo = info.split('\r\n').reduce((acc: any, line) => {
+        redisInfo = info.split('\r\n').reduce((acc: any, line: string) => {
           const parts = line.split(':');
           if (parts.length === 2) {
             acc[parts[0]] = parts[1];
