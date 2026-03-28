@@ -1,11 +1,32 @@
 import Redis from 'ioredis';
 import logger from '../utils/logger';
 
-const redisURL = process.env.REDIS_URL || 'redis://localhost:6379';
+// Robust Redis URL parsing and reconstruction
+const getRedisConfig = () => {
+  const rawUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+  const password = process.env.REDIS_PASSWORD;
+
+  // If password exists but is not in the URL, reconstruct the URL
+  // This is the most reliable way to ensure ioredis uses the password
+  if (password && !rawUrl.includes('@')) {
+    try {
+      const url = new URL(rawUrl);
+      url.password = password;
+      return url.toString();
+    } catch (e) {
+      // Fallback for non-standard URLs
+      if (rawUrl.startsWith('redis://')) {
+        return `redis://:${password}@${rawUrl.slice(8)}`;
+      }
+    }
+  }
+  return rawUrl;
+};
+
+const finalRedisURL = getRedisConfig();
 let redis: any;
 
 if (process.env.NODE_ENV === 'test') {
-  // Use a dummy mock for Redis in test mode to prevent socket leaks
   redis = {
     ping: jest.fn().mockResolvedValue('PONG'),
     on: jest.fn(),
@@ -14,35 +35,39 @@ if (process.env.NODE_ENV === 'test') {
     status: 'ready',
   };
 } else {
-  const options: any = {
+  // Use lazyConnect to ensure we can attach error listeners before connection attempts
+  redis = new Redis(finalRedisURL, {
+    lazyConnect: true,
     maxRetriesPerRequest: null,
     retryStrategy(times: number) {
-      const delay = Math.min(times * 200, 2000);
+      const delay = Math.min(times * 200, 5000);
       return delay;
     },
     enableOfflineQueue: true,
-  };
+    reconnectOnError: (err) => {
+      const targetError = 'READONLY';
+      if (err.message.includes(targetError)) return true;
+      return false;
+    },
+  });
 
-  // Fallback: If REDIS_PASSWORD is set but not included in REDIS_URL, add it to options
-  const hasUserPass = redisURL.includes('@');
-  if (process.env.REDIS_PASSWORD && !hasUserPass) {
-    options.password = process.env.REDIS_PASSWORD;
-  }
+  // Attach error listener immediately
+  redis.on('error', (err: any) => {
+    if (err.message.includes('NOAUTH')) {
+      logger.error('CRITICAL: Redis authentication failed. Please check REDIS_PASSWORD and REDIS_URL.');
+    } else {
+      logger.error(`Redis connection error: ${err.message}`);
+    }
+  });
 
-  redis = new Redis(redisURL, options);
+  redis.on('connect', () => {
+    logger.info('Connected to Redis');
+  });
+
+  // Manually trigger connection and catch initial failure to prevent unhandled rejection
+  redis.connect().catch((err: any) => {
+    logger.error(`Initial Redis connection failed: ${err.message}`);
+  });
 }
-
-redis.on('connect', () => {
-  logger.info('Connected to Redis');
-});
-
-// Explicitly handle authentication errors to provide better feedback
-redis.on('error', (err: any) => {
-  if (err.message.includes('NOAUTH')) {
-    logger.error('CRITICAL: Redis requires authentication but none was provided or it was incorrect.');
-  } else {
-    logger.error(`Redis connection error: ${err.message}`);
-  }
-});
 
 export default redis;
