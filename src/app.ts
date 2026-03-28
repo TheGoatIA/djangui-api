@@ -85,8 +85,9 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-        'script-src': ["'self'"],
-        'style-src': ["'self'"],
+        'script-src': ["'self'", "'unsafe-inline'"], // Needed for some internal tools and Swagger
+        'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        'font-src': ["'self'", 'https://fonts.gstatic.com'],
         'img-src': ["'self'", 'data:', 'https://validator.swagger.io'],
         'connect-src': ["'self'"],
         'frame-ancestors': ["'none'"],
@@ -104,12 +105,15 @@ app.use(
       directives: {
         ...helmet.contentSecurityPolicy.getDefaultDirectives(),
         'script-src': ["'self'", "'unsafe-inline'"],
-        'style-src': ["'self'", "'unsafe-inline'"],
+        'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        'font-src': ["'self'", 'https://fonts.gstatic.com'],
         'img-src': ["'self'", 'data:', 'https://validator.swagger.io'],
       },
     },
   }),
 );
+
+app.get('/favicon.ico', (req, res) => res.status(204).end());
 
 app.use(compression());
 
