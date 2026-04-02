@@ -72,7 +72,7 @@
     "@types/pdfkit": "^0.17.5",
     "@types/rate-limit-redis": "^3.0.0",
     "@types/supertest": "^7.2.0",
-    "@typescript-eslint/eslint-plugin": "^8.57.0",
+    "@typescript-eslint/eslint-plugin": "^8.58.0",
     "@typescript-eslint/parser": "^8.57.2",
     "eslint": "^10.0.3",
     "eslint-config-prettier": "^10.1.8",
