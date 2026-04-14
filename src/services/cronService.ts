@@ -22,6 +22,7 @@ import { SlackService } from './slackService';
 import { MonitoringService } from './monitoringService';
 import { ReconciliationService } from './reconciliationService';
 import { FinancialAlertService } from './financialAlertService';
+import UserActivity from '../models/UserActivity';
 
 export class CronService {
   /**
@@ -587,9 +588,23 @@ export class CronService {
    */
   private static async sendDailyAIAdvice() {
     try {
-      const users = await User.find({ isActive: true });
-      logger.info(`Starting daily AI advice generation for ${users.length} users`);
+      const fiveDaysAgo = new Date();
+      fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
 
+      // Identify active IDs from actions or transactions
+      const [activityUserIds, transactionUserIds] = await Promise.all([
+        UserActivity.distinct('userId', { createdAt: { $gte: fiveDaysAgo } }),
+        Transaction.distinct('userId', { createdAt: { $gte: fiveDaysAgo } }),
+      ]);
+
+      const activeIds = [...new Set([...activityUserIds, ...transactionUserIds])];
+      const users = await User.find({ _id: { $in: activeIds }, isActive: true });
+
+      logger.info(
+        `Starting daily AI advice generation for ${users.length} active users (from ${activeIds.length} candidate IDs)`,
+      );
+
+      let successCount = 0;
       for (const user of users) {
         try {
           const advice = await CoachService.generateDailyAdvice(user._id.toString());
@@ -598,11 +613,18 @@ export class CronService {
             body: advice.body,
             data: { type: 'DAILY_AI_ADVICE' },
           });
+          successCount++;
         } catch (err: any) {
           logger.error(`Failed to send daily advice to user ${user._id}: ${err.message}`);
         }
       }
-      logger.info('Daily AI advice job completed');
+
+      // Slack Summary Notification
+      await SlackService.sendNotification(
+        `🔄 *AI Daily Advice* : Généré avec succès pour ${successCount} utilisateurs ayant réalisé des actions significatives ces 5 derniers jours.`,
+      );
+
+      logger.info(`Daily AI advice job completed. Processed ${successCount}/${users.length} users.`);
     } catch (error: any) {
       logger.error(`Error in sendDailyAIAdvice job: ${error.message}`);
     }

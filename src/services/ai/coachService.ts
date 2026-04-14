@@ -164,9 +164,17 @@ export class CoachService {
     if (!user) throw new AppError('User not found', 404);
 
     const now = new Date();
+    const isPremium = (user as any).isPremium;
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const transactionQuery: any = { userId };
+    if (!isPremium) {
+      transactionQuery.date = { $gte: startOfMonth };
+    }
+
     const [transactions, budget, goals, userChallenges, tontineMembers, subscriptions] =
       await Promise.all([
-        Transaction.find({ userId }).sort({ date: -1 }).limit(10).lean(),
+        Transaction.find(transactionQuery).sort({ date: -1 }).limit(isPremium ? 100 : 20).lean(),
         Budget.findOne({
           userId,
           'period.month': now.getMonth() + 1,
