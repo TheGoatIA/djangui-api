@@ -245,22 +245,7 @@ export class PaymentService {
         'subscription.endDate': new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       });
 
-      // Créer une transaction de type income/expense pour l'abonnement
-      const subTransaction = await Transaction.create({
-        userId: payment.userId,
-        amount: payment.amount,
-        currency: payment.currency,
-        type: 'expense',
-        category: 'subscription',
-        description: 'Abonnement Kauri Premium',
-        status: 'completed',
-        reference: payment.reference,
-        externalReference: payment.externalReference,
-        paymentMethod: payment.method,
-        date: new Date(),
-      });
-
-      await InvoiceService.generateForTransaction(subTransaction._id.toString());
+      await InvoiceService.generateForPayment(payment._id.toString());
     }
 
     // Audit Log for payment completion
@@ -347,8 +332,10 @@ export class PaymentService {
   /**
    * Get payments for a specific user
    */
-  static async getUserPayments(userId: string) {
-    return Payment.find({ userId }).sort({ createdAt: -1 });
+  static async getUserPayments(userId: string, type?: string) {
+    const filter: any = { userId };
+    if (type) filter.type = type;
+    return Payment.find(filter).sort({ createdAt: -1 });
   }
 
   /**

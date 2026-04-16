@@ -14,8 +14,12 @@ const invoiceSchema = new Schema<IInvoiceDocument>(
     transactionId: {
       type: Schema.Types.ObjectId,
       ref: 'Transaction',
-      required: true,
-      unique: true,
+      sparse: true,
+    },
+    paymentId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Payment',
+      sparse: true,
     },
     invoiceNumber: {
       type: String,

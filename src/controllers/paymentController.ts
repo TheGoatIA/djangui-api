@@ -138,7 +138,8 @@ export class PaymentController {
 
   static async getMyPayments(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const payments = await PaymentService.getUserPayments(req.user._id);
+      const type = req.query.type as string;
+      const payments = await PaymentService.getUserPayments(req.user._id, type);
       res.status(200).json({
         success: true,
         results: payments.length,
