@@ -4,7 +4,6 @@ import Budget from '../models/Budget';
 import Transaction from '../models/Transaction';
 import { NotificationService } from './notificationService';
 import logger from '../utils/logger';
-import mongoose from 'mongoose';
 import { DbBackupService } from './dbBackupService';
 import { ReportService } from './reportService';
 import { EmailService } from './emailService';
@@ -573,7 +572,7 @@ export class CronService {
         // We call the service to get the forecast
         const result = await ForecastService.getBalanceForecast(user._id.toString());
 
-        if (result && result.criticalAlert) {
+        if (result?.criticalAlert) {
           await NotificationService.sendToUser(user._id.toString(), {
             title: '',
             body: '',
@@ -656,7 +655,7 @@ export class CronService {
         );
 
         // If deadline is tomorrow (within 24-48h window for once-a-day check)
-        const diffHours = (deadline.getTime() - new Date().getTime()) / 3600000;
+        const diffHours = (deadline.getTime() - Date.now()) / 3600000;
 
         if (diffHours > 0 && diffHours <= 24) {
           // Find members who haven't paid for this turn

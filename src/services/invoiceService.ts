@@ -1,7 +1,6 @@
 import Invoice from '../models/Invoice';
 import Transaction from '../models/Transaction';
 import Payment from '../models/Payment';
-import User from '../models/User';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
@@ -14,7 +13,7 @@ export class InvoiceService {
   static async generateForTransaction(transactionId: string) {
     // Vérifier si une facture existe déjà pour cette transaction
     let invoice = await Invoice.findOne({ transactionId });
-    if (invoice && invoice.pdfUrl) {
+    if (invoice?.pdfUrl) {
       return invoice;
     }
 
@@ -54,7 +53,7 @@ export class InvoiceService {
           `[FINTECH] PDF generation finished but pdfUrl is still missing on invoice ${invoice.id}`,
         );
       }
-      return updatedInvoice || invoice;
+      return updatedInvoice ?? invoice;
     } catch (err: any) {
       logger.error(`[FINTECH] Synchronous PDF Generation FAILED: ${err.message}`);
       throw err; // On propage l'erreur au lieu de renvoyer une facture vide
@@ -66,7 +65,7 @@ export class InvoiceService {
    */
   static async generateForPayment(paymentId: string) {
     let invoice = await Invoice.findOne({ paymentId });
-    if (invoice && invoice.pdfUrl) {
+    if (invoice?.pdfUrl) {
       return invoice;
     }
 
@@ -103,7 +102,7 @@ export class InvoiceService {
           `[FINTECH] PDF generation finished but pdfUrl is still missing on invoice ${invoice.id}`,
         );
       }
-      return updatedInvoice || invoice;
+      return updatedInvoice ?? invoice;
     } catch (err: any) {
       logger.error(`[FINTECH] Synchronous PDF Generation FAILED: ${err.message}`);
       throw err;
@@ -115,8 +114,8 @@ export class InvoiceService {
    */
   private static async createPhysicalPDF(invoiceId: string) {
     const PDFDocument = require('pdfkit');
-    const fs = require('fs');
-    const path = require('path');
+    const fs = require('node:fs');
+    const path = require('node:path');
 
     try {
       const invoice = await Invoice.findById(invoiceId).populate('userId transactionId paymentId');
@@ -153,8 +152,9 @@ export class InvoiceService {
         // On tente de charger le logo (fallback sur shape si URL inaccessible en local)
         // Note: En production, il vaut mieux avoir le logo en local ou déjà téléchargé
         doc.image(logoUrl, 50, 45, { width: 50 });
-      } catch (e) {
+      } catch (e: any) {
         // Fallback Shape Kauri Style (Vert/Jaune)
+        logger.warn(`Could not load remote logo for invoice, using fallback: ${e.message}`);
         doc
           .save()
           .fillColor('#16A34A') // Vert Kauri
@@ -297,7 +297,9 @@ export class InvoiceService {
       // 4. Nettoyage local (Optionnel, mais recommandé si on veut être full cloud)
       try {
         fs.unlinkSync(filePath);
-      } catch (e) {}
+      } catch (e: any) {
+        logger.warn(`Failed to cleanup temporary invoice file at ${filePath}: ${e.message}`);
+      }
 
       invoice.pdfUrl = publicUrl;
       await invoice.save();

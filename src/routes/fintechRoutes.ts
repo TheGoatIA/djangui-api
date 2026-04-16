@@ -1,4 +1,4 @@
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Response, NextFunction } from 'express';
 import { FintechController } from '../controllers/fintechController';
 import { protect, AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
@@ -13,7 +13,7 @@ router.use(protect);
  * has not been verified. Required for any operation involving real funds.
  */
 const requireKYC = (req: AuthRequest, res: Response, next: NextFunction) => {
-  if (!req.user || req.user.kycLevel !== 'verified') {
+  if (req.user?.kycLevel !== 'verified') {
     return next(
       new AppError(
         'Votre identité doit être vérifiée (KYC) avant de pouvoir effectuer des retraits.',

@@ -10,7 +10,6 @@ import UserActivity from '../../models/UserActivity';
 import { GeminiService } from './geminiService';
 import { PromptBuilder } from './promptBuilder';
 import { AppError } from '../../middleware/errorHandler';
-import mongoose from 'mongoose';
 import logger from '../../utils/logger';
 import { MonitoringService } from '../monitoringService';
 import { SlackService } from '../slackService';
@@ -19,9 +18,7 @@ import { NotificationService } from '../notificationService';
 export class CoachService {
   static async getOrCreateConversation(userId: string): Promise<IConversation> {
     let conversation = await Conversation.findOne({ userId, status: 'active' });
-    if (!conversation) {
-      conversation = await Conversation.create({ userId, messages: [] });
-    }
+    conversation ??= await Conversation.create({ userId, messages: [] });
     return conversation;
   }
 
@@ -138,13 +135,15 @@ export class CoachService {
     }
 
     // Update conversation
-    conversation.messages.push({ role: 'user', content: userMessage, timestamp: new Date() });
-    conversation.messages.push({
-      role: 'model',
-      content: text,
-      actions: actions.length > 0 ? actions : undefined,
-      timestamp: new Date(),
-    });
+    conversation.messages.push(
+      { role: 'user', content: userMessage, timestamp: new Date() },
+      {
+        role: 'model',
+        content: text,
+        actions: actions.length > 0 ? actions : undefined,
+        timestamp: new Date(),
+      },
+    );
     conversation.lastMessageAt = new Date();
     await (conversation as any).save();
 

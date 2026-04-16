@@ -5,7 +5,6 @@ import User from '../models/User';
 import { AppError } from '../middleware/errorHandler';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger';
-import { NotificationService } from './notificationService';
 import { AuditService } from './auditService';
 import { SlackService } from './slackService';
 import { MonitoringService } from './monitoringService';
@@ -86,7 +85,7 @@ export class PaymentService {
 
       // Audit Log for payment initiation
       AuditService.record({
-        userId: userId as any,
+        userId,
         action: 'INIT_PAYMENT',
         resource: 'PAYMENT',
         resourceId: reference,
@@ -105,8 +104,6 @@ export class PaymentService {
         (Date.now() - start) / 1000,
       );
     }
-
-    return { url: session.url, reference };
   }
 
   /**
@@ -137,7 +134,7 @@ export class PaymentService {
     }
 
     // Basic format check for NotchPay (must be valid number, ideally starting with +)
-    if (!/^\+?[1-9]\d{1,14}$/.test(finalPhone.replace(/\s/g, ''))) {
+    if (!/^\+?[1-9]\d{1,14}$/.test(finalPhone.replaceAll(' ', ''))) {
       throw new AppError('The phone number provided is not valid for NotchPay (+237...).', 400);
     }
 
@@ -174,7 +171,7 @@ export class PaymentService {
 
       // Audit Log for payment initiation
       AuditService.record({
-        userId: userId as any,
+        userId,
         action: 'INIT_PAYMENT',
         resource: 'PAYMENT',
         resourceId: reference,
@@ -236,7 +233,6 @@ export class PaymentService {
     } else if (payment.type === 'subscription') {
       logger.info(`Upgrading user ${payment.userId} to Premium...`);
       const { InvoiceService } = require('./invoiceService');
-      const Transaction = require('../models/Transaction').default;
 
       await User.findByIdAndUpdate(payment.userId, {
         'subscription.plan': 'premium',

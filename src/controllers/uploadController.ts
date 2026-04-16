@@ -3,9 +3,7 @@ import { AuthRequest } from '../middleware/auth';
 import { OCRService } from '../services/ai/ocrService';
 import { StorageService } from '../services/storageService';
 import User from '../models/User';
-import logger from '../utils/logger';
-import path from 'path';
-import fs from 'fs';
+import fs from 'node:fs';
 
 export class UploadController {
   /**
@@ -29,7 +27,9 @@ export class UploadController {
       // Nettoyage local
       try {
         fs.unlinkSync(req.file.path);
-      } catch (e) {}
+      } catch (e: any) {
+        console.warn(`Failed to cleanup physical file at ${req.file.path}: ${e.message}`);
+      }
 
       res.status(200).json({
         success: true,
@@ -63,7 +63,9 @@ export class UploadController {
       // Nettoyage local
       try {
         fs.unlinkSync(req.file.path);
-      } catch (e) {}
+      } catch (e: any) {
+        console.warn(`Failed to cleanup physical file at ${req.file.path}: ${e.message}`);
+      }
 
       await User.findByIdAndUpdate(req.user._id, { avatar: avatarUrl });
 
@@ -97,7 +99,9 @@ export class UploadController {
       // Nettoyage local
       try {
         fs.unlinkSync(req.file.path);
-      } catch (e) {}
+      } catch (e: any) {
+        console.warn(`Failed to cleanup physical file at ${req.file.path}: ${e.message}`);
+      }
 
       res.status(200).json({
         success: true,
