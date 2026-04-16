@@ -119,6 +119,33 @@ export class FintechController {
   });
 
   /**
+   * Récupérer une facture PDF liée à un paiement
+   */
+  static getPaymentInvoice = catchAsync(async (req: Request, res: Response) => {
+    const { paymentId } = req.params;
+    let invoice = await Invoice.findOne({ paymentId });
+
+    if (!invoice || !invoice.pdfUrl) {
+      invoice = await InvoiceService.generateForPayment(paymentId);
+    }
+
+    if (!invoice || !invoice.pdfUrl) {
+      throw new AppError(
+        "Le reçu n'a pas pu être généré ou n'est pas encore disponible sur le stockage.",
+        404,
+      );
+    }
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        pdfUrl: invoice.pdfUrl,
+        invoiceNumber: invoice.invoiceNumber,
+      },
+    });
+  });
+
+  /**
    * Déposer de l'argent pour un challenge (Épargne réelle)
    */
   static depositChallenge = catchAsync(async (req: any, res: Response) => {

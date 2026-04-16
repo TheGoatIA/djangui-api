@@ -33,6 +33,7 @@ router.post('/kyc/submit', FintechController.submitKYC);
 router.post('/payout/withdraw', requireKYC, FintechController.requestWithdrawal);
 
 router.get('/invoice/:transactionId', FintechController.getInvoice);
+router.get('/invoice/payment/:paymentId', FintechController.getPaymentInvoice);
 
 router.post('/challenge/deposit', FintechController.depositChallenge);
 
