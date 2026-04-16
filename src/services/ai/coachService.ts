@@ -174,7 +174,10 @@ export class CoachService {
 
     const [transactions, budget, goals, userChallenges, tontineMembers, subscriptions] =
       await Promise.all([
-        Transaction.find(transactionQuery).sort({ date: -1 }).limit(isPremium ? 100 : 20).lean(),
+        Transaction.find(transactionQuery)
+          .sort({ date: -1 })
+          .limit(isPremium ? 100 : 20)
+          .lean(),
         Budget.findOne({
           userId,
           'period.month': now.getMonth() + 1,

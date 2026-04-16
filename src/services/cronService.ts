@@ -158,7 +158,10 @@ export class CronService {
     );
 
     // Every 5 min: Update production metrics gauges (pending tx, daily volume, success rate)
-    cron.schedule('*/5 * * * *', this.runMonitored('metrics_gauge_update', () => this.updateProductionMetricsGauges()));
+    cron.schedule(
+      '*/5 * * * *',
+      this.runMonitored('metrics_gauge_update', () => this.updateProductionMetricsGauges()),
+    );
 
     // Run once on startup
     this.processSubscriptionsRenewal().catch((err) =>
@@ -189,7 +192,10 @@ export class CronService {
       } catch (error: any) {
         MonitoringService.recordCronJob(name, 'failure');
         MonitoringService.recordBackgroundJob(name, 'failure');
-        MonitoringService.recordJobFailed(name, error.code || error.message?.slice(0, 50) || 'unknown');
+        MonitoringService.recordJobFailed(
+          name,
+          error.code || error.message?.slice(0, 50) || 'unknown',
+        );
         logger.error(`Cron Job [${name}] failed: ${error.message}`);
       } finally {
         const duration = (Date.now() - start) / 1000;
@@ -624,7 +630,9 @@ export class CronService {
         `🔄 *AI Daily Advice* : Généré avec succès pour ${successCount} utilisateurs ayant réalisé des actions significatives ces 5 derniers jours.`,
       );
 
-      logger.info(`Daily AI advice job completed. Processed ${successCount}/${users.length} users.`);
+      logger.info(
+        `Daily AI advice job completed. Processed ${successCount}/${users.length} users.`,
+      );
     } catch (error: any) {
       logger.error(`Error in sendDailyAIAdvice job: ${error.message}`);
     }

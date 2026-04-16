@@ -36,7 +36,7 @@ export class DbBackupService {
       const toolsPath = process.env.MONGODB_TOOLS_PATH
         ? path.join(process.env.MONGODB_TOOLS_PATH, 'mongodump')
         : 'mongodump';
-      
+
       logger.info(`Starting DB backup to ${dbArchivePath}`);
       await execPromise(`"${toolsPath}" --uri="${uri}" --archive="${dbArchivePath}" --gzip`);
 
@@ -45,7 +45,9 @@ export class DbBackupService {
       if (fs.existsSync(this.UPLOADS_DIR)) {
         // Use tar to compress the uploads directory
         // -z: gzip, -c: create, -f: file
-        await execPromise(`tar -czf "${filesArchivePath}" -C "${path.dirname(this.UPLOADS_DIR)}" "${path.basename(this.UPLOADS_DIR)}"`);
+        await execPromise(
+          `tar -czf "${filesArchivePath}" -C "${path.dirname(this.UPLOADS_DIR)}" "${path.basename(this.UPLOADS_DIR)}"`,
+        );
       } else {
         logger.warn(`Uploads directory not found at ${this.UPLOADS_DIR}, skipping file backup.`);
       }
@@ -54,17 +56,31 @@ export class DbBackupService {
       const stats = await this.getDbStats();
 
       // 5. Upload to MinIO (Primary Cloud)
-      const dbMinioUrl = await StorageService.uploadFile(dbArchivePath, 'kauri-backups', `database/${path.basename(dbArchivePath)}`);
+      const dbMinioUrl = await StorageService.uploadFile(
+        dbArchivePath,
+        'kauri-backups',
+        `database/${path.basename(dbArchivePath)}`,
+      );
       let filesMinioUrl = '';
       if (fs.existsSync(filesArchivePath)) {
-        filesMinioUrl = await StorageService.uploadFile(filesArchivePath, 'kauri-backups', `files/${path.basename(filesArchivePath)}`);
+        filesMinioUrl = await StorageService.uploadFile(
+          filesArchivePath,
+          'kauri-backups',
+          `files/${path.basename(filesArchivePath)}`,
+        );
       }
 
       // 6. Upload to Firebase Storage (Secondary/Disaster Recovery Cloud)
-      const dbFirebaseUrl = await this.uploadToFirebase(dbArchivePath, `backups/database/${path.basename(dbArchivePath)}`);
+      const dbFirebaseUrl = await this.uploadToFirebase(
+        dbArchivePath,
+        `backups/database/${path.basename(dbArchivePath)}`,
+      );
       let filesFirebaseUrl = '';
       if (fs.existsSync(filesArchivePath)) {
-        filesFirebaseUrl = await this.uploadToFirebase(filesArchivePath, `backups/files/${path.basename(filesArchivePath)}`);
+        filesFirebaseUrl = await this.uploadToFirebase(
+          filesArchivePath,
+          `backups/files/${path.basename(filesArchivePath)}`,
+        );
       }
 
       // 7. Cleanup local temporary files
@@ -93,8 +109,8 @@ export class DbBackupService {
 
       await SlackService.sendNotification(
         `📦 *Backup Success (Multi-Cloud)*\n` +
-        `*Status*: Database and Files uploaded to MinIO & Firebase.\n` +
-        `*Retention*: ${this.RETENTION_DAYS} days enforced.`
+          `*Status*: Database and Files uploaded to MinIO & Firebase.\n` +
+          `*Retention*: ${this.RETENTION_DAYS} days enforced.`,
       );
 
       return { success: true, stats };
@@ -192,7 +208,7 @@ export class DbBackupService {
       for (const file of files) {
         const metadata = file.metadata;
         const createdAt = new Date(metadata.timeCreated || 0).getTime();
-        
+
         if (now - createdAt > expirationMs) {
           await file.delete();
           logger.info(`Deleted old Firebase backup: ${file.name}`);

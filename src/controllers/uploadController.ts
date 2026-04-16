@@ -77,4 +77,36 @@ export class UploadController {
       next(err);
     }
   }
+
+  /**
+   * Upload a generic document (e.g. KYC)
+   */
+  static async uploadDocument(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ success: false, message: 'No file uploaded' });
+      }
+
+      // Upload vers MinIO
+      const documentUrl = await StorageService.uploadFile(
+        req.file.path,
+        'kauri-uploads',
+        `documents/${req.file.filename}`,
+      );
+
+      // Nettoyage local
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (e) {}
+
+      res.status(200).json({
+        success: true,
+        data: {
+          documentUrl,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
 }
