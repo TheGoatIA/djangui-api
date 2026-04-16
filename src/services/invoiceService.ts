@@ -1,5 +1,6 @@
 import Invoice from '../models/Invoice';
 import Transaction from '../models/Transaction';
+import Payment from '../models/Payment';
 import User from '../models/User';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
@@ -61,6 +62,55 @@ export class InvoiceService {
   }
 
   /**
+   * Génère une facture pour un paiement donné (utile pour les souscriptions qui n'ont pas de transaction de portefeuille)
+   */
+  static async generateForPayment(paymentId: string) {
+    let invoice = await Invoice.findOne({ paymentId });
+    if (invoice && invoice.pdfUrl) {
+      return invoice;
+    }
+
+    if (!invoice) {
+      const payment = await Payment.findById(paymentId).populate('userId');
+      if (!payment) throw new AppError('Paiement non trouvé', 404);
+
+      const user = payment.userId as any;
+      const invoiceNumber = `INV-${new Date().getFullYear()}-${uuidv4().split('-')[0].toUpperCase()}`;
+
+      invoice = await Invoice.create({
+        userId: user._id,
+        paymentId: payment._id,
+        invoiceNumber,
+        amount: payment.amount,
+        currency: payment.currency || 'XAF',
+        status: 'issued',
+        metadata: {
+          paymentMethod: payment.method,
+          transactionType: payment.type,
+          userName: user.kycData?.fullName || `${user.firstName} ${user.lastName}`,
+        },
+      });
+    }
+
+    try {
+      logger.info(`[FINTECH] Starting PDF generation for invoice ${invoice.id}`);
+      await this.createPhysicalPDF(invoice.id);
+      const updatedInvoice = await Invoice.findById(invoice.id);
+      if (updatedInvoice?.pdfUrl) {
+        logger.info(`[FINTECH] PDF generation SUCCESS: ${updatedInvoice.pdfUrl}`);
+      } else {
+        logger.warn(
+          `[FINTECH] PDF generation finished but pdfUrl is still missing on invoice ${invoice.id}`,
+        );
+      }
+      return updatedInvoice || invoice;
+    } catch (err: any) {
+      logger.error(`[FINTECH] Synchronous PDF Generation FAILED: ${err.message}`);
+      throw err;
+    }
+  }
+
+  /**
    * Logique de génération physique du PDF via PDFKit
    */
   private static async createPhysicalPDF(invoiceId: string) {
@@ -69,11 +119,18 @@ export class InvoiceService {
     const path = require('path');
 
     try {
-      const invoice = await Invoice.findById(invoiceId).populate('userId transactionId');
+      const invoice = await Invoice.findById(invoiceId).populate('userId transactionId paymentId');
       if (!invoice) return;
 
       const user = invoice.userId as any;
       const transaction = invoice.transactionId as any;
+      const payment = invoice.paymentId as any;
+      const amount = transaction?.amount || payment?.amount || invoice.amount;
+      const currency = invoice.currency;
+      const fees = transaction?.fees || 0;
+      const reference = transaction?.reference || payment?.reference || 'REF-N/A';
+      const description = transaction?.description || (payment?.type === 'subscription' ? 'Abonnement Kauri Premium' : 'Service Fintech Kauri');
+      
       const doc = new PDFDocument({ margin: 50 });
       const fileName = `${invoice.invoiceNumber}.pdf`;
       const filePath = path.join(process.cwd(), 'uploads', 'invoices', fileName);
@@ -157,7 +214,7 @@ export class InvoiceService {
       doc.fillColor('#111827').fontSize(10).font('Helvetica');
       doc.text(invoice.invoiceNumber, 65, detailsY + 22);
       doc.text(new Date(invoice.createdAt).toLocaleDateString('fr-FR'), 200, detailsY + 22);
-      doc.text(transaction?.reference || 'REF-N/A', 350, detailsY + 22);
+      doc.text(reference, 350, detailsY + 22);
 
       doc.moveDown(4);
 
@@ -175,10 +232,10 @@ export class InvoiceService {
 
       doc.fillColor('#374151').font('Helvetica');
       const rowY = tableHeaderY + 32;
-      doc.text(transaction?.description || 'Service Fintech Kauri', 65, rowY);
+      doc.text(description, 65, rowY);
       doc.text('1 x transaction', 300, rowY);
-      doc.text(`${transaction?.amount || invoice.amount} ${invoice.currency}`, 400, rowY);
-      doc.text(`${transaction?.amount || invoice.amount} ${invoice.currency}`, 500, rowY, {
+      doc.text(`${amount} ${currency}`, 400, rowY);
+      doc.text(`${amount} ${currency}`, 500, rowY, {
         align: 'right',
       });
 
@@ -192,7 +249,7 @@ export class InvoiceService {
       doc.text('Sous-total :', sumX, sumY);
       doc
         .fillColor('#111827')
-        .text(`${transaction?.amount || invoice.amount} ${invoice.currency}`, 500, sumY, {
+        .text(`${amount} ${currency}`, 500, sumY, {
           align: 'right',
         });
 
@@ -200,7 +257,7 @@ export class InvoiceService {
       doc.fillColor('#4B5563').text('Frais de service (Kauri) :', sumX, doc.y);
       doc
         .fillColor('#111827')
-        .text(`${transaction?.fees || 0} ${invoice.currency}`, 500, doc.y, { align: 'right' });
+        .text(`${fees} ${currency}`, 500, doc.y, { align: 'right' });
 
       doc.moveDown(0.8);
       doc.rect(sumX, doc.y, 200, 1).fill('#E5E7EB');
@@ -209,7 +266,7 @@ export class InvoiceService {
       doc.fontSize(13).font('Helvetica-Bold').fillColor('#16A34A');
       doc.text('MONTANT TOTAL DÉBITÉ', sumX, doc.y);
       doc.text(
-        `${(transaction?.amount || invoice.amount) + (transaction?.fees || 0)} ${invoice.currency}`,
+        `${amount + fees} ${currency}`,
         500,
         doc.y,
         { align: 'right' },
@@ -252,8 +309,9 @@ export class InvoiceService {
       invoice.pdfUrl = publicUrl;
       await invoice.save();
 
-      // Mettre à jour la transaction
-      await Transaction.findByIdAndUpdate(invoice.transactionId, { receiptUrl: publicUrl });
+      if (invoice.transactionId) {
+        await Transaction.findByIdAndUpdate(invoice.transactionId, { receiptUrl: publicUrl });
+      }
 
       logger.info(`Invoice PDF generated real-world: ${publicUrl}`);
     } catch (err: any) {

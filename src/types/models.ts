@@ -212,7 +212,8 @@ export interface ITransaction {
 
 export interface IInvoice {
   userId: mongoose.Types.ObjectId;
-  transactionId: mongoose.Types.ObjectId;
+  transactionId?: mongoose.Types.ObjectId;
+  paymentId?: mongoose.Types.ObjectId;
   invoiceNumber: string;
   amount: number;
   currency: string;
