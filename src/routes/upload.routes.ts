@@ -9,5 +9,6 @@ router.use(protect);
 
 router.post('/receipt', upload.single('receipt'), UploadController.scanReceipt);
 router.post('/avatar', upload.single('avatar'), UploadController.uploadAvatar);
+router.post('/document', upload.single('document'), UploadController.uploadDocument);
 
 export default router;
