@@ -59,11 +59,11 @@ export class ReportService {
       savingsRate: Math.max(0, savingsRate),
       budgetHealth: budget
         ? {
-          totalAllocated: budget.totalAllocated,
-          totalSpent: budget.totalSpent,
-          status: budget.status,
-          percentageUsed: (budget.totalSpent / budget.totalAllocated) * 100,
-        }
+            totalAllocated: budget.totalAllocated,
+            totalSpent: budget.totalSpent,
+            status: budget.status,
+            percentageUsed: (budget.totalSpent / budget.totalAllocated) * 100,
+          }
         : null,
       currency: user?.currency || 'XAF',
     };

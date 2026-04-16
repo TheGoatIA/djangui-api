@@ -54,7 +54,9 @@ if (process.env.NODE_ENV === 'test') {
   // Attach error listener immediately
   redis.on('error', (err: any) => {
     if (err.message.includes('NOAUTH')) {
-      logger.error('CRITICAL: Redis authentication failed. Please check REDIS_PASSWORD and REDIS_URL.');
+      logger.error(
+        'CRITICAL: Redis authentication failed. Please check REDIS_PASSWORD and REDIS_URL.',
+      );
     } else {
       logger.error(`Redis connection error: ${err.message}`);
     }

@@ -43,9 +43,7 @@ const validateEnvironment = () => {
   if (process.env.NODE_ENV === 'production') {
     const swaggerPassword = process.env.SWAGGER_PASSWORD;
     if (!swaggerPassword || swaggerPassword === 'kauri2026' || swaggerPassword.length < 12) {
-      errors.push(
-        'SWAGGER_PASSWORD must be set to a strong password (min 12 chars) in production',
-      );
+      errors.push('SWAGGER_PASSWORD must be set to a strong password (min 12 chars) in production');
     }
   }
 
@@ -119,7 +117,9 @@ const startServer = async () => {
       logger.info('Step 4: Init Cron...');
       CronService.init();
     } else {
-      logger.info(`Step 4: Skipped Cron init on PM2 cluster instance ${process.env.NODE_APP_INSTANCE}`);
+      logger.info(
+        `Step 4: Skipped Cron init on PM2 cluster instance ${process.env.NODE_APP_INSTANCE}`,
+      );
     }
 
     const server = app.listen(PORT, () => {

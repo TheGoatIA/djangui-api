@@ -320,10 +320,7 @@ export class AuthService {
 
     try {
       // 1) Verify refresh token
-      const decoded = jwt.verify(
-        refreshToken,
-        process.env.JWT_REFRESH_SECRET!,
-      ) as { id: string };
+      const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET!) as { id: string };
 
       // 2) Check if user still exists and HAS this session
       const user = await User.findById(decoded.id);
@@ -615,7 +612,7 @@ export class AuthService {
     // Prevent deletion if user has a positive wallet balance
     if (user.walletBalance > 0) {
       throw new AppError(
-        'Impossible de supprimer un compte avec un solde positif. Veuillez d\'abord retirer vos fonds.',
+        "Impossible de supprimer un compte avec un solde positif. Veuillez d'abord retirer vos fonds.",
         400,
       );
     }
