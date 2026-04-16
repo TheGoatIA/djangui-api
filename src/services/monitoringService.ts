@@ -867,9 +867,7 @@ export class MonitoringService {
       const route = req.route ? req.route.path : req.path;
       const statusCode = res.statusCode.toString();
 
-      this.httpRequestDuration
-        .labels(req.method, route, statusCode)
-        .observe(duration);
+      this.httpRequestDuration.labels(req.method, route, statusCode).observe(duration);
 
       // Total requests counter
       this.httpRequestsTotal.labels(req.method, route, statusCode).inc();
@@ -881,7 +879,7 @@ export class MonitoringService {
       }
 
       // Response body size
-      const resContentLength = parseInt(res.getHeader('content-length') as string || '0', 10);
+      const resContentLength = parseInt((res.getHeader('content-length') as string) || '0', 10);
       if (resContentLength > 0) {
         this.httpResponseSizeBytes.labels(req.method, route).observe(resContentLength);
       }
@@ -1195,11 +1193,7 @@ export class MonitoringService {
     this.notificationsSentTotal.labels(channel, type, status).inc();
   }
 
-  static observeNotificationDelivery(
-    channel: string,
-    provider: string,
-    durationSeconds: number,
-  ) {
+  static observeNotificationDelivery(channel: string, provider: string, durationSeconds: number) {
     this.notificationDeliveryDuration.labels(channel, provider).observe(durationSeconds);
   }
 

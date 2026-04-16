@@ -12,17 +12,19 @@ import logger from '../utils/logger';
 // AML transaction limits per plan (in XAF / FCFA)
 const AML_LIMITS = {
   free: {
-    MAX_SINGLE_TRANSACTION: 50_000,  // 50 000 FCFA par transaction
-    MAX_DAILY_TOTAL: 100_000,        // 100 000 FCFA par jour
+    MAX_SINGLE_TRANSACTION: 50_000, // 50 000 FCFA par transaction
+    MAX_DAILY_TOTAL: 100_000, // 100 000 FCFA par jour
   },
   premium: {
-    MAX_SINGLE_TRANSACTION: 50_000,  // 50 000 FCFA par transaction
-    MAX_DAILY_TOTAL: 300_000,        // 300 000 FCFA par jour
+    MAX_SINGLE_TRANSACTION: 50_000, // 50 000 FCFA par transaction
+    MAX_DAILY_TOTAL: 300_000, // 300 000 FCFA par jour
   },
 };
 
 /** Retourne les limites AML applicables selon le plan de l'utilisateur. */
-const getUserLimits = (user: { subscription?: { plan?: string; status?: string; endDate?: Date } }) => {
+const getUserLimits = (user: {
+  subscription?: { plan?: string; status?: string; endDate?: Date };
+}) => {
   const isPremium =
     user.subscription?.plan === 'premium' &&
     user.subscription?.status === 'active' &&

@@ -129,8 +129,10 @@ export class InvoiceService {
       const currency = invoice.currency;
       const fees = transaction?.fees || 0;
       const reference = transaction?.reference || payment?.reference || 'REF-N/A';
-      const description = transaction?.description || (payment?.type === 'subscription' ? 'Abonnement Kauri Premium' : 'Service Fintech Kauri');
-      
+      const description =
+        transaction?.description ||
+        (payment?.type === 'subscription' ? 'Abonnement Kauri Premium' : 'Service Fintech Kauri');
+
       const doc = new PDFDocument({ margin: 50 });
       const fileName = `${invoice.invoiceNumber}.pdf`;
       const filePath = path.join(process.cwd(), 'uploads', 'invoices', fileName);
@@ -247,17 +249,13 @@ export class InvoiceService {
 
       doc.fontSize(10).fillColor('#4B5563');
       doc.text('Sous-total :', sumX, sumY);
-      doc
-        .fillColor('#111827')
-        .text(`${amount} ${currency}`, 500, sumY, {
-          align: 'right',
-        });
+      doc.fillColor('#111827').text(`${amount} ${currency}`, 500, sumY, {
+        align: 'right',
+      });
 
       doc.moveDown(0.6);
       doc.fillColor('#4B5563').text('Frais de service (Kauri) :', sumX, doc.y);
-      doc
-        .fillColor('#111827')
-        .text(`${fees} ${currency}`, 500, doc.y, { align: 'right' });
+      doc.fillColor('#111827').text(`${fees} ${currency}`, 500, doc.y, { align: 'right' });
 
       doc.moveDown(0.8);
       doc.rect(sumX, doc.y, 200, 1).fill('#E5E7EB');
@@ -265,12 +263,7 @@ export class InvoiceService {
 
       doc.fontSize(13).font('Helvetica-Bold').fillColor('#16A34A');
       doc.text('MONTANT TOTAL DÉBITÉ', sumX, doc.y);
-      doc.text(
-        `${amount + fees} ${currency}`,
-        500,
-        doc.y,
-        { align: 'right' },
-      );
+      doc.text(`${amount + fees} ${currency}`, 500, doc.y, { align: 'right' });
 
       // --- FOOTER & CERTIFICATION ---
       doc.rect(50, 710, 500, 1.5).fill('#FACC15'); // Ligne Jaune Kauri

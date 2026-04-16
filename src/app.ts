@@ -438,7 +438,9 @@ app.get('/api/health', async (req, res) => {
 // Prometheus Metrics Endpoint — protected (IP whitelist or internal bearer token)
 const metricsAuth = (req: any, res: any, next: any) => {
   const metricsToken = process.env.METRICS_TOKEN;
-  const allowedIPs = (process.env.METRICS_ALLOWED_IPS || '127.0.0.1,::1,::ffff:127.0.0.1').split(',');
+  const allowedIPs = (process.env.METRICS_ALLOWED_IPS || '127.0.0.1,::1,::ffff:127.0.0.1').split(
+    ',',
+  );
 
   const clientIP = (req.ip || req.connection?.remoteAddress || '') as string;
   const isAllowedIP = allowedIPs.some((ip: string) => clientIP.includes(ip.trim()));
