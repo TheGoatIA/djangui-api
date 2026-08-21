@@ -14,45 +14,94 @@ const validateEnvironment = () => {
     { key: 'MONGODB_URI' },
   ];
 
-  const weakDefaults = ['super-secret', 'super-secret-refresh', 'changeme', 'password', 'secret'];
+  const weakDefaults = [
+    'super-secret',
+    'super-secret-refresh',
+    'changeme',
+    'password',
+    'secret',
+    'kaurisecret',
+    'kauriadmin',
+    'kauri2026',
+    'admin',
+  ];
   const errors: string[] = [];
+  const warnings: string[] = [];
 
+  // ── Variables requises (bloquantes) ──
   for (const { key, minLength } of required) {
     const value = process.env[key];
     if (!value) {
-      errors.push(`Missing required environment variable: ${key}`);
+      errors.push(`Variable d'environnement manquante : ${key}`);
       continue;
     }
     if (minLength && value.length < minLength) {
-      errors.push(`${key} is too short (min ${minLength} chars, got ${value.length})`);
+      errors.push(`${key} est trop courte (min ${minLength} chars, reçu ${value.length})`);
     }
     if (weakDefaults.some((d) => value.toLowerCase().includes(d))) {
-      errors.push(`${key} contains a weak/default value — use a strong random secret`);
+      errors.push(`${key} contient une valeur par défaut faible — utiliser un secret aléatoire fort`);
     }
   }
 
-  // Warn (non-fatal) for optional but sensitive vars
-  const recommended = ['METRICS_TOKEN', 'STRIPE_WEBHOOK_SECRET'];
-  for (const key of recommended) {
-    if (!process.env[key]) {
-      console.warn(`[WARN] Environment variable ${key} is not set`);
-    }
-  }
-
-  // Swagger password: fatal in production if unset or using the known default
+  // ── Vérifications production uniquement (bloquantes) ──
   if (process.env.NODE_ENV === 'production') {
+    // Swagger
     const swaggerPassword = process.env.SWAGGER_PASSWORD;
     if (!swaggerPassword || swaggerPassword === 'kauri2026' || swaggerPassword.length < 12) {
-      errors.push('SWAGGER_PASSWORD must be set to a strong password (min 12 chars) in production');
+      errors.push('SWAGGER_PASSWORD doit être un mot de passe fort (min 12 chars) en production');
+    }
+
+    // MinIO — noms alignés sur storageService.ts / docker-compose (MINIO_ACCESS_KEY / MINIO_SECRET_KEY)
+    const minioSecretKey = process.env.MINIO_SECRET_KEY;
+    if (!minioSecretKey || minioSecretKey === 'kaurisecret' || minioSecretKey.length < 12) {
+      errors.push('MINIO_SECRET_KEY doit être défini et fort (min 12 chars) en production');
+    }
+    const minioAccessKey = process.env.MINIO_ACCESS_KEY;
+    if (!minioAccessKey || minioAccessKey === 'kauriadmin') {
+      errors.push('MINIO_ACCESS_KEY ne doit pas utiliser la valeur par défaut "kauriadmin" en production');
+    }
+
+    // IA
+    if (!process.env.GEMINI_API_KEY) {
+      errors.push('GEMINI_API_KEY est requis en production (coach IA, OCR, KYC)');
+    }
+
+    // Passerelles de paiement — au moins une doit être configurée
+    const hasStripe = !!process.env.STRIPE_SECRET_KEY;
+    const hasNotchPay = !!process.env.NOTCHPAY_PRIVATE_KEY;
+    if (!hasStripe && !hasNotchPay) {
+      errors.push(
+        'Au moins une passerelle de paiement doit être configurée en production (STRIPE_SECRET_KEY ou NOTCHPAY_PRIVATE_KEY)',
+      );
+    }
+
+    // Firebase (push notifications)
+    if (!process.env.FIREBASE_SERVICE_ACCOUNT && !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      warnings.push('FIREBASE_SERVICE_ACCOUNT non défini — les notifications push seront désactivées');
     }
   }
 
+  // ── Variables recommandées (non-bloquantes) ──
+  const recommended = ['METRICS_TOKEN', 'STRIPE_WEBHOOK_SECRET', 'NOTCHPAY_WEBHOOK_SECRET'];
+  for (const key of recommended) {
+    if (!process.env[key]) {
+      warnings.push(`Variable recommandée non définie : ${key}`);
+    }
+  }
+
+  // Afficher les avertissements
+  warnings.forEach((w) => console.warn(`[WARN] ${w}`));
+
+  // Bloquer le démarrage si erreurs critiques
   if (errors.length > 0) {
-    console.error('FATAL: Environment validation failed:');
-    errors.forEach((e) => console.error(` - ${e}`));
+    console.error('FATAL: Validation de l\'environnement échouée :');
+    errors.forEach((e) => console.error(` ✖ ${e}`));
     process.exit(1);
   }
+
+  console.log('[ENV] Validation de l\'environnement réussie ✓');
 };
+
 
 validateEnvironment();
 

@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import stripe from '../config/stripe';
 import { PaymentService } from '../services/paymentService';
+import { WalletService } from '../services/walletService';
+import Transaction from '../models/Transaction';
 import { notchpayConfig } from '../config/notchpay';
 import { verifyNotchPaySignature } from '../utils/cryptoUtils';
 import logger from '../utils/logger';
@@ -61,9 +63,6 @@ export class WebhookController {
     } else if (data.event === 'transfer.failed') {
       const reference = data.data.reference;
       logger.error(`Transfer ${reference} failed: ${data.data.reason}`);
-
-      const { WalletService } = require('../services/walletService');
-      const Transaction = require('../models/Transaction').default;
 
       try {
         // Atomic status transition: only process refund if status transitions from non-failed to failed.

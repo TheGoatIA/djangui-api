@@ -40,7 +40,7 @@ export interface IUser {
   passwordResetExpires?: Date;
   isPremium: boolean;
   walletBalance: number;
-  kycLevel: 'none' | 'pending' | 'verified';
+  kycLevel: 'none' | 'pending' | 'verified' | 'rejected';
   kycData?: {
     documentType: 'cni' | 'passport' | 'driver_license';
     documentNumber?: string;
@@ -84,7 +84,12 @@ export interface IUser {
   appVersion?: string;
   lastLogin?: Date;
   refreshToken?: string;
-  aiAttackCount: number;
+  aiSecurity: {
+    attackCount: number;
+    coachBlockedUntil?: Date | null;
+    suspensionPending: boolean;
+    lastAttackAt?: Date | null;
+  };
   status: 'active' | 'suspended' | 'blocked';
   createdAt: Date;
   updatedAt: Date;

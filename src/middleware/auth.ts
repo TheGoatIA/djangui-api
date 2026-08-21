@@ -12,10 +12,14 @@ export interface AuthRequest extends Request {
 
 const protect = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    // 1) Getting token and check if it's there
+    // 1) Getting token and check if it's there.
+    // Mobile sends `Authorization: Bearer <token>`; the admin dashboard relies
+    // on the httpOnly `access_token` cookie instead (no header, no JS access to it).
     let token;
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
       token = req.headers.authorization.split(' ')[1];
+    } else if (req.cookies?.access_token) {
+      token = req.cookies.access_token;
     }
 
     if (!token) {
@@ -87,6 +91,8 @@ const identify = async (req: AuthRequest, res: Response, next: NextFunction) => 
     let token;
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
       token = req.headers.authorization.split(' ')[1];
+    } else if (req.cookies?.access_token) {
+      token = req.cookies.access_token;
     }
 
     if (!token) return next();

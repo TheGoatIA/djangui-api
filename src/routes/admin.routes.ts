@@ -1,89 +1,80 @@
-import express from 'express';
+﻿import express from 'express';
 import { AdminController } from '../controllers/adminController';
 import { CountryController } from '../controllers/countryController';
 import { CountryRequestController } from '../controllers/countryRequestController';
+import { FeatureFlagController } from '../controllers/featureFlagController';
+import * as SupportController from '../controllers/supportController';
 import { protect, restrictTo } from '../middleware/auth';
 
 const router = express.Router();
 
-// Protect all routes after this middleware
+// Toutes les routes admin necessitent une authentification
 router.use(protect);
-router.use(restrictTo('admin'));
 
-router.get('/stats', AdminController.getDashboardStats);
-router.get('/users', AdminController.getAllUsers);
-router.get('/users/:id', AdminController.getUserDetails); // Get User Details
-router.patch('/users/:id', AdminController.updateUser); // Update User Profile
-router.patch('/users/:id/status', AdminController.updateUserStatus);
-router.post('/notifications/send', AdminController.sendPushNotification); // New route
-router.post('/notifications/email', AdminController.sendEmail); // Admin Only Email
+// Lecture seule : admin + support
+router.get('/stats', restrictTo('admin', 'support'), AdminController.getDashboardStats);
+router.get('/users', restrictTo('admin', 'support'), AdminController.getAllUsers);
+router.get('/users/:id', restrictTo('admin', 'support'), AdminController.getUserDetails);
+router.get('/transactions', restrictTo('admin', 'support'), AdminController.getAllTransactions);
+router.get('/goals', restrictTo('admin', 'support'), AdminController.getAllGoals);
+router.get('/tontines', restrictTo('admin', 'support'), AdminController.getAllTontines);
+router.get('/tontines/:id', restrictTo('admin', 'support'), AdminController.getTontineDetails);
+router.get('/subscriptions', restrictTo('admin', 'support'), AdminController.getAllSubscriptions);
+router.get('/subscriptions/:id', restrictTo('admin', 'support'), AdminController.getSubscriptionDetails);
+router.get('/settings', restrictTo('admin', 'support'), AdminController.getSystemSettings);
+router.get('/feature-flags', restrictTo('admin', 'support'), FeatureFlagController.getAllFlags);
+router.get('/countries', restrictTo('admin', 'support'), CountryController.getAllCountries);
+router.get('/country-requests', restrictTo('admin', 'support'), CountryRequestController.listRequests);
+router.get('/health', restrictTo('admin', 'support'), AdminController.getSystemHealth);
+router.get('/db/stats', restrictTo('admin', 'support'), AdminController.getDatabaseStats);
+router.get('/logs', restrictTo('admin', 'support'), AdminController.getLogs);
+router.get('/logs/:filename', restrictTo('admin', 'support'), AdminController.downloadLog);
+router.get('/analytics/financials', restrictTo('admin', 'support'), AdminController.getFinancialAnalytics);
+router.get('/resources', restrictTo('admin', 'support'), AdminController.getServerResources);
+router.get('/audit-logs', restrictTo('admin', 'support'), AdminController.getAuditLogs);
+router.get('/connections', restrictTo('admin', 'support'), AdminController.getConnectionLogs);
+router.get('/ai/stats', restrictTo('admin', 'support'), AdminController.getAIUsageStats);
+router.get('/ai/logs', restrictTo('admin', 'support'), AdminController.getAIUsageLogs);
+router.get('/analytics/dashboard', restrictTo('admin', 'support'), AdminController.getAnalyticsDashboard);
+router.get('/support/tickets', restrictTo('admin', 'support'), SupportController.getAllTickets);
 
-router.get('/transactions', AdminController.getAllTransactions);
+// KYC - lecture support autorisee, validation admin seule
+router.get('/kyc/pending', restrictTo('admin', 'support'), AdminController.getKycPendingUsers);
+router.patch('/kyc/:userId/validate', restrictTo('admin'), AdminController.validateKyc);
+router.patch('/kyc/:userId/reject', restrictTo('admin'), AdminController.rejectKyc);
 
-// Challenges
-router.post('/challenges', AdminController.createChallenge);
-router.patch('/challenges/:id', AdminController.updateChallenge);
-router.delete('/challenges/:id', AdminController.deleteChallenge);
+// Wallet Ledger - lecture seule support + admin
+router.get('/wallet/ledger', restrictTo('admin', 'support'), AdminController.getWalletLedger);
+router.get('/wallet/ledger/:userId', restrictTo('admin', 'support'), AdminController.getUserWalletLedger);
 
-// Settings
-router.get('/settings', AdminController.getSystemSettings);
-router.patch('/settings', AdminController.updateSystemSetting);
+// Payouts - lecture support, actions admin seul
+router.get('/payouts', restrictTo('admin', 'support'), AdminController.getPayouts);
+router.get('/payouts/:id', restrictTo('admin', 'support'), AdminController.getPayoutDetails);
+router.post('/payouts/:id/retry', restrictTo('admin'), AdminController.retryPayout);
 
-// Feature Flags
-import { FeatureFlagController } from '../controllers/featureFlagController';
-router.get('/feature-flags', FeatureFlagController.getAllFlags);
-router.post('/feature-flags', FeatureFlagController.createFlag);
-router.patch('/feature-flags/:id', FeatureFlagController.updateFlag);
-router.delete('/feature-flags/:id', FeatureFlagController.deleteFlag);
-
-// Country Management
-router.get('/countries', CountryController.getAllCountries);
-router.post('/countries', CountryController.addCountry);
-router.patch('/countries/:id', CountryController.updateCountry);
-
-// Country Change Requests
-router.get('/country-requests', CountryRequestController.listRequests);
-router.patch('/country-requests/:id/process', CountryRequestController.processRequest);
-
-// Goals Management
-router.get('/goals', AdminController.getAllGoals);
-router.delete('/goals/:id', AdminController.deleteGoal);
-
-// Tontines Management
-router.get('/tontines', AdminController.getAllTontines);
-router.get('/tontines/:id', AdminController.getTontineDetails);
-router.patch('/tontines/:id', AdminController.updateTontine);
-
-// Subscriptions Management
-router.get('/subscriptions', AdminController.getAllSubscriptions);
-router.get('/subscriptions/:id', AdminController.getSubscriptionDetails);
-router.patch('/subscriptions/:id', AdminController.updateSubscription);
-
-// System Management
-router.get('/health', AdminController.getSystemHealth);
-router.get('/db/stats', AdminController.getDatabaseStats);
-router.get('/db/export', AdminController.exportDatabase);
-router.get('/db/backup', AdminController.backupDatabase);
-router.post('/db/restore/:filename', AdminController.restoreDatabase);
-router.get('/logs', AdminController.getLogs);
-router.post('/logs', AdminController.createLog);
-router.get('/logs/:filename', AdminController.downloadLog);
-router.get('/analytics/financials', AdminController.getFinancialAnalytics);
-router.get('/resources', AdminController.getServerResources);
-router.get('/audit-logs', AdminController.getAuditLogs);
-router.get('/connections', AdminController.getConnectionLogs);
-
-// AI Analytics
-router.get('/ai/stats', AdminController.getAIUsageStats);
-router.get('/ai/logs', AdminController.getAIUsageLogs);
-
-// App Analytics
-router.get('/analytics/dashboard', AdminController.getAnalyticsDashboard);
-
-// Support & Tickets
-import * as SupportController from '../controllers/supportController';
-router.get('/support/tickets', SupportController.getAllTickets);
-router.patch('/support/tickets/:id/status', SupportController.updateTicketStatus);
-router.post('/support/tickets/:id/reply', SupportController.replyTicketAdmin);
+// Actions destructives ou sensibles : admin seul
+router.patch('/users/:id', restrictTo('admin'), AdminController.updateUser);
+router.patch('/users/:id/status', restrictTo('admin'), AdminController.updateUserStatus);
+router.post('/notifications/send', restrictTo('admin'), AdminController.sendPushNotification);
+router.post('/notifications/email', restrictTo('admin'), AdminController.sendEmail);
+router.post('/challenges', restrictTo('admin'), AdminController.createChallenge);
+router.patch('/challenges/:id', restrictTo('admin'), AdminController.updateChallenge);
+router.delete('/challenges/:id', restrictTo('admin'), AdminController.deleteChallenge);
+router.patch('/settings', restrictTo('admin'), AdminController.updateSystemSetting);
+router.post('/feature-flags', restrictTo('admin'), FeatureFlagController.createFlag);
+router.patch('/feature-flags/:id', restrictTo('admin'), FeatureFlagController.updateFlag);
+router.delete('/feature-flags/:id', restrictTo('admin'), FeatureFlagController.deleteFlag);
+router.post('/countries', restrictTo('admin'), CountryController.addCountry);
+router.patch('/countries/:id', restrictTo('admin'), CountryController.updateCountry);
+router.patch('/country-requests/:id/process', restrictTo('admin'), CountryRequestController.processRequest);
+router.delete('/goals/:id', restrictTo('admin'), AdminController.deleteGoal);
+router.patch('/tontines/:id', restrictTo('admin'), AdminController.updateTontine);
+router.patch('/subscriptions/:id', restrictTo('admin'), AdminController.updateSubscription);
+router.get('/db/export', restrictTo('admin'), AdminController.exportDatabase);
+router.get('/db/backup', restrictTo('admin'), AdminController.backupDatabase);
+router.post('/db/restore/:filename', restrictTo('admin'), AdminController.restoreDatabase);
+router.post('/logs', restrictTo('admin'), AdminController.createLog);
+router.patch('/support/tickets/:id/status', restrictTo('admin', 'support'), SupportController.updateTicketStatus);
+router.post('/support/tickets/:id/reply', restrictTo('admin', 'support'), SupportController.replyTicketAdmin);
 
 export default router;

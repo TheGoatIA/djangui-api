@@ -160,7 +160,7 @@ export class KYCService {
   /**
    * Validation manuelle par un admin (Point de décision final)
    */
-  static async adminVerify(userId: string, status: 'verified' | 'none', reason?: string) {
+  static async adminVerify(userId: string, status: 'verified' | 'rejected', reason?: string) {
     const user = await User.findById(userId);
     if (!user) throw new AppError('Utilisateur non trouvé', 404);
 

@@ -63,20 +63,10 @@ router.post('/webhooks/stripe', WebhookController.stripeWebhook);
 router.post('/webhooks/notchpay', WebhookController.notchpayWebhook);
 
 // Admin Fintech Routes
+// Note: KYC review lives under /admin/kyc/* (admin.routes.ts) — one canonical
+// pathway backed by KYCService.adminVerify, consumed by both admin roles.
 import { AdminFintechController } from '../controllers/adminFintechController';
 import { protect, restrictTo } from '../middleware/auth';
-router.get(
-  '/admin/fintech/kyc/pending',
-  protect,
-  restrictTo('admin'),
-  AdminFintechController.getPendingKYC,
-);
-router.post(
-  '/admin/fintech/kyc/verify',
-  protect,
-  restrictTo('admin'),
-  AdminFintechController.verifyKYC,
-);
 router.post(
   '/admin/fintech/reconciliation/trigger',
   protect,

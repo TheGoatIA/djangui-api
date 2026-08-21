@@ -1,8 +1,11 @@
+import mongoose from 'mongoose';
 import Investment, { IInvestmentDocument } from '../models/Investment';
 import User from '../models/User';
+import Transaction from '../models/Transaction';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import { MonitoringService } from './monitoringService';
+import { AuditService } from './auditService';
 
 export class InvestmentService {
   /**
@@ -54,25 +57,88 @@ export class InvestmentService {
   }
 
   /**
-   * Close an investment (sell/exit)
+   * Close an investment (sell/exit) and credit the wallet with its value.
+   *
+   * The credited amount is always the server's own last known `currentValue`
+   * (set via updateValue), never a client-supplied figure — accepting an
+   * arbitrary client amount here would let a user credit their wallet at will.
+   * Atomic (single Mongoose session) and idempotent (status guard inside the
+   * same session prevents a retry or duplicate request from crediting twice).
    */
-  static async closeInvestment(userId: string, investmentId: string, finalValue: number) {
-    const investment = await Investment.findOne({ _id: investmentId, userId });
-    if (!investment) {
-      throw new AppError('Investment not found', 404);
+  static async closeInvestment(userId: string, investmentId: string, requestedValue?: number) {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const investment = await Investment.findOne({ _id: investmentId, userId }).session(
+        session,
+      );
+      if (!investment) {
+        throw new AppError('Investment not found', 404);
+      }
+      if (investment.status === 'closed') {
+        throw new AppError('Investment is already closed', 400);
+      }
+
+      if (typeof requestedValue === 'number' && requestedValue !== investment.currentValue) {
+        logger.warn(
+          `[FINTECH] closeInvestment: client-supplied value ${requestedValue} ignored for investment ${investmentId}; using server value ${investment.currentValue}`,
+        );
+      }
+
+      const closingValue = investment.currentValue;
+
+      investment.status = 'closed';
+      investment.lastUpdated = new Date();
+      investment.history.push({ value: closingValue, date: new Date() });
+      await investment.save({ session });
+
+      await User.findByIdAndUpdate(
+        userId,
+        { $inc: { walletBalance: closingValue } },
+        { session },
+      );
+
+      await Transaction.create(
+        [
+          {
+            userId,
+            amount: closingValue,
+            currency: investment.currency || 'XAF',
+            type: 'income',
+            category: 'investment_close',
+            description: `Clôture investissement: ${investment.title}`,
+            status: 'completed',
+            reference: `INV-CLOSE-${investmentId}`,
+          },
+        ],
+        { session },
+      );
+
+      await AuditService.record({
+        userId: userId as any,
+        action: 'INVESTMENT_CLOSE',
+        resource: 'INVESTMENT',
+        resourceId: investmentId,
+        status: 'success',
+        metadata: { amount: closingValue, investmentType: investment.type },
+      });
+
+      await session.commitTransaction();
+      logger.info(
+        `[FINTECH] Investment ${investmentId} closed for user ${userId}. Credited: ${closingValue}`,
+      );
+
+      return investment;
+    } catch (error: any) {
+      await session.abortTransaction();
+      logger.error(
+        `[FINTECH] closeInvestment FAILED for investment ${investmentId} (user ${userId}): ${error.message}`,
+      );
+      throw error;
+    } finally {
+      session.endSession();
     }
-
-    investment.currentValue = finalValue;
-    investment.status = 'closed';
-    investment.lastUpdated = new Date();
-    investment.history.push({ value: finalValue, date: new Date() });
-
-    await investment.save();
-
-    // Optionally update user wallet balance if it was a liquid asset
-    await User.findByIdAndUpdate(userId, { $inc: { walletBalance: finalValue } });
-
-    return investment;
   }
 
   /**

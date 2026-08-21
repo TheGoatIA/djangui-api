@@ -2,7 +2,7 @@ import { Response, NextFunction } from 'express';
 import { AuthRequest } from './auth';
 import { CurrencyService } from '../services/currencyService';
 
-const MONETARY_FIELDS = [
+const MONETARY_FIELDS = new Set([
   'amount',
   'targetAmount',
   'balance',
@@ -15,32 +15,30 @@ const MONETARY_FIELDS = [
   'absenceFee',
   'socialFundAmount',
   'monthlyIncome',
-];
+]);
 
-const TEXT_FIELDS = ['description', 'title', 'message', 'body'];
-
-const CURRENCY_FIELDS = ['currency', 'currencySymbol'];
+const TEXT_FIELDS = new Set(['description', 'title', 'message', 'body']);
+const CURRENCY_FIELDS = new Set(['currency', 'currencySymbol']);
 
 /**
- * Middleware to automatically convert currency in responses
+ * Middleware de conversion automatique de devise dans les réponses.
+ * Convertit XAF → devise de l'utilisateur si différente.
+ * Fallback silencieux si le taux est indisponible.
  */
 export const currencyMiddleware = (req: AuthRequest, res: Response, next: NextFunction) => {
-  // Save original json method
   const originalJson = res.json;
 
-  // Override json method
   res.json = function (body: any) {
-    // Only convert if user is logged in and has a different currency than XAF
     const userCurrency = req.user?.currency;
 
-    // if (userCurrency && userCurrency !== 'XAF' && body) {
-    //     try {
-    //         body = convertObject(body, userCurrency);
-    //     } catch (err) {
-    //         // Fallback to original body if conversion fails
-    //         console.error('Currency conversion error:', err);
-    //     }
-    // }
+    if (userCurrency && userCurrency !== 'XAF' && body) {
+      try {
+        body = convertObject(body, userCurrency);
+      } catch (err) {
+        // Fallback silencieux : retourne le body en XAF sans planter
+        console.error('[Currency] Erreur de conversion, fallback XAF:', err);
+      }
+    }
 
     return originalJson.call(this, body);
   };
@@ -49,7 +47,7 @@ export const currencyMiddleware = (req: AuthRequest, res: Response, next: NextFu
 };
 
 /**
- * Recursively convert monetary fields in an object or array
+ * Convertit récursivement les champs monétaires d'un objet ou tableau.
  */
 function convertObject(obj: any, targetCurrency: string): any {
   if (Array.isArray(obj)) {
@@ -57,7 +55,7 @@ function convertObject(obj: any, targetCurrency: string): any {
   }
 
   if (obj !== null && typeof obj === 'object') {
-    // Handle Mongoose Documents
+    // Gérer les Documents Mongoose
     if (typeof obj.toJSON === 'function') {
       obj = obj.toJSON();
     } else if (typeof obj.toObject === 'function') {
@@ -67,14 +65,14 @@ function convertObject(obj: any, targetCurrency: string): any {
     const newObj: any = {};
 
     for (const key in obj) {
-      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+      if (Object.hasOwn(obj, key)) {
         let value = obj[key];
 
-        if (MONETARY_FIELDS.includes(key) && typeof value === 'number') {
+        if (MONETARY_FIELDS.has(key) && typeof value === 'number') {
           value = CurrencyService.convert(value, 'XAF', targetCurrency);
-        } else if (TEXT_FIELDS.includes(key) && typeof value === 'string') {
+        } else if (TEXT_FIELDS.has(key) && typeof value === 'string') {
           value = CurrencyService.convertText(value, targetCurrency, 'XAF');
-        } else if (CURRENCY_FIELDS.includes(key) && typeof value === 'string') {
+        } else if (CURRENCY_FIELDS.has(key) && typeof value === 'string') {
           if (key === 'currency') value = targetCurrency;
           if (key === 'currencySymbol') value = CurrencyService.getSymbol(targetCurrency);
         } else if (typeof value === 'object') {
@@ -89,3 +87,4 @@ function convertObject(obj: any, targetCurrency: string): any {
 
   return obj;
 }
+

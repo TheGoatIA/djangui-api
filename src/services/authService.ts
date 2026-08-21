@@ -10,6 +10,7 @@ import { SlackService } from './slackService';
 import { AuditService } from './auditService';
 import Country from '../models/Country';
 import redis from '../config/redis';
+import { hashToken } from '../utils/cryptoUtils';
 
 const signToken = (id: string, secret: string, expiresIn: any) => {
   return jwt.sign({ id }, secret, {
@@ -48,19 +49,29 @@ export class AuthService {
       throw new AppError("Ce pays n'est pas encore supporté.", 400);
     }
 
-    const newUser = await User.create({
-      ...userData,
-      country: countryCode,
-      currency: country ? country.currency : 'XAF',
-    });
-
     // Generate verification token
     const verificationToken = crypto.randomBytes(32).toString('hex');
     const hashedToken = crypto.createHash('sha256').update(verificationToken).digest('hex');
 
-    newUser.emailVerificationToken = hashedToken;
-    newUser.emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-    await (newUser as any).save({ validateBeforeSave: false });
+    // Whitelist explicitly: never spread the raw request body into `new User(...)`.
+    // Fields like role/walletBalance/kycLevel/isEmailVerified are valid schema
+    // paths — spreading an untrusted object would let a caller set them directly.
+    const newUser = new User({
+      email: userData.email,
+      password: userData.password,
+      firstName: userData.firstName,
+      lastName: userData.lastName,
+      phone: userData.phone,
+      country: countryCode,
+      currency: country ? country.currency : 'XAF',
+      emailVerificationToken: hashedToken,
+      emailVerificationExpires: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+    });
+
+    const tokens = createSendToken(newUser);
+    newUser.refreshToken = hashToken(tokens.refreshToken);
+
+    await newUser.save({ validateBeforeSave: false });
 
     // Send verification email
     try {
@@ -68,12 +79,6 @@ export class AuthService {
     } catch (err) {
       logger.error('Failed to send verification email');
     }
-
-    const tokens = createSendToken(newUser);
-
-    // Store refresh token in user
-    newUser.refreshToken = tokens.refreshToken;
-    await (newUser as any).save({ validateBeforeSave: false });
 
     // Audit Log for registration
     AuditService.record({
@@ -275,7 +280,7 @@ export class AuthService {
       deviceId: sessionData?.deviceId,
       deviceInfo: sessionData?.deviceInfo,
       appVersion: sessionData?.appVersion,
-      refreshToken: tokens.refreshToken,
+      refreshToken: hashToken(tokens.refreshToken),
       lastActive: new Date(),
       createdAt: new Date(),
       ipAddress: sessionData?.ipAddress,
@@ -328,8 +333,9 @@ export class AuthService {
         throw new AppError('User no longer exists', 401);
       }
 
-      const sessionIndex = user.sessions.findIndex((s) => s.refreshToken === refreshToken);
-      if (sessionIndex === -1 && user.refreshToken !== refreshToken) {
+      const incomingHash = hashToken(refreshToken);
+      const sessionIndex = user.sessions.findIndex((s) => s.refreshToken === incomingHash);
+      if (sessionIndex === -1 && user.refreshToken !== incomingHash) {
         throw new AppError('Invalid or expired refresh token', 401);
       }
 
@@ -338,12 +344,12 @@ export class AuthService {
 
       // 4) Update session
       if (sessionIndex !== -1) {
-        user.sessions[sessionIndex].refreshToken = tokens.refreshToken;
+        user.sessions[sessionIndex].refreshToken = hashToken(tokens.refreshToken);
         user.sessions[sessionIndex].lastActive = new Date();
       }
 
       // Update legacy fields
-      user.refreshToken = tokens.refreshToken;
+      user.refreshToken = hashToken(tokens.refreshToken);
       await (user as any).save({ validateBeforeSave: false });
 
       MonitoringService.recordAuthEvent('refresh', 'jwt', 'success', user.country);
@@ -359,9 +365,10 @@ export class AuthService {
   static async logout(userId: string, refreshToken?: string, accessToken?: string) {
     const user = await User.findById(userId);
     if (user) {
+      const incomingHash = refreshToken ? hashToken(refreshToken) : undefined;
       // Find the session to record duration
-      const sessionIndex = refreshToken
-        ? user.sessions.findIndex((s) => s.refreshToken === refreshToken)
+      const sessionIndex = incomingHash
+        ? user.sessions.findIndex((s) => s.refreshToken === incomingHash)
         : -1;
 
       if (sessionIndex !== -1) {
@@ -378,7 +385,7 @@ export class AuthService {
       } else {
         // Fallback for legacy logout
         MonitoringService.recordAuthEvent('logout', 'jwt', 'success', user.country, 'unknown');
-        if (user.refreshToken === refreshToken) user.refreshToken = undefined;
+        if (incomingHash && user.refreshToken === incomingHash) user.refreshToken = undefined;
       }
 
       await (user as any).save({ validateBeforeSave: false });
@@ -475,7 +482,7 @@ export class AuthService {
     await user.save();
 
     const tokens = createSendToken(user);
-    user.refreshToken = tokens.refreshToken;
+    user.refreshToken = hashToken(tokens.refreshToken);
     await (user as any).save({ validateBeforeSave: false });
 
     return { user, tokens };

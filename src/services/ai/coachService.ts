@@ -60,50 +60,77 @@ export class CoachService {
     };
     const systemPrompt = PromptBuilder.buildCoachSystemPrompt(user, context);
 
-    // AI Security Check
+    // ── Sécurité IA : vérification de l'état du compte ──────────────────────
     if (user.status !== 'active') {
       throw new AppError(
-        "Votre compte est suspendu suite à des activités suspectes avec l'IA.",
+        "Votre compte est suspendu. Contactez le support pour plus d'informations.",
         403,
       );
     }
 
-    if (GeminiService.detectAttack(userMessage)) {
-      user.aiAttackCount = (user.aiAttackCount || 0) + 1;
+    // ── Sécurité IA : vérification du blocage temporaire du coach ────────────
+    const ai = user.aiSecurity || { attackCount: 0, suspensionPending: false };
+    if (ai.coachBlockedUntil && new Date() < new Date(ai.coachBlockedUntil)) {
+      const remainingMs = new Date(ai.coachBlockedUntil).getTime() - Date.now();
+      const remainingMin = Math.ceil(remainingMs / 60000);
+      throw new AppError(
+        `Le coach Anne est temporairement désactivé suite à des activités suspectes. Réessayez dans ${remainingMin} minute(s).`,
+        429,
+      );
+    }
 
-      const isSuspended = user.aiAttackCount >= 3;
-      if (isSuspended) {
-        user.status = 'suspended';
+    // ── Sécurité IA : détection d'attaque par injection de prompt ────────────
+    if (GeminiService.detectAttack(userMessage)) {
+      // Initialisation défensive
+      if (!user.aiSecurity) {
+        user.aiSecurity = { attackCount: 0, suspensionPending: false };
       }
+      user.aiSecurity.attackCount = (user.aiSecurity.attackCount || 0) + 1;
+      user.aiSecurity.lastAttackAt = new Date();
+      const count = user.aiSecurity.attackCount;
+
+      let responseMessage = '';
+      let slackMessage = '';
+      let actionLabel = '';
+
+      if (count >= 10) {
+        // ── Palier 3 : flag admin requis (jamais de suspension automatique) ──
+        user.aiSecurity.suspensionPending = true;
+        actionLabel = '🔴 REVUE ADMIN REQUISE';
+        responseMessage = `⛔ **Accès au coach suspendu** : Le nombre de tentatives de manipulation a atteint un seuil critique. Votre dossier a été transmis à l'équipe Kauri. Contactez le support.`;
+        await NotificationService.sendToUser(userId, {
+          title: 'Accès coach suspendu ⛔',
+          body: "Votre accès au coach Anne a été suspendu suite à des activités répétées. Contactez le support.",
+          category: 'important',
+          data: { type: 'coach_suspended_pending_review' },
+        }).catch((err: any) => logger.error(`Notification erreur: ${err.message}`));
+      } else if (count >= 6) {
+        // ── Palier 2 : blocage coach 24h ────────────────────────────────────
+        user.aiSecurity.coachBlockedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        actionLabel = '🟠 COACH BLOQUÉ 24H';
+        responseMessage = `🚫 **Coach temporairement bloqué (24h)** : Vos messages répétés ont déclenché notre système de sécurité. Le coach Anne sera de nouveau disponible demain.`;
+      } else {
+        // ── Palier 1 : avertissement + blocage coach 1h ──────────────────────
+        user.aiSecurity.coachBlockedUntil = new Date(Date.now() + 60 * 60 * 1000);
+        actionLabel = '⚠️ AVERTISSEMENT';
+        const remaining = Math.max(0, 6 - count);
+        responseMessage = `⚠️ **Avertissement de sécurité** : Votre message a été détecté comme une tentative de manipulation. Le coach est temporairement désactivé (1h).\n\nEncore **${remaining}** incident(s) avant une suspension prolongée.`;
+      }
+
+      slackMessage =
+        `🚨 *Alerte Sécurité IA* 🚨\n` +
+        `*Utilisateur* : ${user.firstName} ${user.lastName} (${user.email})\n` +
+        `*Message* : "${userMessage.substring(0, 200)}"\n` +
+        `*Tentatives* : ${count}\n` +
+        `*Action* : ${actionLabel}`;
+
       await user.save();
 
-      // Slack Alert
-      await SlackService.sendNotification(
-        `🚨 *Alerte Sécurité IA* 🚨\n*Utilisateur*: ${user.firstName} ${user.lastName} (${user.email})\n*Message*: "${userMessage}"\n*Tentatives*: ${user.aiAttackCount}/3\n*Action*: ${isSuspended ? '🔴 COMPTE SUSPENDU' : '⚠️ AVERTISSEMENT'}`,
-        true,
+      await SlackService.sendNotification(slackMessage, true).catch((err: any) =>
+        logger.error(`Slack alert error: ${err.message}`),
       );
 
-      if (isSuspended) {
-        // Notification push au compte suspendu
-        NotificationService.sendToUser(userId, {
-          title: 'Compte Suspendu ⛔',
-          body: "Votre compte a été suspendu définitivement suite à des tentatives répétées de manipulation de l'IA. Contactez le support.",
-          category: 'important',
-          data: { type: 'account_suspended' },
-        }).catch((err: any) => logger.error(`AI Suspension Notification Error: ${err.message}`));
-
-        throw new AppError(
-          "Votre compte a été banni définitivement après 3 tentatives de manipulation de l'intelligence artificielle.",
-          403,
-        );
-      }
-
-      return JSON.stringify({
-        text: `⚠️ **Avertissement de sécurité** : Votre message a été détecté comme une tentative de manipulation de mes instructions de base. Ceci est formellement interdit. \n\nEncore **${
-          3 - user.aiAttackCount
-        }** tentative(s) et votre compte sera **définitivement bloqué**.`,
-        actions: [],
-      });
+      return JSON.stringify({ text: responseMessage, actions: [] });
     }
 
     // Measure Context Efficiency (System Prompt length vs User Message length)

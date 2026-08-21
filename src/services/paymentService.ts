@@ -8,6 +8,8 @@ import logger from '../utils/logger';
 import { AuditService } from './auditService';
 import { SlackService } from './slackService';
 import { MonitoringService } from './monitoringService';
+import { WalletService } from './walletService';
+import { InvoiceService } from './invoiceService';
 
 export class PaymentService {
   /**
@@ -202,22 +204,30 @@ export class PaymentService {
    * Complete payment (usually called via webhook)
    */
   static async completePayment(reference: string, externalRef?: string) {
-    const payment = await Payment.findOne({ reference });
-    if (!payment) throw new AppError('Payment not found', 404);
-    if (payment.status === 'completed') return payment;
+    // Atomic status transition: only proceed if the payment was NOT already
+    // completed. findOneAndUpdate with a status guard prevents two near-simultaneous
+    // webhook deliveries (a routine occurrence with Stripe/NotchPay retries) from
+    // both passing a check-then-act and crediting the wallet twice.
+    const update: Record<string, any> = { status: 'completed', completedAt: new Date() };
+    if (externalRef) update.externalReference = externalRef;
 
-    payment.status = 'completed';
-    payment.externalReference = externalRef || payment.externalReference;
-    payment.completedAt = new Date();
-    await payment.save();
+    const payment = await Payment.findOneAndUpdate(
+      { reference, status: { $ne: 'completed' } },
+      { $set: update },
+      { new: true },
+    );
+
+    if (!payment) {
+      const existing = await Payment.findOne({ reference });
+      if (!existing) throw new AppError('Payment not found', 404);
+      // Already completed by a previous (possibly concurrent) call — idempotent no-op.
+      return existing;
+    }
 
     MonitoringService.recordPaymentGateway(payment.method || 'unknown', 'complete', 'success');
 
     // If it's a deposit, update wallet via WalletService (ACID)
     if (payment.type === 'deposit') {
-      const { WalletService } = require('./walletService');
-      const { InvoiceService } = require('./invoiceService');
-
       const transaction = await WalletService.executeTransaction({
         userId: payment.userId.toString(),
         amount: payment.amount,
@@ -232,7 +242,6 @@ export class PaymentService {
       await InvoiceService.generateForTransaction(transaction._id.toString());
     } else if (payment.type === 'subscription') {
       logger.info(`Upgrading user ${payment.userId} to Premium...`);
-      const { InvoiceService } = require('./invoiceService');
 
       await User.findByIdAndUpdate(payment.userId, {
         'subscription.plan': 'premium',

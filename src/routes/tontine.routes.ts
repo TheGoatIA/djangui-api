@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { TontineController } from '../controllers/tontineController';
 import { protect, restrictTo } from '../middleware/auth';
 import { upload } from '../config/multer';
+import { idempotency } from '../middleware/idempotency';
 
 const router = Router();
 
@@ -15,7 +16,7 @@ router.patch('/:id', TontineController.update);
 router.delete('/:id', TontineController.delete);
 router.post('/:id/start', TontineController.start);
 router.post('/join', TontineController.join);
-router.post('/contribute', upload.single('receipt'), TontineController.contribute);
+router.post('/contribute', upload.single('receipt'), idempotency, TontineController.contribute);
 
 // Messagerie
 router.post('/:id/messages', TontineController.postMessage);

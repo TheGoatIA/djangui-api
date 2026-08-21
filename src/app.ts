@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
@@ -127,6 +128,7 @@ app.use(
   }),
 );
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 app.use(currencyMiddleware);
 
 // Static files

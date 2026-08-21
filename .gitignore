@@ -5,3 +5,4 @@ logs
 uploads
 backups
 metrics_token
+mongodb.key

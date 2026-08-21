@@ -12,6 +12,7 @@ import Subscription from '../models/Subscription';
 import UserActivity from '../models/UserActivity';
 import SessionLog from '../models/SessionLog';
 import { NotificationService } from '../services/notificationService';
+import { CurrencyService } from '../services/currencyService';
 import { AppError } from '../middleware/errorHandler';
 import { exec } from 'child_process';
 import path from 'path';
@@ -21,6 +22,9 @@ import { AuditService } from '../services/auditService';
 import { EmailService } from '../services/emailService';
 import { DbBackupService } from '../services/dbBackupService';
 import redis from '../config/redis';
+import Payment from '../models/Payment';
+import { PayoutService } from '../services/payoutService';
+import { KYCService } from '../services/kycService';
 
 export class AdminController {
   // --- AI ANALYTICS ---
@@ -331,11 +335,26 @@ export class AdminController {
       const premiumUsers = await User.countDocuments({ 'subscription.plan': 'premium' });
 
       // 2. Financial Stats (Aggregation)
+      // Transactions are stored in each user's own currency at the time — a
+      // raw $sum across users mixes FCFA, EUR, USD, etc. totalAmountFCFA
+      // converts every amount to FCFA in the pipeline itself (server-side,
+      // no need to pull every transaction into Node to convert client-side).
+      const ratesToXAF = CurrencyService.getRatesToXAF();
+      const rateSwitchBranches = Object.entries(ratesToXAF).map(([currency, rate]) => ({
+        case: { $eq: ['$currency', currency] },
+        then: rate,
+      }));
+
       const transactionsStats = await Transaction.aggregate([
         {
           $group: {
             _id: '$type',
             totalAmount: { $sum: '$amount' },
+            totalAmountFCFA: {
+              $sum: {
+                $multiply: ['$amount', { $switch: { branches: rateSwitchBranches, default: 1 } }],
+              },
+            },
             count: { $sum: 1 },
           },
         },
@@ -778,7 +797,7 @@ export class AdminController {
       queryStr = queryStr.replace(/\b(gte|gt|lte|lt)\b/g, (match) => `$${match}`);
 
       const transactions = await Transaction.find(JSON.parse(queryStr))
-        .populate('userId', 'email firstName lastName')
+        .populate('userId', 'email firstName lastName country currency')
         .sort({ date: -1 })
         .skip(skip)
         .limit(limit);
@@ -1373,4 +1392,192 @@ export class AdminController {
       next(error);
     }
   }
+
+  // --- KYC REVIEW ---
+  static async getKycPendingUsers(req: Request, res: Response, next: NextFunction) {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const skip = (page - 1) * limit;
+
+      const [users, total] = await Promise.all([
+        User.find({ kycLevel: 'pending' })
+          .select('firstName lastName email phone country kycLevel kycData createdAt')
+          .sort({ updatedAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        User.countDocuments({ kycLevel: 'pending' }),
+      ]);
+
+      res.status(200).json({
+        success: true,
+        data: { users, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Ces deux actions délèguent à KYCService.adminVerify, le point de décision
+  // final unique (audit log + notification i18n déjà gérés par le service —
+  // voir aussi AdminFintechController pour les autres opérations fintech admin).
+  static async validateKyc(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { userId } = req.params;
+      const user = await KYCService.adminVerify(userId, 'verified');
+
+      res.status(200).json({
+        success: true,
+        message: 'KYC validé avec succès',
+        data: { kycLevel: user.kycLevel },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async rejectKyc(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { userId } = req.params;
+      const { reason } = req.body;
+      const user = await KYCService.adminVerify(userId, 'rejected', reason);
+
+      res.status(200).json({
+        success: true,
+        message: 'KYC rejeté',
+        data: { kycLevel: user.kycLevel, rejectionReason: user.kycData?.rejectionReason },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // --- WALLET LEDGER ---
+  static async getWalletLedger(req: Request, res: Response, next: NextFunction) {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const skip = (page - 1) * limit;
+
+      const filter: any = {};
+      if (req.query.type) filter.type = req.query.type;
+      if (req.query.paymentMethod) filter.paymentMethod = req.query.paymentMethod;
+
+      const [transactions, total] = await Promise.all([
+        Transaction.find(filter)
+          .populate('userId', 'firstName lastName email country')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        Transaction.countDocuments(filter),
+      ]);
+
+      res.status(200).json({
+        success: true,
+        data: { transactions, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getUserWalletLedger(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { userId } = req.params;
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const skip = (page - 1) * limit;
+
+      const [transactions, total, user] = await Promise.all([
+        Transaction.find({ userId })
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        Transaction.countDocuments({ userId }),
+        User.findById(userId).select('firstName lastName email walletBalance currency kycLevel').lean(),
+      ]);
+
+      if (!user) throw new AppError('Utilisateur non trouvé', 404);
+
+      res.status(200).json({
+        success: true,
+        data: { user, transactions, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // --- PAYOUTS ---
+  static async getPayouts(req: Request, res: Response, next: NextFunction) {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const skip = (page - 1) * limit;
+
+      const filter: any = { type: 'withdrawal' };
+      if (req.query.status) filter.status = req.query.status;
+
+      const [payouts, total] = await Promise.all([
+        Payment.find(filter)
+          .populate('userId', 'firstName lastName email country')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        Payment.countDocuments(filter),
+      ]);
+
+      res.status(200).json({
+        success: true,
+        data: { payouts, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getPayoutDetails(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const payout = await Payment.findById(id).populate('userId', 'firstName lastName email country kycLevel').lean();
+      if (!payout) throw new AppError('Retrait non trouvé', 404);
+
+      res.status(200).json({ success: true, data: payout });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async retryPayout(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const payout = await Payment.findById(id);
+      if (!payout) throw new AppError('Retrait non trouvé', 404);
+      if (payout.type !== 'withdrawal') throw new AppError('Ce paiement n\'est pas un retrait', 400);
+
+      payout.status = 'pending';
+      await payout.save();
+
+      AuditService.record(
+        {
+          userId: (req as any).user._id,
+          action: 'PAYOUT_RETRY',
+          resource: 'Payment',
+          resourceId: id,
+          metadata: { reference: payout.reference },
+          status: 'success',
+        },
+        req,
+      );
+
+      res.status(200).json({ success: true, message: 'Statut du retrait réinitialisé à pending' });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
+

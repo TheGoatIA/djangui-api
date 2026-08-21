@@ -4,6 +4,7 @@ import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import { MonitoringService } from '../services/monitoringService';
+import { setAuthCookies, clearAuthCookies } from '../utils/authCookies';
 
 export class AuthController {
   static async register(req: Request, res: Response, next: NextFunction) {
@@ -13,6 +14,7 @@ export class AuthController {
       // Metrique business
       MonitoringService.recordUserSignup('email', req.body.country || 'unknown');
 
+      setAuthCookies(res, tokens);
       res.status(201).json({
         success: true,
         data: {
@@ -37,6 +39,7 @@ export class AuthController {
         MonitoringService.recordUserSignup('firebase', country || 'unknown');
       }
 
+      setAuthCookies(res, result.tokens);
       res.status(200).json({
         status: 'success',
         ...result,
@@ -71,6 +74,7 @@ export class AuthController {
         ipAddress: req.ip,
       });
 
+      setAuthCookies(res, tokens);
       res.status(200).json({
         success: true,
         data: {
@@ -148,9 +152,15 @@ export class AuthController {
 
   static async refresh(req: Request, res: Response, next: NextFunction) {
     try {
-      const { refreshToken } = req.body;
+      // Mobile sends the refresh token in the body; the admin dashboard relies
+      // on the httpOnly cookie instead and never has it in JS to send explicitly.
+      const refreshToken = req.body?.refreshToken || req.cookies?.refresh_token;
+      if (!refreshToken) {
+        throw new AppError('Refresh token is required', 401);
+      }
       const tokens = await AuthService.refreshAccessToken(refreshToken);
 
+      setAuthCookies(res, tokens);
       res.status(200).json({
         success: true,
         data: {
@@ -227,11 +237,13 @@ export class AuthController {
 
   static async logout(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const { refreshToken } = req.body;
+      const refreshToken = req.body?.refreshToken || req.cookies?.refresh_token;
       // Extract the access token to blacklist it immediately in Redis
-      const accessToken = req.headers.authorization?.split(' ')[1];
+      const accessToken =
+        req.headers.authorization?.split(' ')[1] || req.cookies?.access_token;
       await AuthService.logout(req.user._id, refreshToken, accessToken);
 
+      clearAuthCookies(res);
       res.status(200).json({
         success: true,
         message: 'Logged out successfully',

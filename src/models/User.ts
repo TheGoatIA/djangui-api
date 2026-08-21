@@ -18,7 +18,7 @@ const userSchema = new Schema<IUserDocument>(
     },
     role: {
       type: String,
-      enum: ['user', 'admin'],
+      enum: ['user', 'admin', 'support'],
       default: 'user',
     },
     password: {
@@ -122,7 +122,7 @@ const userSchema = new Schema<IUserDocument>(
     },
     kycLevel: {
       type: String,
-      enum: ['none', 'pending', 'verified'],
+      enum: ['none', 'pending', 'verified', 'rejected'],
       default: 'none',
       index: true,
     },
@@ -193,10 +193,12 @@ const userSchema = new Schema<IUserDocument>(
     appVersion: String,
     lastLogin: Date,
     refreshToken: String,
-    // AI Security
-    aiAttackCount: {
-      type: Number,
-      default: 0,
+    // AI Security — système de paliers (plus de suspension automatique de compte)
+    aiSecurity: {
+      attackCount: { type: Number, default: 0 },
+      coachBlockedUntil: { type: Date, default: null },
+      suspensionPending: { type: Boolean, default: false },
+      lastAttackAt: { type: Date, default: null },
     },
     status: {
       type: String,

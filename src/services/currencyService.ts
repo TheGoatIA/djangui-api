@@ -1,4 +1,10 @@
+import mongoose from 'mongoose';
 import logger from '../utils/logger';
+import User from '../models/User';
+import Transaction from '../models/Transaction';
+import Budget from '../models/Budget';
+import SavingGoal from '../models/SavingGoal';
+import Investment from '../models/Investment';
 
 export class CurrencyService {
   // Base currency is XAF
@@ -17,6 +23,15 @@ export class CurrencyService {
     CAD: '$',
     USD: '$',
   };
+
+  /**
+   * Returns a copy of the currency -> XAF rate table, for callers that need
+   * to build their own conversion (e.g. a MongoDB aggregation $switch) rather
+   * than convert one amount at a time in Node.
+   */
+  static getRatesToXAF(): Record<string, number> {
+    return { ...this.exchangeRates };
+  }
 
   /**
    * Returns the exchange rate from source to target currency
@@ -79,8 +94,12 @@ export class CurrencyService {
   }
 
   /**
-   * Converts all financial data for a user when they change country
-   * (Placeholder for future implementation)
+   * Converts all financial data for a user when their currency changes
+   * (approved country change). Runs inside a single Mongo session so a
+   * partial conversion (e.g. transactions converted but goals left in the
+   * old currency) can never happen. Uses aggregation-pipeline updates
+   * ($round/$multiply) so amounts are converted server-side without
+   * loading every document into memory.
    */
   static async convertUserFinancialData(
     userId: string,
@@ -94,6 +113,116 @@ export class CurrencyService {
       `Converting financial data for user ${userId} from ${oldCurrency} to ${newCurrency} at rate ${rate}`,
     );
 
-    // TODO: Implement bulk update of user's Transactions, Budgets, Goals, etc.
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const userObjectId = new mongoose.Types.ObjectId(userId);
+
+      await Transaction.updateMany(
+        { userId: userObjectId },
+        [
+          {
+            $set: {
+              amount: { $round: [{ $multiply: ['$amount', rate] }, 2] },
+              fees: { $round: [{ $multiply: [{ $ifNull: ['$fees', 0] }, rate] }, 2] },
+              currency: newCurrency,
+            },
+          },
+        ],
+        { session },
+      );
+
+      await Budget.updateMany(
+        { userId: userObjectId },
+        [
+          {
+            $set: {
+              totalAllocated: { $round: [{ $multiply: ['$totalAllocated', rate] }, 2] },
+              totalSpent: { $round: [{ $multiply: ['$totalSpent', rate] }, 2] },
+              categories: {
+                $map: {
+                  input: '$categories',
+                  as: 'c',
+                  in: {
+                    _id: '$$c._id',
+                    name: '$$c.name',
+                    allocated: { $round: [{ $multiply: ['$$c.allocated', rate] }, 2] },
+                    spent: { $round: [{ $multiply: ['$$c.spent', rate] }, 2] },
+                    percentage: '$$c.percentage',
+                  },
+                },
+              },
+            },
+          },
+        ],
+        { session },
+      );
+
+      await SavingGoal.updateMany(
+        { userId: userObjectId },
+        [
+          {
+            $set: {
+              targetAmount: { $round: [{ $multiply: ['$targetAmount', rate] }, 2] },
+              currentAmount: { $round: [{ $multiply: ['$currentAmount', rate] }, 2] },
+              contributions: {
+                $map: {
+                  input: '$contributions',
+                  as: 'c',
+                  in: {
+                    _id: '$$c._id',
+                    amount: { $round: [{ $multiply: ['$$c.amount', rate] }, 2] },
+                    date: '$$c.date',
+                    note: '$$c.note',
+                  },
+                },
+              },
+            },
+          },
+        ],
+        { session },
+      );
+
+      await Investment.updateMany(
+        { userId: userObjectId },
+        [
+          {
+            $set: {
+              initialAmount: { $round: [{ $multiply: ['$initialAmount', rate] }, 2] },
+              currentValue: { $round: [{ $multiply: ['$currentValue', rate] }, 2] },
+              currency: newCurrency,
+              history: {
+                $map: {
+                  input: '$history',
+                  as: 'h',
+                  in: {
+                    _id: '$$h._id',
+                    value: { $round: [{ $multiply: ['$$h.value', rate] }, 2] },
+                    date: '$$h.date',
+                  },
+                },
+              },
+            },
+          },
+        ],
+        { session },
+      );
+
+      await User.updateOne(
+        { _id: userObjectId },
+        [{ $set: { walletBalance: { $round: [{ $multiply: ['$walletBalance', rate] }, 2] } } }],
+        { session },
+      );
+
+      await session.commitTransaction();
+      logger.info(`Financial data conversion completed for user ${userId}`);
+    } catch (error: any) {
+      await session.abortTransaction();
+      logger.error(`Financial data conversion FAILED for user ${userId}: ${error.message}`);
+      throw error;
+    } finally {
+      session.endSession();
+    }
   }
 }
