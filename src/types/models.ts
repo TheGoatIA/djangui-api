@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 export interface IUser {
   email: string;
-  role: 'user' | 'admin';
+  role: 'user' | 'admin' | 'support';
   password?: string;
   firstName: string;
   lastName: string;
@@ -91,6 +91,12 @@ export interface IUser {
     lastAttackAt?: Date | null;
   };
   status: 'active' | 'suspended' | 'blocked';
+  security?: {
+    totpSecret?: string;
+    totpTempSecret?: string;
+    totpEnabled: boolean;
+    backupCodeHashes: string[];
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -156,6 +162,14 @@ export interface IPayment {
   externalReference?: string; // Stripe/NotchPay reference
   metadata?: any;
   completedAt?: Date;
+  retryApproval?: {
+    status: 'none' | 'pending_approval' | 'approved' | 'rejected';
+    requestedBy?: mongoose.Types.ObjectId;
+    requestedAt?: Date;
+    approvedBy?: mongoose.Types.ObjectId;
+    approvedAt?: Date;
+    reason?: string;
+  };
   createdAt: Date;
   updatedAt: Date;
 }

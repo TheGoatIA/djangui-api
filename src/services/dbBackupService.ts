@@ -1,4 +1,4 @@
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import { promisify } from 'util';
@@ -6,10 +6,16 @@ import logger from '../utils/logger';
 import { EmailService } from './emailService';
 import { SlackService } from './slackService';
 import { StorageService } from './storageService';
+import { AppError } from '../middleware/errorHandler';
 import admin from '../config/firebase';
 import mongoose from 'mongoose';
 
-const execPromise = promisify(exec);
+// execFile (not exec) so arguments are passed directly to the process, never
+// interpolated into a shell string — the mongorestore call below takes a
+// filename that ultimately comes from an admin HTTP request, and `exec` would
+// let a crafted filename break out of its quoted argument and inject shell
+// commands.
+const execFilePromise = promisify(execFile);
 
 export class DbBackupService {
   private static readonly BACKUP_DIR = process.env.BACKUP_PATH || './backups';
@@ -38,16 +44,20 @@ export class DbBackupService {
         : 'mongodump';
 
       logger.info(`Starting DB backup to ${dbArchivePath}`);
-      await execPromise(`"${toolsPath}" --uri="${uri}" --archive="${dbArchivePath}" --gzip`);
+      await execFilePromise(toolsPath, ['--uri', uri, '--archive', dbArchivePath, '--gzip']);
 
       // 3. File Backup (tar)
       logger.info(`Starting File backup to ${filesArchivePath}`);
       if (fs.existsSync(this.UPLOADS_DIR)) {
         // Use tar to compress the uploads directory
         // -z: gzip, -c: create, -f: file
-        await execPromise(
-          `tar -czf "${filesArchivePath}" -C "${path.dirname(this.UPLOADS_DIR)}" "${path.basename(this.UPLOADS_DIR)}"`,
-        );
+        await execFilePromise('tar', [
+          '-czf',
+          filesArchivePath,
+          '-C',
+          path.dirname(this.UPLOADS_DIR),
+          path.basename(this.UPLOADS_DIR),
+        ]);
       } else {
         logger.warn(`Uploads directory not found at ${this.UPLOADS_DIR}, skipping file backup.`);
       }
@@ -55,11 +65,14 @@ export class DbBackupService {
       // 4. Collect DB stats
       const stats = await this.getDbStats();
 
-      // 5. Upload to MinIO (Primary Cloud)
+      // 5. Upload to MinIO (Primary Cloud). Full DB dumps contain password hashes,
+      // KYC data, and every user's financial history, so these MUST be private —
+      // never fetchable by an anonymous request even if the bucket/key is guessed.
       const dbMinioUrl = await StorageService.uploadFile(
         dbArchivePath,
         'kauri-backups',
         `database/${path.basename(dbArchivePath)}`,
+        'private',
       );
       let filesMinioUrl = '';
       if (fs.existsSync(filesArchivePath)) {
@@ -67,6 +80,7 @@ export class DbBackupService {
           filesArchivePath,
           'kauri-backups',
           `files/${path.basename(filesArchivePath)}`,
+          'private',
         );
       }
 
@@ -130,7 +144,18 @@ export class DbBackupService {
    * Restore database from a backup file
    */
   static async restoreBackup(filename: string) {
-    const backupPath = path.join(this.BACKUP_DIR, filename);
+    // Strict allowlist on the filename — it comes from an admin HTTP request
+    // param (POST /admin/db/restore/:filename), and Express decodes URL-encoded
+    // path segments before routing, so without this a value like
+    // "..%2F..%2Fsome%2Ffile.gz" would resolve outside BACKUP_DIR via path.join.
+    if (!/^[\w.-]+\.gz$/.test(filename)) {
+      throw new AppError('Invalid backup filename', 400);
+    }
+    const backupDir = path.resolve(this.BACKUP_DIR);
+    const backupPath = path.resolve(backupDir, filename);
+    if (!backupPath.startsWith(backupDir + path.sep)) {
+      throw new AppError('Invalid backup filename', 400);
+    }
 
     if (!fs.existsSync(backupPath)) {
       throw new Error(`Backup file not found: ${filename}`);
@@ -144,9 +169,17 @@ export class DbBackupService {
 
       logger.warn(`STARTING DATABASE RESTORE from: ${filename}`);
 
-      // Command: mongorestore --uri="<uri>" --archive="<path>" --gzip --drop
-      // --drop is used to clear existing collections before restore
-      await execPromise(`"${toolsPath}" --uri="${uri}" --archive="${backupPath}" --gzip --drop`);
+      // --drop is used to clear existing collections before restore. execFile
+      // (not exec) passes these as discrete arguments — no shell involved, so
+      // there's nothing for a crafted filename to break out into.
+      await execFilePromise(toolsPath, [
+        '--uri',
+        uri,
+        '--archive',
+        backupPath,
+        '--gzip',
+        '--drop',
+      ]);
 
       logger.info(`Database restored successfully from ${filename}`);
 

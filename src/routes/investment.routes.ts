@@ -9,7 +9,8 @@ router.use(premiumOnly);
 
 router.post('/', InvestmentController.create);
 router.get('/', InvestmentController.list);
-router.patch('/:id/value', InvestmentController.updateValue);
+// PATCH /:id/value is admin-only — see routes/admin.routes.ts. It must never be
+// reachable by the investment's own owner (see InvestmentService.updateValue).
 router.post('/:id/close', InvestmentController.close);
 router.delete('/:id', InvestmentController.delete);
 

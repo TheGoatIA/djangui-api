@@ -16,6 +16,13 @@ export class CurrencyService {
     USD: 610, // Approximate
   };
 
+  // Update this date whenever `exchangeRates` above is revised. XAF/XOF/EUR
+  // are real fixed pegs and never go stale; USD/CAD are hand-set approximations
+  // that drift from the real market rate over time, which matters here because
+  // they're used for real conversions (wallet rebasing on country change,
+  // tontine contribution amounts) — see `checkRatesStaleness`.
+  private static readonly ratesLastReviewedAt = new Date('2026-04-16');
+
   private static readonly symbols: Record<string, string> = {
     XAF: 'FCFA',
     XOF: 'FCFA',
@@ -91,6 +98,25 @@ export class CurrencyService {
 
   static getSymbol(currency: string): string {
     return this.symbols[currency] || currency;
+  }
+
+  /**
+   * Logs a warning if the hand-set exchange rates (USD/CAD) haven't been
+   * reviewed in `maxAgeDays`. These aren't fixed pegs like XOF/EUR, so left
+   * unchecked they silently drift from the real market rate while still being
+   * used to convert real money (wallet balances, tontine contributions).
+   * Called daily from CronService; not a substitute for a live FX feed, but
+   * ensures staleness is at least visible instead of silent.
+   */
+  static checkRatesStaleness(maxAgeDays = 30): void {
+    const ageDays = (Date.now() - this.ratesLastReviewedAt.getTime()) / (24 * 3600 * 1000);
+    if (ageDays > maxAgeDays) {
+      logger.warn(
+        `[CurrencyService] Les taux de change approximatifs (USD, CAD) n'ont pas été révisés depuis ${Math.floor(
+          ageDays,
+        )} jours (dernière révision : ${this.ratesLastReviewedAt.toISOString().split('T')[0]}). Vérifier leur exactitude par rapport au marché.`,
+      );
+    }
   }
 
   /**

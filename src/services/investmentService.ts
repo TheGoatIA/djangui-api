@@ -6,24 +6,69 @@ import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import { MonitoringService } from './monitoringService';
 import { AuditService } from './auditService';
+import { WalletService } from './walletService';
 
 export class InvestmentService {
   /**
-   * Create a new investment
+   * Create a new investment. Only a whitelisted set of fields is accepted from
+   * the client — `currentValue` is deliberately never one of them, it's always
+   * seeded server-side from `initialAmount`. The initial amount is genuinely
+   * debited from the wallet in the same transaction as the investment record,
+   * so an "investment" always corresponds to real money actually locked in,
+   * not a self-reported number that can later be closed for free credit.
    */
-  static async createInvestment(userId: string, data: Partial<IInvestmentDocument>) {
-    try {
-      const investment = await Investment.create({
-        ...data,
-        userId,
-        history: [{ value: data.initialAmount || 0, date: new Date() }],
-      });
+  static async createInvestment(
+    userId: string,
+    data: { title?: string; type?: string; initialAmount?: number; currency?: string },
+  ) {
+    const { title, type, initialAmount, currency } = data;
 
-      return investment;
-    } catch (error: any) {
-      logger.error(`Error creating investment: ${error.message}`);
-      throw error;
+    if (!title || typeof title !== 'string') {
+      throw new AppError('Le titre est requis', 400);
     }
+    if (!type || !['crypto', 'stock', 'real_estate', 'other'].includes(type)) {
+      throw new AppError('Type d\'investissement invalide', 400);
+    }
+    if (!Number.isFinite(initialAmount) || (initialAmount as number) <= 0) {
+      throw new AppError('Montant initial invalide', 400);
+    }
+
+    const result = await WalletService.runInTransaction(async (session) => {
+      const transaction = await WalletService.executeTransaction(
+        {
+          userId,
+          amount: initialAmount as number,
+          type: 'saving_transfer',
+          description: `Investissement : ${title}`,
+          paymentMethod: 'wallet',
+          metadata: { action: 'investment_create' },
+        },
+        { session },
+      );
+
+      const [investment] = await Investment.create(
+        [
+          {
+            userId,
+            title,
+            type,
+            initialAmount,
+            currentValue: initialAmount,
+            currency: currency || 'XAF',
+            history: [{ value: initialAmount, date: new Date() }],
+          },
+        ],
+        { session },
+      );
+
+      return { investment, transaction };
+    });
+
+    (result.transaction as any)?._postCommit?.().catch((err: any) =>
+      logger.error(`Post-commit hook error: ${err.message}`),
+    );
+
+    return result.investment;
   }
 
   /**
@@ -36,10 +81,19 @@ export class InvestmentService {
   }
 
   /**
-   * Update investment value and history
+   * Update investment value and history — ADMIN ONLY (see routes/admin.routes.ts).
+   * There is currently no live market-price feed wired up, so this is a manual
+   * mark-to-market control. It must never be reachable by the investment's own
+   * owner: `closeInvestment` credits the wallet with exactly this value, so an
+   * end-user-writable `currentValue` would let anyone fabricate real wallet
+   * balance by setting it arbitrarily high and then closing the investment.
    */
-  static async updateValue(userId: string, investmentId: string, newValue: number) {
-    const investment = await Investment.findOne({ _id: investmentId, userId });
+  static async updateValue(investmentId: string, newValue: number) {
+    if (!Number.isFinite(newValue) || newValue < 0) {
+      throw new AppError('Valeur invalide', 400);
+    }
+
+    const investment = await Investment.findById(investmentId);
     if (!investment) {
       throw new AppError('Investment not found', 404);
     }
@@ -53,6 +107,16 @@ export class InvestmentService {
     MonitoringService.updateInvestmentYield(yieldRatio, investment.type);
 
     await investment.save();
+
+    await AuditService.record({
+      userId: investment.userId as any,
+      action: 'INVESTMENT_VALUE_UPDATE',
+      resource: 'INVESTMENT',
+      resourceId: investmentId,
+      status: 'success',
+      metadata: { newValue },
+    });
+
     return investment;
   }
 
@@ -142,13 +206,41 @@ export class InvestmentService {
   }
 
   /**
-   * Delete an investment
+   * Delete an investment. If it's still active (not yet closed via closeInvestment),
+   * its initialAmount was genuinely debited from the wallet at creation — refund it
+   * in the same transaction as the deletion so deleting an investment can't be used
+   * to make the locked funds disappear.
    */
   static async deleteInvestment(id: string, userId: string) {
-    const investment = await Investment.findOneAndDelete({ _id: id, userId });
-    if (!investment) {
-      throw new AppError('Investment not found', 404);
-    }
+    const result = await WalletService.runInTransaction(async (session) => {
+      const investment = await Investment.findOne({ _id: id, userId }).session(session);
+      if (!investment) {
+        throw new AppError('Investment not found', 404);
+      }
+
+      let transaction: any = null;
+      if (investment.status !== 'closed') {
+        transaction = await WalletService.executeTransaction(
+          {
+            userId,
+            amount: investment.initialAmount,
+            type: 'deposit',
+            description: `Remboursement (Suppression Investissement) : ${investment.title}`,
+            paymentMethod: 'wallet',
+            metadata: { investmentId: id, action: 'investment_delete_refund' },
+          },
+          { session },
+        );
+      }
+
+      await Investment.findOneAndDelete({ _id: id, userId }, { session });
+      return transaction;
+    });
+
+    (result as any)?._postCommit?.().catch((err: any) =>
+      logger.error(`Post-commit hook error: ${err.message}`),
+    );
+
     return true;
   }
 }

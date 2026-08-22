@@ -17,27 +17,30 @@ export class OCRController {
       }
 
       const filePath = req.file.path;
-      const result = await OCRService.scanReceipt(filePath);
-
-      // Upload vers MinIO
-      const minioUrl = await StorageService.uploadFile(
-        filePath,
-        'kauri-uploads',
-        `receipts/${req.file.filename}`,
-      );
-
-      // Nettoyage local
       try {
-        fs.unlinkSync(filePath);
-      } catch (e) {}
+        const result = await OCRService.scanReceipt(filePath);
 
-      res.status(200).json({
-        success: true,
-        data: {
-          ...result,
-          imageUrl: minioUrl,
-        },
-      });
+        // Upload vers MinIO
+        const minioUrl = await StorageService.uploadFile(
+          filePath,
+          'kauri-uploads',
+          `receipts/${req.file.filename}`,
+        );
+
+        res.status(200).json({
+          success: true,
+          data: {
+            ...result,
+            imageUrl: minioUrl,
+          },
+        });
+      } finally {
+        // Nettoyage local — dans un `finally` pour ne pas laisser le fichier
+        // temporaire sur disque si le scan OCR ou l'upload MinIO échoue.
+        try {
+          fs.unlinkSync(filePath);
+        } catch (e) {}
+      }
     } catch (err) {
       next(err);
     }

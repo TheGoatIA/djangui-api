@@ -58,7 +58,16 @@ if (process.env.NODE_ENV === 'test') {
   // Use lazyConnect to ensure we can attach error listeners before connection attempts
   redis = new Redis(finalRedisURL, {
     lazyConnect: true,
-    maxRetriesPerRequest: null,
+    // This same client backs hot-path checks on every request (the global rate
+    // limiter, the JWT blacklist check, the idempotency lock) — `maxRetriesPerRequest:
+    // null` is the right setting for a background/queue-style client, but on a
+    // request-path client it means a Redis outage makes commands queue and retry
+    // indefinitely instead of failing fast, effectively hanging the whole API
+    // instead of degrading. A bounded commandTimeout ensures a stuck command
+    // always surfaces as an error (which the callers here already handle: auth.ts
+    // fails closed, idempotency.ts fails open) within a few seconds.
+    commandTimeout: 5000,
+    maxRetriesPerRequest: 2,
     retryStrategy(times: number) {
       const delay = Math.min(times * 200, 5000);
       return delay;

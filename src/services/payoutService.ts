@@ -74,6 +74,12 @@ export class PayoutService {
       amount: amount.toString(), // NotchPay doc exemple utilise une string pour le montant
       currency: user.currency || 'XAF',
       channel: 'cm.mobile', // Nouveau format demandé
+      // Référence au niveau racine, comme pour le flux de dépôt (initializeNotchPay) :
+      // le webhook transfer.complete/transfer.failed matche sur data.data.reference, pas
+      // sur metadata.reference. Sans ce champ racine, NotchPay peut renvoyer sa propre
+      // référence générée, et notchpayWebhook ne retrouve alors jamais la transaction
+      // interne — le remboursement automatique sur échec ne se déclenche jamais.
+      reference: transaction.reference,
       recipient: {
         account_number: data.phone,
         country: 'CM',

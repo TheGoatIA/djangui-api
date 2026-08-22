@@ -62,6 +62,13 @@ function convertObject(obj: any, targetCurrency: string): any {
       obj = obj.toObject();
     }
 
+    // La devise déclarée par l'objet lui-même (ex: une tontine en EUR) est la
+    // vraie devise source de ses champs monétaires. Supposer XAF sans regarder
+    // ce champ convertit un montant déjà en EUR/USD comme s'il était en XAF,
+    // ce qui produit un montant totalement faux (sur/sous-paiement réel).
+    const sourceCurrency: string =
+      typeof obj.currency === 'string' && obj.currency ? obj.currency : 'XAF';
+
     const newObj: any = {};
 
     for (const key in obj) {
@@ -69,9 +76,9 @@ function convertObject(obj: any, targetCurrency: string): any {
         let value = obj[key];
 
         if (MONETARY_FIELDS.has(key) && typeof value === 'number') {
-          value = CurrencyService.convert(value, 'XAF', targetCurrency);
+          value = CurrencyService.convert(value, sourceCurrency, targetCurrency);
         } else if (TEXT_FIELDS.has(key) && typeof value === 'string') {
-          value = CurrencyService.convertText(value, targetCurrency, 'XAF');
+          value = CurrencyService.convertText(value, targetCurrency, sourceCurrency);
         } else if (CURRENCY_FIELDS.has(key) && typeof value === 'string') {
           if (key === 'currency') value = targetCurrency;
           if (key === 'currencySymbol') value = CurrencyService.getSymbol(targetCurrency);

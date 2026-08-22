@@ -24,20 +24,39 @@ export class InvoiceService {
       const user = transaction.userId as any;
       const invoiceNumber = `INV-${new Date().getFullYear()}-${uuidv4().split('-')[0].toUpperCase()}`;
 
-      // 1. Créer l'entrée en base de données
-      invoice = await Invoice.create({
-        userId: user._id,
-        transactionId: transaction._id,
-        invoiceNumber,
-        amount: transaction.amount,
-        currency: transaction.currency,
-        status: 'issued',
-        metadata: {
-          paymentMethod: transaction.paymentMethod,
-          transactionType: transaction.type,
-          userName: user.kycData?.fullName || `${user.firstName} ${user.lastName}`,
-        },
-      });
+      // Upsert atomique (backé par l'index unique sur transactionId) : deux
+      // déclencheurs concurrents (génération auto post-paiement + polling client)
+      // ne peuvent plus tous les deux passer le check ci-dessus et créer chacun
+      // leur propre facture/PDF pour la même transaction.
+      try {
+        invoice = await Invoice.findOneAndUpdate(
+          { transactionId: transaction._id },
+          {
+            $setOnInsert: {
+              userId: user._id,
+              transactionId: transaction._id,
+              invoiceNumber,
+              amount: transaction.amount,
+              currency: transaction.currency,
+              status: 'issued',
+              metadata: {
+                paymentMethod: transaction.paymentMethod,
+                transactionType: transaction.type,
+                userName: user.kycData?.fullName || `${user.firstName} ${user.lastName}`,
+              },
+            },
+          },
+          { upsert: true, new: true, setDefaultsOnInsert: true },
+        );
+      } catch (err: any) {
+        if (err.code === 11000) {
+          // Une autre requête concurrente a déjà créé la facture — la relire.
+          invoice = await Invoice.findOne({ transactionId: transaction._id });
+        } else {
+          throw err;
+        }
+      }
+      if (!invoice) throw new AppError('Facture introuvable après création concurrente', 500);
     }
 
     // 2. Génération physique du PDF (Synchrone pour garantir l'URL au premier appel)
@@ -76,19 +95,35 @@ export class InvoiceService {
       const user = payment.userId as any;
       const invoiceNumber = `INV-${new Date().getFullYear()}-${uuidv4().split('-')[0].toUpperCase()}`;
 
-      invoice = await Invoice.create({
-        userId: user._id,
-        paymentId: payment._id,
-        invoiceNumber,
-        amount: payment.amount,
-        currency: payment.currency || 'XAF',
-        status: 'issued',
-        metadata: {
-          paymentMethod: payment.method,
-          transactionType: payment.type,
-          userName: user.kycData?.fullName || `${user.firstName} ${user.lastName}`,
-        },
-      });
+      // Upsert atomique — voir le commentaire équivalent dans generateForTransaction.
+      try {
+        invoice = await Invoice.findOneAndUpdate(
+          { paymentId: payment._id },
+          {
+            $setOnInsert: {
+              userId: user._id,
+              paymentId: payment._id,
+              invoiceNumber,
+              amount: payment.amount,
+              currency: payment.currency || 'XAF',
+              status: 'issued',
+              metadata: {
+                paymentMethod: payment.method,
+                transactionType: payment.type,
+                userName: user.kycData?.fullName || `${user.firstName} ${user.lastName}`,
+              },
+            },
+          },
+          { upsert: true, new: true, setDefaultsOnInsert: true },
+        );
+      } catch (err: any) {
+        if (err.code === 11000) {
+          invoice = await Invoice.findOne({ paymentId: payment._id });
+        } else {
+          throw err;
+        }
+      }
+      if (!invoice) throw new AppError('Facture introuvable après création concurrente', 500);
     }
 
     try {

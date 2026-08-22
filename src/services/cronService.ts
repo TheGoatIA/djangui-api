@@ -21,6 +21,7 @@ import { SlackService } from './slackService';
 import { MonitoringService } from './monitoringService';
 import { ReconciliationService } from './reconciliationService';
 import { FinancialAlertService } from './financialAlertService';
+import { CurrencyService } from './currencyService';
 import UserActivity from '../models/UserActivity';
 
 export class CronService {
@@ -62,6 +63,15 @@ export class CronService {
     cron.schedule(
       '0 3 * * *',
       this.runMonitored('integrity_check', () => this.runFinancialIntegrityCheck()),
+    );
+
+    // Daily at 03:15 AM: Currency exchange rate staleness check (USD/CAD are
+    // hand-set approximations, not fixed pegs — see CurrencyService)
+    cron.schedule(
+      '15 3 * * *',
+      this.runMonitored('currency_rate_staleness_check', async () => {
+        CurrencyService.checkRatesStaleness();
+      }),
     );
 
     // Monthly on the 1st at 04:00 AM: Data Archiving
@@ -146,6 +156,14 @@ export class CronService {
     cron.schedule(
       '0 2 * * *',
       this.runMonitored('tontine_auto_debit', () => TontineService.processAutoDebits()),
+    );
+
+    // Daily at 03:00 AM: Tontine Turn Rotation (pays out the current turn's winner and
+    // advances currentTurn once its deadline + grace period has elapsed). Runs after
+    // auto-debits so last-minute contributions are recorded before payout is computed.
+    cron.schedule(
+      '0 3 * * *',
+      this.runMonitored('tontine_turn_rotation', () => this.rotateEligibleTontineTurns()),
     );
 
     // Daily at 04:00 AM: Global Reconciliation Check
@@ -290,31 +308,35 @@ export class CronService {
       const users = await User.find({ isActive: true });
 
       for (const user of users) {
-        const stats = await Transaction.aggregate([
-          {
-            $match: {
-              userId: user._id,
-              date: { $gte: lastWeek },
-              type: 'expense',
+        try {
+          const stats = await Transaction.aggregate([
+            {
+              $match: {
+                userId: user._id,
+                date: { $gte: lastWeek },
+                type: 'expense',
+              },
             },
-          },
-          {
-            $group: {
-              _id: null,
-              total: { $sum: '$amount' },
+            {
+              $group: {
+                _id: null,
+                total: { $sum: '$amount' },
+              },
             },
-          },
-        ]);
+          ]);
 
-        const totalSpent = stats.length > 0 ? stats[0].total : 0;
+          const totalSpent = stats.length > 0 ? stats[0].total : 0;
 
-        await NotificationService.sendToUser(user._id.toString(), {
-          title: '',
-          body: '',
-          translationKey: 'WEEKLY_SUMMARY',
-          translationData: { amount: totalSpent, currency: user.currency },
-          data: { type: 'WEEKLY_SUMMARY' },
-        });
+          await NotificationService.sendToUser(user._id.toString(), {
+            title: '',
+            body: '',
+            translationKey: 'WEEKLY_SUMMARY',
+            translationData: { amount: totalSpent, currency: user.currency },
+            data: { type: 'WEEKLY_SUMMARY' },
+          });
+        } catch (err: any) {
+          logger.error(`Weekly summary failed for user ${user._id}: ${err.message}`);
+        }
       }
       logger.info('Weekly summaries sent');
     } catch (error: any) {
@@ -337,36 +359,40 @@ export class CronService {
       const users = await User.find({ isActive: true });
 
       for (const user of users) {
-        const existingBudget = await Budget.findOne({
-          userId: user._id,
-          'period.month': month,
-          'period.year': year,
-        });
-        if (existingBudget) continue;
-
-        const lastBudget = await Budget.findOne({
-          userId: user._id,
-          'period.month': prevMonth,
-          'period.year': prevYear,
-        });
-
-        if (lastBudget) {
-          // Clone previous budget categories but reset spent
-          const newCategories = lastBudget.categories.map((cat) => ({
-            name: cat.name,
-            allocated: cat.allocated,
-            spent: 0,
-            percentage: 0,
-          }));
-
-          await Budget.create({
+        try {
+          const existingBudget = await Budget.findOne({
             userId: user._id,
-            period: { type: 'monthly', month, year },
-            categories: newCategories,
-            totalAllocated: lastBudget.totalAllocated,
-            totalSpent: 0,
-            status: 'active',
+            'period.month': month,
+            'period.year': year,
           });
+          if (existingBudget) continue;
+
+          const lastBudget = await Budget.findOne({
+            userId: user._id,
+            'period.month': prevMonth,
+            'period.year': prevYear,
+          });
+
+          if (lastBudget) {
+            // Clone previous budget categories but reset spent
+            const newCategories = lastBudget.categories.map((cat) => ({
+              name: cat.name,
+              allocated: cat.allocated,
+              spent: 0,
+              percentage: 0,
+            }));
+
+            await Budget.create({
+              userId: user._id,
+              period: { type: 'monthly', month, year },
+              categories: newCategories,
+              totalAllocated: lastBudget.totalAllocated,
+              totalSpent: 0,
+              status: 'active',
+            });
+          }
+        } catch (err: any) {
+          logger.error(`Monthly budget init failed for user ${user._id}: ${err.message}`);
         }
       }
       logger.info('Monthly budgets initialized');
@@ -496,17 +522,21 @@ export class CronService {
       const inactiveUsers = await User.find({ isActive: true });
 
       for (const user of inactiveUsers) {
-        const lastTransaction = await Transaction.findOne({ userId: user._id })
-          .sort({ date: -1 })
-          .select('date');
+        try {
+          const lastTransaction = await Transaction.findOne({ userId: user._id })
+            .sort({ date: -1 })
+            .select('date');
 
-        if (!lastTransaction || lastTransaction.date < threeDaysAgo) {
-          await NotificationService.sendToUser(user._id.toString(), {
-            title: '',
-            body: '',
-            translationKey: 'INACTIVITY_REMINDER',
-            data: { type: 'INACTIVITY_REMINDER' },
-          });
+          if (!lastTransaction || lastTransaction.date < threeDaysAgo) {
+            await NotificationService.sendToUser(user._id.toString(), {
+              title: '',
+              body: '',
+              translationKey: 'INACTIVITY_REMINDER',
+              data: { type: 'INACTIVITY_REMINDER' },
+            });
+          }
+        } catch (err: any) {
+          logger.error(`Inactivity check failed for user ${user._id}: ${err.message}`);
         }
       }
       logger.info('Inactivity check completed');
@@ -569,17 +599,21 @@ export class CronService {
       });
 
       for (const user of premiumUsers) {
-        // We call the service to get the forecast
-        const result = await ForecastService.getBalanceForecast(user._id.toString());
+        try {
+          // We call the service to get the forecast
+          const result = await ForecastService.getBalanceForecast(user._id.toString());
 
-        if (result?.criticalAlert) {
-          await NotificationService.sendToUser(user._id.toString(), {
-            title: '',
-            body: '',
-            translationKey: 'TREASURY_ALERT',
-            translationData: { firstName: user.firstName, alert: result.criticalAlert },
-            data: { type: 'OVERDRAFT_PREVENTION' },
-          });
+          if (result?.criticalAlert) {
+            await NotificationService.sendToUser(user._id.toString(), {
+              title: '',
+              body: '',
+              translationKey: 'TREASURY_ALERT',
+              translationData: { firstName: user.firstName, alert: result.criticalAlert },
+              data: { type: 'OVERDRAFT_PREVENTION' },
+            });
+          }
+        } catch (err: any) {
+          logger.error(`Overdraft prevention failed for user ${user._id}: ${err.message}`);
         }
       }
       logger.info(`Overdraft prevention job completed for ${premiumUsers.length} premium users`);
@@ -647,46 +681,95 @@ export class CronService {
       tomorrow.setDate(tomorrow.getDate() + 1);
 
       for (const tontine of activeTontines) {
-        // Calculate deadline for current turn
-        const deadline = TontineService.getTurnDeadline(
-          tontine.startDate,
-          tontine.frequency,
-          tontine.currentTurn,
-        );
+        try {
+          // Calculate deadline for current turn
+          const deadline = TontineService.getTurnDeadline(
+            tontine.startDate,
+            tontine.frequency,
+            tontine.currentTurn,
+          );
 
-        // If deadline is tomorrow (within 24-48h window for once-a-day check)
-        const diffHours = (deadline.getTime() - Date.now()) / 3600000;
+          // If deadline is tomorrow (within 24-48h window for once-a-day check)
+          const diffHours = (deadline.getTime() - Date.now()) / 3600000;
 
-        if (diffHours > 0 && diffHours <= 24) {
-          // Find members who haven't paid for this turn
-          const members = await TontineMember.find({
-            tontineId: tontine._id,
-            invitationStatus: 'accepted',
-          });
-
-          for (const member of members) {
-            const hasPaid = await TontineContribution.findOne({
+          if (diffHours > 0 && diffHours <= 24) {
+            // Find members who haven't paid for this turn
+            const members = await TontineMember.find({
               tontineId: tontine._id,
-              memberId: member._id,
-              turnIndex: tontine.currentTurn,
-              validationStatus: { $in: ['ai_validated', 'completed'] },
+              invitationStatus: 'accepted',
             });
 
-            if (!hasPaid) {
-              await NotificationService.sendToUser(member.userId.toString(), {
-                title: '',
-                body: '',
-                translationKey: 'TONTINE_PAYMENT_REMINDER',
-                translationData: { turn: tontine.currentTurn, tontineName: tontine.name },
-                data: { tontineId: tontine._id.toString(), type: 'TONTINE_REMINDER' },
-              });
+            for (const member of members) {
+              try {
+                const hasPaid = await TontineContribution.findOne({
+                  tontineId: tontine._id,
+                  memberId: member._id,
+                  turnIndex: tontine.currentTurn,
+                  validationStatus: { $in: ['ai_validated', 'completed'] },
+                });
+
+                if (!hasPaid) {
+                  await NotificationService.sendToUser(member.userId.toString(), {
+                    title: '',
+                    body: '',
+                    translationKey: 'TONTINE_PAYMENT_REMINDER',
+                    translationData: { turn: tontine.currentTurn, tontineName: tontine.name },
+                    data: { tontineId: tontine._id.toString(), type: 'TONTINE_REMINDER' },
+                  });
+                }
+              } catch (err: any) {
+                logger.error(
+                  `Tontine reminder failed for member ${member._id} (tontine ${tontine._id}): ${err.message}`,
+                );
+              }
             }
           }
+        } catch (err: any) {
+          logger.error(`Tontine reminder check failed for tontine ${tontine._id}: ${err.message}`);
         }
       }
       logger.info(`Tontine reminders check completed for ${activeTontines.length} active tontines`);
     } catch (error: any) {
       logger.error(`Error in sendTontineReminders job: ${error.message}`);
+    }
+  }
+
+  /**
+   * Rotate the turn (and trigger the winner's payout) for every active tontine whose
+   * current turn deadline + grace period has already elapsed. Without this job,
+   * `currentTurn` never advances and `TontineService.rotateTurn` is dead code — turns
+   * would never actually complete or pay out in production.
+   */
+  private static async rotateEligibleTontineTurns() {
+    let rotatedCount = 0;
+    try {
+      const activeTontines = await Tontine.find({ status: 'active' });
+
+      for (const tontine of activeTontines) {
+        const deadline = TontineService.getTurnDeadline(
+          tontine.startDate,
+          tontine.frequency,
+          tontine.currentTurn,
+        );
+        const graceDeadline = new Date(
+          deadline.getTime() + tontine.sanctions.gracePeriodHours * 3600000,
+        );
+
+        if (new Date() > graceDeadline) {
+          try {
+            await TontineService.rotateTurn(tontine._id.toString());
+            rotatedCount++;
+          } catch (err: any) {
+            logger.error(`Tontine turn rotation failed for ${tontine._id}: ${err.message}`);
+          }
+        }
+      }
+
+      logger.info(
+        `Tontine turn rotation check completed. Rotated ${rotatedCount}/${activeTontines.length} active tontines.`,
+      );
+    } catch (error: any) {
+      logger.error(`Error in rotateEligibleTontineTurns job: ${error.message}`);
     }
   }
 

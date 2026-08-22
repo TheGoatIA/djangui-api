@@ -67,13 +67,22 @@ export class AuthController {
   static async login(req: Request, res: Response, next: NextFunction) {
     try {
       const { email, password } = req.body;
-      const { user, tokens } = await AuthService.login(email, password, {
+      const result = await AuthService.login(email, password, {
         deviceId: req.body.deviceId,
         deviceInfo: req.body.deviceInfo,
         appVersion: req.body.appVersion,
         ipAddress: req.ip,
       });
 
+      if ('requiresTotp' in result) {
+        res.status(200).json({
+          success: true,
+          data: { requiresTotp: true, challengeToken: result.challengeToken },
+        });
+        return;
+      }
+
+      const { user, tokens } = result;
       setAuthCookies(res, tokens);
       res.status(200).json({
         success: true,
@@ -82,6 +91,50 @@ export class AuthController {
           tokens,
         },
       });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async verifyTotp(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { challengeToken, code } = req.body;
+      const { user, tokens } = await AuthService.verifyTotpAndLogin(challengeToken, code, {
+        deviceId: req.body.deviceId,
+        deviceInfo: req.body.deviceInfo,
+        appVersion: req.body.appVersion,
+        ipAddress: req.ip,
+      });
+
+      setAuthCookies(res, tokens);
+      res.status(200).json({ success: true, data: { user, tokens } });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async setupTotp(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const data = await AuthService.setupTotp(req.user._id);
+      res.status(200).json({ success: true, data });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async enableTotp(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const data = await AuthService.enableTotp(req.user._id, req.body.code);
+      res.status(200).json({ success: true, data });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async disableTotp(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const data = await AuthService.disableTotp(req.user._id, req.body.code);
+      res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
     }
@@ -420,7 +473,24 @@ export class AuthController {
   }
 
   static async renderResetPasswordPage(req: Request, res: Response) {
-    const token = req.params.token || (req.query.token as string);
+    const rawToken = req.params.token || (req.query.token as string) || '';
+
+    // Reset tokens are always a 64-char lowercase hex string (crypto.randomBytes(32)
+    // .toString('hex'), see AuthService.forgotPassword). This is a public,
+    // unauthenticated route, and `token` was previously interpolated unescaped into
+    // both an HTML href attribute and an inline <script> string — a crafted token
+    // value could break out of both contexts and execute arbitrary JS on this page.
+    // Validating the expected shape up front removes any character an XSS payload
+    // would need; the HTML-escape below is kept as defense in depth.
+    if (!/^[a-f0-9]{64}$/.test(rawToken)) {
+      return res.status(400).send('Lien de réinitialisation invalide.');
+    }
+    const token = rawToken
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#x27;');
     const deepLink = `kauri://reset-password?token=${token}`;
 
     res.send(`
@@ -442,7 +512,7 @@ export class AuthController {
           <h1>Ouverture de Kauri...</h1>
           <p>Si l'application ne s'ouvre pas, cliquez sur le bouton ci-dessous.</p>
           <a href="${deepLink}" class="btn">Ouvrir l'application</a>
-          <script>
+          <script nonce="${(res as any).locals.cspNonce}">
               window.location.href = "${deepLink}";
               setTimeout(() => {
                   window.location.href = "${deepLink}";

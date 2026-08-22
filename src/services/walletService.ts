@@ -40,44 +40,73 @@ const roundAmount = (n: number): number => Math.round(n * 100) / 100;
 
 export class WalletService {
   /**
+   * Runs `fn` inside a MongoDB session/transaction, retrying automatically on
+   * transient transaction errors (write conflicts, network blips) per the
+   * MongoDB-recommended `withTransaction` retry pattern. Callers composing a
+   * wallet operation with a related domain-document write (e.g. crediting a
+   * goal, marking a tontine contribution paid) should fetch and mutate their
+   * documents *inside* `fn` so a retry re-reads fresh state instead of
+   * re-applying an in-memory mutation twice.
+   */
+  static async runInTransaction<T>(fn: (session: mongoose.ClientSession) => Promise<T>): Promise<T> {
+    const session = await mongoose.startSession();
+    try {
+      let result: T = undefined as any;
+      await session.withTransaction(async () => {
+        result = await fn(session);
+      });
+      return result;
+    } finally {
+      session.endSession();
+    }
+  }
+
+  /**
    * Effectue un transfert de fonds sécurisé entre deux entités (ou wallet -> banque)
    * Utilise les transactions MongoDB pour garantir l'atomicité.
+   *
+   * Pass `options.session` to participate in a transaction already started by
+   * the caller (e.g. via `runInTransaction`) so the wallet write and a related
+   * domain-document write commit or roll back together. Without it, this
+   * method owns and retries its own transaction.
    */
-  static async executeTransaction(data: {
-    userId: string;
-    amount: number;
-    type:
-      | 'deposit'
-      | 'withdrawal'
-      | 'tontine_contribution'
-      | 'tontine_payout'
-      | 'saving_transfer'
-      | 'challenge_reward';
-    description: string;
-    paymentMethod: 'stripe' | 'notchpay' | 'wallet';
-    reference?: string;
-    externalReference?: string;
-    fees?: number;
-    metadata?: Record<string, any>;
-    silent?: boolean;
-  }) {
-    const session = await mongoose.startSession();
-    session.startTransaction();
+  static async executeTransaction(
+    data: {
+      userId: string;
+      amount: number;
+      type:
+        | 'deposit'
+        | 'withdrawal'
+        | 'tontine_contribution'
+        | 'tontine_payout'
+        | 'saving_transfer'
+        | 'challenge_reward';
+      description: string;
+      paymentMethod: 'stripe' | 'notchpay' | 'wallet';
+      reference?: string;
+      externalReference?: string;
+      fees?: number;
+      metadata?: Record<string, any>;
+      silent?: boolean;
+    },
+    options?: { session?: mongoose.ClientSession },
+  ) {
+    const externalSession = options?.session;
 
-    try {
-      const {
-        userId,
-        amount,
-        type,
-        description,
-        paymentMethod,
-        reference,
-        externalReference,
-        fees = 0,
-        metadata,
-        silent = false,
-      } = data;
+    const {
+      userId,
+      amount,
+      type,
+      description,
+      paymentMethod,
+      reference,
+      externalReference,
+      fees = 0,
+      metadata,
+      silent = false,
+    } = data;
 
+    const run = async (session: mongoose.ClientSession) => {
       // Guard: amount must be a finite positive number
       if (!Number.isFinite(amount) || amount <= 0) {
         throw new AppError('Montant invalide', 400);
@@ -178,47 +207,74 @@ export class WalletService {
         { session },
       );
 
-      // 5. Audit Log & Metrics
-      MonitoringService.recordTransaction(type, 'success', user.currency || 'XAF', safeAmount);
+      return {
+        transactionDoc: transaction[0],
+        safeAmount,
+        safeFees,
+        netAmount,
+        transactionRef,
+        userCurrency: user.currency,
+      };
+    };
 
-      await AuditService.record({
-        userId: userId as any,
-        action: type.toUpperCase(),
-        resource: 'WALLET',
-        resourceId: transactionRef,
-        status: 'success',
-        metadata: { amount: safeAmount, fees: safeFees, netAmount, paymentMethod },
-      });
+    try {
+      const outcome = externalSession
+        ? await run(externalSession)
+        : await this.runInTransaction(run);
 
-      await session.commitTransaction();
+      const { transactionDoc, safeAmount, safeFees, netAmount, transactionRef, userCurrency } =
+        outcome;
+
+      MonitoringService.recordTransaction(type, 'success', userCurrency || 'XAF', safeAmount);
       logger.info(
         `[FINTECH] Transaction ${transactionRef} successful for user ${userId}. Amount: ${amount}, Type: ${type}`,
       );
 
-      // 6. Monitoring d'Alerte (Async)
-      FinancialAlertService.monitorTransaction({
-        userId,
-        amount: safeAmount,
-        type,
-        reference: transactionRef,
-        status: 'success',
-      }).catch((err) => logger.error(`Alert Monitoring Error: ${err.message}`));
+      // Audit log & post-success side effects. These are non-critical and are
+      // deliberately kept outside the DB transaction. When an external
+      // session is used, the caller's own transaction hasn't committed yet at
+      // this point, so we defer them until the caller confirms its commit
+      // (via the `_postCommit` hook attached below) instead of firing a
+      // "transaction successful" notification for a change that might still
+      // roll back.
+      const postCommit = async () => {
+        await AuditService.record({
+          userId: userId as any,
+          action: type.toUpperCase(),
+          resource: 'WALLET',
+          resourceId: transactionRef,
+          status: 'success',
+          metadata: { amount: safeAmount, fees: safeFees, netAmount, paymentMethod },
+        });
 
-      // 7. Notification (Hors transaction car non critique)
-      if (!silent) {
-        NotificationService.sendToUser(userId, {
-          title: '',
-          body: '',
-          category: 'transactional',
-          translationKey: 'TRANSACTION_SUCCESS',
-          translationData: { amount: safeAmount, currency: user.currency, type },
-          data: { transactionRef, type },
-        }).catch((err) => logger.error(`Wallet Notification Error: ${err.message}`));
+        FinancialAlertService.monitorTransaction({
+          userId,
+          amount: safeAmount,
+          type,
+          reference: transactionRef,
+          status: 'success',
+        }).catch((err) => logger.error(`Alert Monitoring Error: ${err.message}`));
+
+        if (!silent) {
+          NotificationService.sendToUser(userId, {
+            title: '',
+            body: '',
+            category: 'transactional',
+            translationKey: 'TRANSACTION_SUCCESS',
+            translationData: { amount: safeAmount, currency: userCurrency, type },
+            data: { transactionRef, type },
+          }).catch((err) => logger.error(`Wallet Notification Error: ${err.message}`));
+        }
+      };
+
+      if (externalSession) {
+        (transactionDoc as any)._postCommit = postCommit;
+      } else {
+        await postCommit();
       }
 
-      return transaction[0];
+      return transactionDoc;
     } catch (error: any) {
-      await session.abortTransaction();
       MonitoringService.recordTransaction(data.type, 'failure', 'XAF', roundAmount(data.amount));
       logger.error(
         `[FINTECH] Wallet Transaction FAILED: ${error.message} (User: ${data.userId}, Type: ${data.type})`,
@@ -234,8 +290,6 @@ export class WalletService {
       }).catch((err) => logger.error(`Failure Alert Monitoring Error: ${err.message}`));
 
       throw error;
-    } finally {
-      session.endSession();
     }
   }
 

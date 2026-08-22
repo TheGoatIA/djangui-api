@@ -1,5 +1,6 @@
 import { GeminiService } from './geminiService';
 import fs from 'fs';
+import crypto from 'crypto';
 import logger from '../../utils/logger';
 import TontineContribution from '../../models/TontineContribution';
 
@@ -67,11 +68,26 @@ export class TontineAIService {
   }
 
   /**
-   * Vérifie si un reçu est un doublon
+   * Calcule l'empreinte SHA-256 du fichier reçu, utilisée comme repli de détection
+   * de doublon quand l'OCR n'a pas pu extraire de référence de transaction fiable
+   * (auquel cas `transactionRef` retombe sur `UNKNOWN_<timestamp>`, qui n'entre
+   * jamais en collision et laisserait le même reçu réutilisable indéfiniment).
    */
-  static async isDuplicate(transactionRef: string): Promise<boolean> {
+  static hashReceiptFile(filePath: string): string {
+    const fileData = fs.readFileSync(filePath);
+    return crypto.createHash('sha256').update(fileData).digest('hex');
+  }
+
+  /**
+   * Vérifie si un reçu est un doublon, par référence de transaction détectée OU par
+   * empreinte de fichier (voir hashReceiptFile).
+   */
+  static async isDuplicate(transactionRef: string, imageHash?: string): Promise<boolean> {
     const existing = await TontineContribution.findOne({
-      'aiAnalysis.detectedRef': transactionRef,
+      $or: [
+        { 'aiAnalysis.detectedRef': transactionRef },
+        ...(imageHash ? [{ proofImageHash: imageHash }] : []),
+      ],
       validationStatus: { $ne: 'rejected' },
     });
     return !!existing;

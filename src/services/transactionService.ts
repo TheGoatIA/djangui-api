@@ -48,17 +48,32 @@ export class TransactionService {
 
       // Update User Wallet Balance
       // Seuls les revenus numériques (dépôts) et les dépenses via Wallet impactent le solde réel.
-      const incomeTypes = ['income', 'deposit', 'tontine_payout', 'challenge_reward'];
+      // IMPORTANT: cette méthode ne crée que des transactions saisies par l'utilisateur
+      // (formulaire manuel ou import CSV/JSON) — `type` ne doit donc jamais déclencher
+      // ce crédit/débit en dehors de 'income'/'expense', les seules valeurs que le
+      // validateur Joi autorise sur ce chemin. Des valeurs comme 'deposit'/'tontine_payout'/
+      // 'withdrawal' sont réservées aux écritures système créées par WalletService
+      // (paiements, tontines, retraits) — les accepter ici permettrait de fabriquer du
+      // solde réel sans jamais passer par Stripe/NotchPay ou un vrai débit du wallet.
       const isDigitalIncome =
-        incomeTypes.includes(data.type) &&
-        ['stripe', 'notchpay', 'wallet'].includes(data.paymentMethod);
+        data.type === 'income' && ['stripe', 'notchpay', 'wallet'].includes(data.paymentMethod);
       const isWalletExpense = data.type === 'expense' && data.paymentMethod === 'wallet';
 
       if (isDigitalIncome) {
         await User.findByIdAndUpdate(userId, { $inc: { walletBalance: data.amount } }, { session });
-      } else if (isWalletExpense || data.type === 'withdrawal') {
-        const incValue = -data.amount;
-        await User.findByIdAndUpdate(userId, { $inc: { walletBalance: incValue } }, { session });
+      } else if (isWalletExpense) {
+        // Atomic conditional decrement: the schema's `min: 0` on walletBalance is not
+        // enforced by $inc (no validators run), so without this floor check two
+        // concurrent debits could each pass a separate stale-read balance check and
+        // together drive the balance negative. A null result means insufficient funds.
+        const debited = await User.findOneAndUpdate(
+          { _id: userId, walletBalance: { $gte: data.amount } },
+          { $inc: { walletBalance: -data.amount } },
+          { session },
+        );
+        if (!debited) {
+          throw new AppError('Solde insuffisant dans le portefeuille', 400);
+        }
       }
 
       // Apply automated saving strategies (e.g., Roundup)
@@ -177,15 +192,18 @@ export class TransactionService {
     const skip = (page - 1) * limit;
 
     const query: any = { userId };
-    if (filters.type) query.type = filters.type;
-    if (filters.category) query.category = filters.category;
+    if (typeof filters.type === 'string') query.type = filters.type;
+    if (typeof filters.category === 'string') query.category = filters.category;
     if (filters.startDate || filters.endDate) {
       query.date = {};
       if (filters.startDate) query.date.$gte = new Date(filters.startDate);
       if (filters.endDate) query.date.$lte = new Date(filters.endDate);
     }
     if (filters.search) {
-      query.description = { $regex: filters.search, $options: 'i' };
+      // Escape regex metacharacters: an unescaped pathological pattern submitted as
+      // a search term can cause catastrophic backtracking on the MongoDB server.
+      const escaped = String(filters.search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      query.description = { $regex: escaped, $options: 'i' };
     }
 
     const [transactions, total] = await Promise.all([
@@ -265,11 +283,15 @@ export class TransactionService {
             { session },
           );
         } else if (isWalletExpense) {
-          await User.findByIdAndUpdate(
-            userId,
+          // Atomic conditional decrement — see the equivalent guard in createTransaction.
+          const debited = await User.findOneAndUpdate(
+            { _id: userId, walletBalance: { $gte: updatedTransaction.amount } },
             { $inc: { walletBalance: -updatedTransaction.amount } },
             { session },
           );
+          if (!debited) {
+            throw new AppError('Solde insuffisant dans le portefeuille', 400);
+          }
         }
       }
 

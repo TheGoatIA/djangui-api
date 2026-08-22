@@ -10,11 +10,13 @@ export const createBudgetSchema = Joi.object({
     .items(
       Joi.object({
         name: Joi.string().required(),
-        allocated: Joi.number().min(0).required(),
+        // Upper bound prevents an astronomically large client-supplied number from
+        // producing Infinity/NaN in downstream percentage/aggregation math.
+        allocated: Joi.number().min(0).max(1_000_000_000_000).required(),
       }),
     )
     .required(),
-  totalAllocated: Joi.number().min(0).required(),
+  totalAllocated: Joi.number().min(0).max(1_000_000_000_000).required(),
 });
 
 export const updateBudgetSchema = Joi.object({
@@ -22,10 +24,12 @@ export const updateBudgetSchema = Joi.object({
     .items(
       Joi.object({
         name: Joi.string().required(),
-        allocated: Joi.number().min(0).required(),
+        // Upper bound prevents an astronomically large client-supplied number from
+        // producing Infinity/NaN in downstream percentage/aggregation math.
+        allocated: Joi.number().min(0).max(1_000_000_000_000).required(),
       }),
     )
     .optional(),
-  totalAllocated: Joi.number().min(0).optional(),
+  totalAllocated: Joi.number().min(0).max(1_000_000_000_000).optional(),
   status: Joi.string().valid('active', 'completed', 'exceeded').optional(),
 });

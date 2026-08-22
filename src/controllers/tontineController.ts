@@ -110,11 +110,19 @@ export class TontineController {
         throw new AppError('Cette tontine est suspendue par un administrateur.', 403);
       }
 
+      // Le membre doit exister avant même l'analyse IA (évite de payer un appel IA
+      // pour un utilisateur qui n'appartient de toute façon pas à cette tontine).
+      const member = await TontineMember.findOne({ tontineId, userId: (req as any).user.id });
+      if (!member) throw new AppError("Vous n'êtes pas membre de cette tontine", 403);
+
       // 1. Analyse IA
       const analysis = await TontineAIService.analyzeReceipt(file.path, tontine.currency);
 
-      // 2. Vérification Anti-Fraude (Doublon)
-      const isDuplicate = await TontineAIService.isDuplicate(analysis.transactionRef);
+      // 2. Vérification Anti-Fraude (Doublon) — par référence détectée ET par empreinte
+      // du fichier, car un reçu illisible retombe sur une référence "UNKNOWN_<timestamp>"
+      // qui ne collisionne jamais et laisserait le même reçu réutilisable à l'infini.
+      const imageHash = TontineAIService.hashReceiptFile(file.path);
+      const isDuplicate = await TontineAIService.isDuplicate(analysis.transactionRef, imageHash);
       if (isDuplicate) {
         throw new AppError('Ce reçu a déjà été utilisé pour une autre cotisation.', 400);
       }
@@ -125,15 +133,15 @@ export class TontineController {
         (req as any).user.id,
       );
 
-      // 3b. Validation STRICTE pour le mode ia_only
-      if (tontine.validationMode === 'ia_only') {
-        if (analysis.amount < memberInfo.convertedAmount) {
-          throw new AppError(
-            `Montant insuffisant. Attendu: ${memberInfo.convertedAmount} ${memberInfo.currency}, Détecté: ${analysis.amount} ${analysis.currency}`,
-            400,
-          );
-        }
-        // Optionnel: Vérifier aussi la devise si nécessaire, mais convertAmount est déjà dans la devise locale du membre
+      // 3b. Le montant minimum est TOUJOURS vérifié, quel que soit le mode de
+      // validation : un versement de vraie monnaie déclenchera plus tard un vrai
+      // versement du gagnant du tour (voir rotateTurn), donc accepter un montant
+      // insuffisant serait exploitable même en mode "ia_plus_manual".
+      if (analysis.amount < memberInfo.convertedAmount) {
+        throw new AppError(
+          `Montant insuffisant. Attendu: ${memberInfo.convertedAmount} ${memberInfo.currency}, Détecté: ${analysis.amount} ${analysis.currency}`,
+          400,
+        );
       }
 
       // Validation temporelle de la date du reçu par l'IA
@@ -145,10 +153,6 @@ export class TontineController {
         );
       }
 
-      // Fetch the member ID
-      const member = await TontineMember.findOne({ tontineId, userId: (req as any).user.id });
-      if (!member) throw new AppError("Vous n'êtes pas membre de cette tontine", 403);
-
       // 4. Téléversement vers MinIO
       const bucket = 'kauri-uploads';
       const destinationKey = `tontines/${tontineId}/${file.filename}`;
@@ -159,7 +163,11 @@ export class TontineController {
         fs.unlinkSync(file.path);
       } catch (e) {}
 
-      // 5. Création de la contribution
+      // 5. Création de la contribution. En mode "ia_plus_manual", la cotisation
+      // reste en attente de validation par le créateur (voir validateContribution
+      // ci-dessous) — elle ne compte pas encore dans le pot collecté du tour
+      // (getTurnSummary ne compte que 'ai_validated'/'completed').
+      const requiresManualReview = tontine.validationMode === 'ia_plus_manual';
       const isLate = memberInfo.lateFee > 0;
       const contribution = await TontineContribution.create({
         tontineId,
@@ -168,6 +176,7 @@ export class TontineController {
         amountPaid: analysis.amount,
         currency: tontine.currency,
         proofImage: minioUrl,
+        proofImageHash: imageHash,
         transactionRef: analysis.transactionRef,
         aiAnalysis: {
           detectedAmount: analysis.amount,
@@ -177,31 +186,60 @@ export class TontineController {
           confidence: analysis.confidence,
         },
         lateFeesApplied: memberInfo.lateFee,
-        validationStatus: 'ai_validated',
+        validationStatus: requiresManualReview ? 'manual_pending' : 'ai_validated',
       });
 
       // 5. Mise à jour du Trust Score
       await TontineService.updateTrustScore(member._id.toString(), isLate);
 
-      // 6. Notification de succès au membre
-      await NotificationService.sendToUser((req as any).user.id, {
-        title: '',
-        body: '',
-        translationKey: 'TONTINE_CONTRIBUTION_VALIDATED',
-        translationData: { turn: tontine.currentTurn, tontineName: tontine.name },
-        data: { tontineId: tontineId, type: 'TONTINE_CONTRIBUTION_VALIDATED' },
-      });
+      // 6. Notification au membre
+      if (!requiresManualReview) {
+        await NotificationService.sendToUser((req as any).user.id, {
+          title: '',
+          body: '',
+          translationKey: 'TONTINE_CONTRIBUTION_VALIDATED',
+          translationData: { turn: tontine.currentTurn, tontineName: tontine.name },
+          data: { tontineId: tontineId, type: 'TONTINE_CONTRIBUTION_VALIDATED' },
+        });
+      }
 
       // Metrique business
       MonitoringService.recordTontineAction('contribution', isLate ? 'late' : 'success');
 
       res.status(201).json({
         status: 'success',
-        message: isLate
-          ? 'Cotisation reçue avec retard (Sanction appliquée)'
-          : 'Cotisation validée avec succès !',
+        message: requiresManualReview
+          ? 'Cotisation reçue, en attente de validation manuelle par le créateur de la tontine.'
+          : isLate
+            ? 'Cotisation reçue avec retard (Sanction appliquée)'
+            : 'Cotisation validée avec succès !',
         data: contribution,
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Valider ou rejeter manuellement une cotisation en attente (mode ia_plus_manual)
+   */
+  static async validateContribution(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id, contributionId } = req.params;
+      const { decision, reason } = req.body;
+      if (!['approve', 'reject'].includes(decision)) {
+        throw new AppError("Le champ 'decision' doit être 'approve' ou 'reject'", 400);
+      }
+
+      const contribution = await TontineService.validateContribution(
+        id,
+        contributionId,
+        (req as any).user.id,
+        decision,
+        reason,
+      );
+
+      res.json({ status: 'success', data: contribution });
     } catch (error) {
       next(error);
     }
@@ -212,6 +250,9 @@ export class TontineController {
    */
   static async getDetails(req: Request, res: Response, next: NextFunction) {
     try {
+      // Seul un membre accepté de la tontine (créateur inclus) peut consulter ses détails.
+      await TontineService.assertIsMember(req.params.id, (req as any).user.id);
+
       const tontine = await Tontine.findById(req.params.id).populate(
         'creatorId',
         'firstName lastName',
@@ -295,7 +336,7 @@ export class TontineController {
    */
   static async getMessages(req: Request, res: Response, next: NextFunction) {
     try {
-      const messages = await TontineService.getMessages(req.params.id);
+      const messages = await TontineService.getMessages(req.params.id, (req as any).user.id);
       res.json({ status: 'success', data: messages });
     } catch (error) {
       next(error);
@@ -308,7 +349,11 @@ export class TontineController {
   static async exportReport(req: Request, res: Response, next: NextFunction) {
     try {
       const turn = req.query.turn ? parseInt(req.query.turn as string) : undefined;
-      const csv = await TontineService.exportTontineReport(req.params.id, turn);
+      const csv = await TontineService.exportTontineReport(
+        req.params.id,
+        (req as any).user.id,
+        turn,
+      );
       res.header('Content-Type', 'text/csv');
       res.attachment(`tontine_report_${req.params.id}${turn ? '_turn_' + turn : ''}.csv`);
       res.send(csv);
@@ -322,7 +367,7 @@ export class TontineController {
    */
   static async getMembers(req: Request, res: Response, next: NextFunction) {
     try {
-      const members = await TontineService.getTontineMembers(req.params.id);
+      const members = await TontineService.getTontineMembers(req.params.id, (req as any).user.id);
       res.json({ status: 'success', data: members });
     } catch (error) {
       next(error);

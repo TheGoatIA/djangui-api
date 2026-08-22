@@ -205,6 +205,17 @@ const userSchema = new Schema<IUserDocument>(
       enum: ['active', 'suspended', 'blocked'],
       default: 'active',
     },
+    // TOTP 2FA — opt-in, currently only surfaced to admin/support accounts in
+    // the admin dashboard (see AuthService.login). `totpTempSecret` holds a
+    // freshly generated secret during setup, before the user has proven they
+    // scanned it; it's promoted to `totpSecret` only once a valid code is
+    // confirmed via /auth/2fa/enable.
+    security: {
+      totpSecret: { type: String, select: false },
+      totpTempSecret: { type: String, select: false },
+      totpEnabled: { type: Boolean, default: false },
+      backupCodeHashes: { type: [String], select: false, default: [] },
+    },
   },
   {
     timestamps: true,
@@ -214,6 +225,29 @@ const userSchema = new Schema<IUserDocument>(
         const userRet = ret as any;
         delete userRet.password;
         delete userRet.__v;
+        // `security.totpSecret`/`totpTempSecret`/`backupCodeHashes` are
+        // `select: false` at the schema level, but any query that explicitly
+        // `.select('+security.totpSecret')` (as the 2FA verification flow
+        // must, to check the submitted code) would otherwise serialize the
+        // permanent TOTP seed straight back into the API response — which
+        // hands out everything needed to forge valid codes forever. Strip
+        // these unconditionally here so no call site can leak them by
+        // omission, the same way `password` is handled above.
+        if (userRet.security) {
+          delete userRet.security.totpSecret;
+          delete userRet.security.totpTempSecret;
+          delete userRet.security.backupCodeHashes;
+        }
+        // Refresh tokens are hashed (not directly usable as a credential), but
+        // there's no reason GET /me or any other serialized User should ever
+        // return them to the client — strip unconditionally, same as password.
+        delete userRet.refreshToken;
+        if (Array.isArray(userRet.sessions)) {
+          userRet.sessions = userRet.sessions.map((s: any) => {
+            const { refreshToken, ...rest } = s;
+            return rest;
+          });
+        }
         return userRet;
       },
     },

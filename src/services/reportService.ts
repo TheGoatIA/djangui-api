@@ -13,7 +13,41 @@ import TontineMember from '../models/TontineMember';
 import TontineContribution from '../models/TontineContribution';
 import { AppError } from '../middleware/errorHandler';
 
+export type ReportPeriod = 'weekly' | 'monthly' | 'yearly';
+
 export class ReportService {
+  /**
+   * Resolves a `{ start, end }` date range for a given period granularity,
+   * anchored on "now". Used by getSpendingAnalysis/getSavingsTrend so the
+   * mobile app's weekly/monthly/yearly selector actually changes the data
+   * returned, instead of always showing the current calendar month.
+   */
+  static getDateRangeForPeriod(period: ReportPeriod = 'monthly'): {
+    start: Date;
+    end: Date;
+  } {
+    const now = new Date();
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+
+    switch (period) {
+      case 'weekly': {
+        const start = new Date(now);
+        start.setDate(start.getDate() - 6);
+        start.setHours(0, 0, 0, 0);
+        return { start, end };
+      }
+      case 'yearly': {
+        const start = new Date(now.getFullYear(), 0, 1);
+        return { start, end };
+      }
+      case 'monthly':
+      default: {
+        const start = new Date(now.getFullYear(), now.getMonth(), 1);
+        return { start, end };
+      }
+    }
+  }
+
   /**
    * Get dashboard summary for the current month
    */
@@ -70,17 +104,29 @@ export class ReportService {
   }
 
   /**
-   * Get spending analysis by category
+   * Get spending analysis by category.
+   *
+   * If `month`/`year` are both provided, analyzes exactly that calendar
+   * month (used by getNarrativeReport, which is inherently month-focused).
+   * Otherwise, `period` picks the rolling/calendar window: 'weekly' (last 7
+   * days), 'monthly' (current month, default) or 'yearly' (current year) —
+   * this is what backs the mobile app's period selector.
    */
-  static async getSpendingAnalysis(userId: string, month: number, year: number) {
-    const startOfMonth = new Date(year, month - 1, 1);
-    const endOfMonth = new Date(year, month, 0, 23, 59, 59);
+  static async getSpendingAnalysis(
+    userId: string,
+    options: { month?: number; year?: number; period?: ReportPeriod } = {},
+  ) {
+    const { month, year, period } = options;
+    const { start, end } =
+      month != null && year != null
+        ? { start: new Date(year, month - 1, 1), end: new Date(year, month, 0, 23, 59, 59) }
+        : this.getDateRangeForPeriod(period);
 
     const categoryAnalysis = await Transaction.aggregate([
       {
         $match: {
           userId: new mongoose.Types.ObjectId(userId),
-          date: { $gte: startOfMonth, $lte: endOfMonth },
+          date: { $gte: start, $lte: end },
           type: 'expense',
         },
       },
@@ -102,22 +148,47 @@ export class ReportService {
   }
 
   /**
-   * Get savings trend (last 6 months)
+   * Get savings trend, bucketed to match the requested granularity: one
+   * point per day for the last 7 days ('weekly'), one point per month for
+   * the last 6 months ('monthly', default — original behavior), or one
+   * point per year for the last 5 years ('yearly').
    */
-  static async getSavingsTrend(userId: string) {
-    const periods: { month: number; year: number }[] = [];
+  static async getSavingsTrend(userId: string, period: ReportPeriod = 'monthly') {
     const now = new Date();
+    const buckets: { start: Date; end: Date; label: string }[] = [];
 
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      periods.push({ month: d.getMonth() + 1, year: d.getFullYear() });
+    if (period === 'weekly') {
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - i);
+        const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0);
+        const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59);
+        buckets.push({ start, end, label: `${d.getDate()}/${d.getMonth() + 1}` });
+      }
+    } else if (period === 'yearly') {
+      for (let i = 4; i >= 0; i--) {
+        const y = now.getFullYear() - i;
+        buckets.push({
+          start: new Date(y, 0, 1),
+          end: new Date(y, 11, 31, 23, 59, 59),
+          label: `${y}`,
+        });
+      }
+    } else {
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const month = d.getMonth() + 1;
+        const year = d.getFullYear();
+        buckets.push({
+          start: new Date(year, month - 1, 1),
+          end: new Date(year, month, 0, 23, 59, 59),
+          label: `${month}/${year}`,
+        });
+      }
     }
 
     const trend = await Promise.all(
-      periods.map(async (p) => {
-        const start = new Date(p.year, p.month - 1, 1);
-        const end = new Date(p.year, p.month, 0, 23, 59, 59);
-
+      buckets.map(async ({ start, end, label }) => {
         const stats = await Transaction.aggregate([
           {
             $match: {
@@ -137,7 +208,7 @@ export class ReportService {
         const expense = stats.find((s) => s._id === 'expense')?.total || 0;
 
         return {
-          period: `${p.month}/${p.year}`,
+          period: label,
           income,
           expense,
           savings: Math.max(0, income - expense),
@@ -167,7 +238,7 @@ export class ReportService {
     const [summary, categoryAnalysis, investments, goals, challenges, tontineData] =
       await Promise.all([
         this.getDashboardSummary(userId),
-        this.getSpendingAnalysis(userId, month, year),
+        this.getSpendingAnalysis(userId, { month, year }),
         Investment.find({ userId, status: 'active' }),
         SavingGoal.find({ userId, status: 'active' }),
         UserChallenge.find({ userId, status: 'active' }).populate('challengeId'),

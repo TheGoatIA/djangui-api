@@ -27,6 +27,14 @@ export const loginSchema = Joi.object({
   password: Joi.string().required().messages({
     'any.required': 'Password is required',
   }),
+  // validate() strips any field not declared here (allowUnknown+stripUnknown) — without
+  // these, deviceId/deviceInfo/appVersion were always undefined by the time they reached
+  // AuthService.completeLogin, so every login pushed a brand-new session entry instead of
+  // updating the existing one for that device: sessions[] grew unbounded and the
+  // "revoke a device" feature had nothing meaningful to show.
+  deviceId: Joi.string().optional(),
+  deviceInfo: Joi.string().optional(),
+  appVersion: Joi.string().optional(),
 });
 
 export const refreshTokenSchema = Joi.object({

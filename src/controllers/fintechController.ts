@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { WalletService } from '../services/walletService';
 import { KYCService } from '../services/kycService';
 import { PayoutService } from '../services/payoutService';
@@ -6,6 +6,7 @@ import { InvoiceService } from '../services/invoiceService';
 import { ChallengeService } from '../services/challengeService';
 import Transaction from '../models/Transaction';
 import Invoice from '../models/Invoice';
+import Payment from '../models/Payment';
 import { catchAsync } from '../utils';
 import { AppError } from '../middleware/errorHandler';
 
@@ -93,12 +94,20 @@ export class FintechController {
   /**
    * Récupérer une facture PDF
    */
-  static readonly getInvoice = catchAsync(async (req: Request, res: Response) => {
+  static readonly getInvoice = catchAsync(async (req: any, res: Response) => {
     const { transactionId } = req.params;
-    let invoice = await Invoice.findOne({ transactionId });
+    let invoice = await Invoice.findOne({ transactionId, userId: req.user._id });
 
     // Si la facture n'existe pas OU si l'URL du PDF est absente, on tente une (re)génération
     if (!invoice?.pdfUrl) {
+      // Vérifie que la transaction appartient bien à l'utilisateur avant de générer.
+      const transaction = await Transaction.findOne({
+        _id: transactionId,
+        userId: req.user._id,
+      });
+      if (!transaction) {
+        throw new AppError('Transaction introuvable.', 404);
+      }
       invoice = await InvoiceService.generateForTransaction(transactionId);
     }
 
@@ -121,11 +130,16 @@ export class FintechController {
   /**
    * Récupérer une facture PDF liée à un paiement
    */
-  static readonly getPaymentInvoice = catchAsync(async (req: Request, res: Response) => {
+  static readonly getPaymentInvoice = catchAsync(async (req: any, res: Response) => {
     const { paymentId } = req.params;
-    let invoice = await Invoice.findOne({ paymentId });
+    let invoice = await Invoice.findOne({ paymentId, userId: req.user._id });
 
     if (!invoice?.pdfUrl) {
+      // Vérifie que le paiement appartient bien à l'utilisateur avant de générer.
+      const payment = await Payment.findOne({ _id: paymentId, userId: req.user._id });
+      if (!payment) {
+        throw new AppError('Paiement introuvable.', 404);
+      }
       invoice = await InvoiceService.generateForPayment(paymentId);
     }
 

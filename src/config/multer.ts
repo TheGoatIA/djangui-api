@@ -22,8 +22,10 @@ const storage = multer.diskStorage({
     }
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = `${Date.now()}-${uuidv4().split('-')[0]}`;
-    cb(null, `${uniqueSuffix}${path.extname(file.originalname)}`);
+    // Full UUID (not just its first 8 hex chars) so a stored filename can't be
+    // brute-forced from an approximate upload timestamp if it's ever reachable
+    // (see app.ts's /uploads static route).
+    cb(null, `${uuidv4()}${path.extname(file.originalname)}`);
   },
 });
 

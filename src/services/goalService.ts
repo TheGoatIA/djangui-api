@@ -1,14 +1,23 @@
 import SavingGoal from '../models/SavingGoal';
 import { NotificationService } from './notificationService';
 import { AppError } from '../middleware/errorHandler';
-import mongoose from 'mongoose';
 import logger from '../utils/logger';
 import { MonitoringService } from './monitoringService';
 import { WalletService } from './walletService';
 
 export class GoalService {
   static async createGoal(userId: string, data: any) {
-    const goal = await SavingGoal.create({ ...data, userId });
+    // A goal's balance must only ever grow through addContribution (which actually
+    // debits the wallet) — never accept a starting balance/progress from the caller,
+    // even defensively here on top of the validator, since a fabricated currentAmount
+    // can later be redeemed or refunded for real wallet credit with nothing deposited.
+    const { currentAmount, progress, contributions, status, ...safeData } = data;
+    const goal = await SavingGoal.create({
+      ...safeData,
+      userId,
+      currentAmount: 0,
+      contributions: [],
+    });
 
     // Metrique business
     MonitoringService.recordGoalEvent('create', data.type || 'regular');
@@ -34,38 +43,53 @@ export class GoalService {
   }
 
   static async addContribution(id: string, userId: string, amount: number, note?: string) {
-    const goal = await SavingGoal.findOne({ _id: id, userId });
-    if (!goal) {
-      throw new AppError('Goal not found', 404);
-    }
+    const result = await WalletService.runInTransaction(async (session) => {
+      const goal = await SavingGoal.findOne({ _id: id, userId }).session(session);
+      if (!goal) {
+        throw new AppError('Goal not found', 404);
+      }
 
-    const wasAlreadyHalfway = (goal.currentAmount / goal.targetAmount) * 100 >= 50;
-    const wasAlreadyCompleted = (goal.currentAmount / goal.targetAmount) * 100 >= 100;
+      const wasAlreadyHalfway = (goal.currentAmount / goal.targetAmount) * 100 >= 50;
+      const wasAlreadyCompleted = (goal.currentAmount / goal.targetAmount) * 100 >= 100;
 
-    // 1. Débiter le wallet et créer la transaction via WalletService (Atomique)
-    await WalletService.executeTransaction({
-      userId,
-      amount,
-      type: 'saving_transfer',
-      description: `Contribution objectif : ${goal.name}`,
-      paymentMethod: 'wallet',
-      metadata: { goalId: id, note },
+      // 1. Débiter le wallet et créer la transaction via WalletService, dans
+      // la même transaction que la mise à jour de l'objectif ci-dessous.
+      const transaction = await WalletService.executeTransaction(
+        {
+          userId,
+          amount,
+          type: 'saving_transfer',
+          description: `Contribution objectif : ${goal.name}`,
+          paymentMethod: 'wallet',
+          metadata: { goalId: id, note },
+        },
+        { session },
+      );
+
+      // 2. Mettre à jour l'objectif
+      goal.contributions.push({ amount, date: new Date(), note });
+      goal.currentAmount += amount;
+      await goal.save({ session });
+
+      return { goal, transaction, wasAlreadyHalfway, wasAlreadyCompleted };
     });
 
-    // 2. Mettre à jour l'objectif
-    goal.contributions.push({ amount, date: new Date(), note });
-    goal.currentAmount += amount;
-    await goal.save();
-
-    // Check for milestones
-    this.checkMilestones(userId, goal, wasAlreadyHalfway, wasAlreadyCompleted).catch((err) =>
-      logger.error(`Milestone check error: ${err}`),
+    (result.transaction as any)?._postCommit?.().catch((err: any) =>
+      logger.error(`Post-commit hook error: ${err.message}`),
     );
 
-    MonitoringService.recordGoalEvent('contribute', goal.type || 'unknown', 'success');
+    // Check for milestones
+    this.checkMilestones(
+      userId,
+      result.goal,
+      result.wasAlreadyHalfway,
+      result.wasAlreadyCompleted,
+    ).catch((err) => logger.error(`Milestone check error: ${err}`));
+
+    MonitoringService.recordGoalEvent('contribute', result.goal.type || 'unknown', 'success');
     MonitoringService.recordGoalAmount('contribute', 'XAF', amount);
 
-    return goal;
+    return result.goal;
   }
 
   /**
@@ -112,32 +136,45 @@ export class GoalService {
   }
 
   static async deleteGoal(id: string, userId: string) {
-    const goal = await SavingGoal.findOne({ _id: id, userId });
-    if (!goal) {
-      throw new AppError('Goal not found', 404);
-    }
-
-    // Si l'objectif contient de l'argent, on rembourse avant de supprimer
-    if (goal.currentAmount > 0) {
-      let fees = 0;
-      // Pénalité de 0.5% si retrait avant la deadline (si elle existe)
-      if (goal.deadline && new Date() < new Date(goal.deadline) && goal.status !== 'completed') {
-        fees = goal.currentAmount * 0.005;
+    const result = await WalletService.runInTransaction(async (session) => {
+      const goal = await SavingGoal.findOne({ _id: id, userId }).session(session);
+      if (!goal) {
+        throw new AppError('Goal not found', 404);
       }
 
-      await WalletService.executeTransaction({
-        userId,
-        amount: goal.currentAmount,
-        fees,
-        type: 'deposit',
-        description: `Remboursement (Suppression Objectif) : ${goal.name}`,
-        paymentMethod: 'wallet',
-        metadata: { goalId: id, action: 'delete_refund', penaltyApplied: fees > 0 },
-      });
-    }
+      // Si l'objectif contient de l'argent, on rembourse avant de supprimer,
+      // dans la même transaction que la suppression du document.
+      let transaction: any = null;
+      if (goal.currentAmount > 0) {
+        let fees = 0;
+        // Pénalité de 0.5% si retrait avant la deadline (si elle existe)
+        if (goal.deadline && new Date() < new Date(goal.deadline) && goal.status !== 'completed') {
+          fees = goal.currentAmount * 0.005;
+        }
 
-    await SavingGoal.findByIdAndDelete(id);
-    MonitoringService.recordGoalEvent('delete', goal.type || 'unknown');
+        transaction = await WalletService.executeTransaction(
+          {
+            userId,
+            amount: goal.currentAmount,
+            fees,
+            type: 'deposit',
+            description: `Remboursement (Suppression Objectif) : ${goal.name}`,
+            paymentMethod: 'wallet',
+            metadata: { goalId: id, action: 'delete_refund', penaltyApplied: fees > 0 },
+          },
+          { session },
+        );
+      }
+
+      await SavingGoal.findByIdAndDelete(id, { session });
+      return { goal, transaction };
+    });
+
+    result.transaction?._postCommit?.().catch((err: any) =>
+      logger.error(`Post-commit hook error: ${err.message}`),
+    );
+
+    MonitoringService.recordGoalEvent('delete', result.goal.type || 'unknown');
     return true;
   }
 
@@ -145,43 +182,55 @@ export class GoalService {
    * Récupérer les fonds d'un objectif vers le portefeuille
    */
   static async redeemGoal(id: string, userId: string, amount?: number) {
-    const goal = await SavingGoal.findOne({ _id: id, userId });
-    if (!goal) {
-      throw new AppError('Objectif non trouvé', 404);
-    }
+    const result = await WalletService.runInTransaction(async (session) => {
+      const goal = await SavingGoal.findOne({ _id: id, userId }).session(session);
+      if (!goal) {
+        throw new AppError('Objectif non trouvé', 404);
+      }
 
-    const redeemAmount = amount || goal.currentAmount;
-    if (redeemAmount <= 0) {
-      throw new AppError('Le montant à récupérer doit être supérieur à zéro', 400);
-    }
+      const redeemAmount = amount || goal.currentAmount;
+      if (redeemAmount <= 0) {
+        throw new AppError('Le montant à récupérer doit être supérieur à zéro', 400);
+      }
 
-    if (redeemAmount > goal.currentAmount) {
-      throw new AppError("Montant supérieur au solde actuel de l'objectif", 400);
-    }
+      if (redeemAmount > goal.currentAmount) {
+        throw new AppError("Montant supérieur au solde actuel de l'objectif", 400);
+      }
 
-    // Check for early withdrawal penalty (0.5%)
-    let fees = 0;
-    if (goal.deadline && new Date() < new Date(goal.deadline)) {
-      fees = redeemAmount * 0.005; // 0.5% penalty
-    }
+      // Check for early withdrawal penalty (0.5%)
+      let fees = 0;
+      if (goal.deadline && new Date() < new Date(goal.deadline)) {
+        fees = redeemAmount * 0.005; // 0.5% penalty
+      }
 
-    // 1. Créditer le wallet via WalletService
-    await WalletService.executeTransaction({
-      userId,
-      amount: redeemAmount,
-      fees, // Pénalité appliquée si retrait anticipé
-      type: 'deposit',
-      description: `Rachat de fonds : ${goal.name}`,
-      paymentMethod: 'wallet',
-      metadata: { goalId: id, action: 'redeem', earlyWithdrawal: fees > 0 },
+      // 1. Créditer le wallet et 2. mettre à jour l'objectif dans la même
+      // transaction : sans cela, un crash entre les deux permettrait de
+      // relancer le rachat et d'être crédité deux fois pour le même solde.
+      const transaction = await WalletService.executeTransaction(
+        {
+          userId,
+          amount: redeemAmount,
+          fees, // Pénalité appliquée si retrait anticipé
+          type: 'deposit',
+          description: `Rachat de fonds : ${goal.name}`,
+          paymentMethod: 'wallet',
+          metadata: { goalId: id, action: 'redeem', earlyWithdrawal: fees > 0 },
+        },
+        { session },
+      );
+
+      goal.currentAmount -= redeemAmount;
+      await goal.save({ session });
+
+      return { goal, transaction };
     });
 
-    // 2. Mettre à jour l'objectif
-    goal.currentAmount -= redeemAmount;
-    await goal.save();
+    (result.transaction as any)?._postCommit?.().catch((err: any) =>
+      logger.error(`Post-commit hook error: ${err.message}`),
+    );
 
-    MonitoringService.recordGoalEvent('redeem', goal.type || 'unknown', 'success');
+    MonitoringService.recordGoalEvent('redeem', result.goal.type || 'unknown', 'success');
 
-    return goal;
+    return result.goal;
   }
 }

@@ -5,7 +5,7 @@ export const createGoalSchema = Joi.object({
   description: Joi.string().optional().allow('', null),
   emoji: Joi.string().optional().allow('', null),
   type: Joi.string().valid('emergency', 'project', 'regular', 'challenge', 'debt').optional(),
-  targetAmount: Joi.number().min(0).required(),
+  targetAmount: Joi.number().min(0).max(1_000_000_000_000).required(),
   deadline: Joi.date().optional().allow(null),
   priority: Joi.string().valid('high', 'medium', 'low').optional(),
   strategy: Joi.object({
@@ -35,12 +35,11 @@ export const createGoalSchema = Joi.object({
   isShared: Joi.boolean().optional(),
   participants: Joi.array().optional(),
   image: Joi.any().optional().allow(null),
-  currentAmount: Joi.number().optional(), // Often sent as 0 by default
-  progress: Joi.number().optional(), // Computed
-  status: Joi.string().optional(),
-  createdAt: Joi.date().optional(),
-  updatedAt: Joi.any().optional().allow(null),
-  contributions: Joi.array().optional(),
+  // currentAmount/progress/status/contributions/createdAt/updatedAt are deliberately NOT
+  // accepted here: a goal's real-money balance must only ever move through
+  // GoalService.addContribution (which actually debits the wallet), never be set directly
+  // by the client at creation — accepting currentAmount let a user fabricate a balance and
+  // redeem/delete it for real wallet credit with nothing ever deposited.
 });
 
 export const updateGoalSchema = Joi.object({
@@ -48,7 +47,7 @@ export const updateGoalSchema = Joi.object({
   description: Joi.string().optional().allow('', null),
   emoji: Joi.string().optional().allow('', null),
   type: Joi.string().valid('emergency', 'project', 'regular', 'challenge', 'debt').optional(),
-  targetAmount: Joi.number().min(0).optional(),
+  targetAmount: Joi.number().min(0).max(1_000_000_000_000).optional(),
   deadline: Joi.date().optional().allow(null),
   priority: Joi.string().valid('high', 'medium', 'low').optional(),
   status: Joi.string().valid('active', 'completed', 'cancelled', 'paused').optional(),

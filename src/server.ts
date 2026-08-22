@@ -118,7 +118,7 @@ process.on('unhandledRejection', (reason, promise) => {
   process.exit(1);
 });
 
-import { initTracing } from './config/tracing';
+import { initTracing, shutdownTracing } from './config/tracing';
 // Initialize OpenTelemetry Tracing
 initTracing();
 
@@ -192,8 +192,10 @@ const startServer = async () => {
       logger.info(`${signal} received. Starting graceful shutdown...`);
       server.close(() => {
         logger.info('HTTP server closed. Cleaning up resources...');
-        // Close DB, Redis, etc.
-        Promise.all([mongoose.connection.close(), redis.quit()])
+        // Close DB, Redis, tracing, etc. — all part of this single shutdown
+        // sequence (tracing no longer runs its own competing SIGTERM handler,
+        // see config/tracing.ts).
+        Promise.all([mongoose.connection.close(), redis.quit(), shutdownTracing()])
           .then(() => {
             logger.info('Clean shutdown complete. Exiting.');
             process.exit(0);

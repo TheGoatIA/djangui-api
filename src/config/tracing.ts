@@ -30,16 +30,28 @@ export const initTracing = async () => {
   try {
     sdk.start();
     logger.info('OpenTelemetry Tracing initialized');
-
-    // Graceful shutdown
-    process.on('SIGTERM', () => {
-      sdk
-        .shutdown()
-        .then(() => logger.info('Tracing terminated'))
-        .catch((error) => logger.error('Error terminating tracing', error))
-        .finally(() => process.exit(0));
-    });
+    // Shutdown is intentionally NOT wired to its own SIGTERM listener here — see
+    // shutdownTracing() below. server.ts owns the single graceful-shutdown
+    // sequence (close HTTP server, drain connections, then close Mongo/Redis/
+    // tracing, with a 20s force-exit fallback); a second, independent SIGTERM
+    // handler calling process.exit() on its own would race that sequence and
+    // could terminate the process mid-drain, since OTEL shutdown is typically
+    // much faster than draining in-flight requests.
   } catch (error) {
     logger.error('Error initializing tracing', error);
+  }
+};
+
+/**
+ * Called from server.ts's own shutdown sequence — never registers its own
+ * SIGTERM listener or calls process.exit() (see the note in initTracing above).
+ */
+export const shutdownTracing = async (): Promise<void> => {
+  if (process.env.ENABLE_TRACING === 'false') return;
+  try {
+    await sdk.shutdown();
+    logger.info('Tracing terminated');
+  } catch (error) {
+    logger.error('Error terminating tracing', error);
   }
 };

@@ -202,8 +202,21 @@ export class SubscriptionService {
     let count = 0;
     for (const user of expiredUsers) {
       try {
-        user.subscription.status = 'expired';
-        await (user as any).save({ validateBeforeSave: false });
+        // Atomic conditional update (not read-then-save): if a payment webhook
+        // renews this same user between the find() above and now, its update to
+        // 'active' has already landed — the condition below then matches zero
+        // documents and this cron correctly skips them instead of overwriting a
+        // renewal with a stale in-memory 'expired' status.
+        const updated = await User.updateOne(
+          {
+            _id: user._id,
+            'subscription.plan': 'premium',
+            'subscription.status': 'active',
+            'subscription.endDate': { $lte: now },
+          },
+          { $set: { 'subscription.status': 'expired' } },
+        );
+        if (updated.modifiedCount === 0) continue;
 
         // Notifier l'utilisateur
         await NotificationService.sendToUser(user._id.toString(), {

@@ -4,6 +4,7 @@ import { CountryController } from '../controllers/countryController';
 import { CountryRequestController } from '../controllers/countryRequestController';
 import { FeatureFlagController } from '../controllers/featureFlagController';
 import * as SupportController from '../controllers/supportController';
+import { InvestmentController } from '../controllers/investmentController';
 import { protect, restrictTo } from '../middleware/auth';
 
 const router = express.Router();
@@ -50,7 +51,18 @@ router.get('/wallet/ledger/:userId', restrictTo('admin', 'support'), AdminContro
 // Payouts - lecture support, actions admin seul
 router.get('/payouts', restrictTo('admin', 'support'), AdminController.getPayouts);
 router.get('/payouts/:id', restrictTo('admin', 'support'), AdminController.getPayoutDetails);
+// Contrôle à deux mains : retryPayout ouvre une demande, approvePayoutRetry
+// (par un AUTRE admin) déclenche la vraie relance, rejectPayoutRetry la clôt.
 router.post('/payouts/:id/retry', restrictTo('admin'), AdminController.retryPayout);
+router.post('/payouts/:id/approve-retry', restrictTo('admin'), AdminController.approvePayoutRetry);
+router.post('/payouts/:id/reject-retry', restrictTo('admin'), AdminController.rejectPayoutRetry);
+
+// Compteurs pour le centre de notifications (admin + support)
+router.get(
+  '/notifications/summary',
+  restrictTo('admin', 'support'),
+  AdminController.getNotificationsSummary,
+);
 
 // Actions destructives ou sensibles : admin seul
 router.patch('/users/:id', restrictTo('admin'), AdminController.updateUser);
@@ -76,5 +88,11 @@ router.post('/db/restore/:filename', restrictTo('admin'), AdminController.restor
 router.post('/logs', restrictTo('admin'), AdminController.createLog);
 router.patch('/support/tickets/:id/status', restrictTo('admin', 'support'), SupportController.updateTicketStatus);
 router.post('/support/tickets/:id/reply', restrictTo('admin', 'support'), SupportController.replyTicketAdmin);
+
+// Mise à jour manuelle de la valeur d'un investissement (pas de flux de cours en direct
+// pour l'instant). Admin seul : cette valeur est ensuite créditée telle quelle au
+// portefeuille lors de la clôture, donc jamais accessible au propriétaire de
+// l'investissement (voir InvestmentService.updateValue).
+router.patch('/investments/:id/value', restrictTo('admin'), InvestmentController.updateValue);
 
 export default router;

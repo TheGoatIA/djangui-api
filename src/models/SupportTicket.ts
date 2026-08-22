@@ -56,6 +56,12 @@ const supportTicketSchema = new Schema<ISupportTicket>(
   },
 );
 
+// No index existed beyond the default _id, despite SupportController querying by
+// {userId[, status]} and AdminController counting/listing by {status}, both sorted
+// by createdAt.
+supportTicketSchema.index({ userId: 1, createdAt: -1 });
+supportTicketSchema.index({ status: 1, createdAt: -1 });
+
 const SupportTicket = mongoose.model<ISupportTicket>('SupportTicket', supportTicketSchema);
 
 export default SupportTicket;

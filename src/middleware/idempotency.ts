@@ -35,6 +35,18 @@ export async function idempotency(req: AuthRequest, res: Response, next: NextFun
     if (claimed === null) {
       return next(new AppError('Duplicate request: this operation was already submitted', 409));
     }
+
+    // If the request ultimately fails, nothing was actually processed — release
+    // the key so a legitimate retry with the same Idempotency-Key isn't blocked
+    // for the full TTL (e.g. a transient KYC-lookup failure on a withdrawal).
+    res.on('finish', () => {
+      if (res.statusCode >= 400) {
+        redis
+          .del(redisKey)
+          .catch((err: any) => logger.error(`Idempotency key release error: ${err.message}`));
+      }
+    });
+
     next();
   } catch (error: any) {
     // If Redis is unavailable, fail open rather than blocking all money

@@ -40,7 +40,11 @@ export class WebhookController {
   static async notchpayWebhook(req: Request, res: Response, next: NextFunction) {
     const signature = req.headers['x-notchpay-signature'] as string;
 
-    if (!verifyNotchPaySignature(req.body, signature, notchpayConfig.webhookSecret || '')) {
+    // Verify against the exact raw bytes NotchPay signed (captured by app.ts's
+    // express.json `verify` hook), not a re-serialization of the parsed body —
+    // see cryptoUtils.verifyNotchPaySignature for why that matters.
+    const rawBody = (req as any).rawBody || req.body;
+    if (!verifyNotchPaySignature(rawBody, signature, notchpayConfig.webhookSecret || '')) {
       logger.warn('Invalid NotchPay webhook signature received');
       return res.status(401).json({ message: 'Invalid signature' });
     }
@@ -61,7 +65,10 @@ export class WebhookController {
       // Ici on peut envoyer une notification de succès finale.
       logger.info(`Transfer ${data.data.reference} completed successfully`);
     } else if (data.event === 'transfer.failed') {
-      const reference = data.data.reference;
+      // The transfer payload now sends our internal reference at the top level
+      // (see PayoutService.initiatePayout), but fall back to metadata.reference
+      // in case NotchPay ever echoes it there instead for this event type.
+      const reference = data.data.reference || data.data.metadata?.reference;
       logger.error(`Transfer ${reference} failed: ${data.data.reason}`);
 
       try {
@@ -83,10 +90,15 @@ export class WebhookController {
           // Either not found or already failed — idempotent, no action needed
           logger.warn(`Transfer ${reference}: skipping refund (already processed or not found)`);
         } else {
-          // Atomically claimed the transition — safe to issue refund exactly once
+          // Atomically claimed the transition — safe to issue refund exactly once.
+          // Refund amount + fees: the wallet was debited for the full amount
+          // (withdrawal amount + Kauri fee), but `originalTx.amount` only stores
+          // the net withdrawal amount (fees are tracked separately in
+          // `originalTx.fees`) — refunding just `.amount` would silently let
+          // Kauri keep the fee on a transfer that never actually happened.
           await WalletService.executeTransaction({
             userId: originalTx.userId.toString(),
-            amount: originalTx.amount,
+            amount: originalTx.amount + (originalTx.fees || 0),
             type: 'deposit',
             description: `Remboursement transfert échoué (${data.data.reason || 'Erreur opérateur'})`,
             paymentMethod: 'wallet',

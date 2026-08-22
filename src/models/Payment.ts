@@ -44,11 +44,35 @@ const paymentSchema = new Schema<IPaymentDocument>(
     externalReference: String,
     metadata: Schema.Types.Mixed,
     completedAt: Date,
+    // Contrôle à deux mains sur les relances de retrait MoMo : un admin
+    // demande la relance, un AUTRE admin doit l'approuver avant que le statut
+    // ne repasse à 'pending' (et ne déclenche réellement une nouvelle
+    // tentative de transfert). Empêche un compte admin unique, compromis ou
+    // malveillant, de relancer des transferts d'argent seul.
+    retryApproval: {
+      status: {
+        type: String,
+        enum: ['none', 'pending_approval', 'approved', 'rejected'],
+        default: 'none',
+      },
+      requestedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+      requestedAt: Date,
+      approvedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+      approvedAt: Date,
+      reason: String,
+    },
   },
   {
     timestamps: true,
   },
 );
+
+// Match the actual query patterns used elsewhere: PaymentService.getUserPayments
+// (userId[, type], sorted by createdAt) and AdminController.getPayouts (type:
+// 'withdrawal'[, status], sorted by createdAt) were previously unindexed for these
+// shapes and would fall back to a collection scan + in-memory sort at scale.
+paymentSchema.index({ userId: 1, createdAt: -1 });
+paymentSchema.index({ type: 1, status: 1, createdAt: -1 });
 
 const Payment = mongoose.model<IPaymentDocument>('Payment', paymentSchema);
 

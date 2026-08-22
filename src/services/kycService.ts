@@ -6,7 +6,7 @@ import { NotificationService } from './notificationService';
 import { SlackService } from './slackService';
 import { GeminiService } from './ai/geminiService';
 import { PromptBuilder } from './ai/promptBuilder';
-import axios from 'axios';
+import { StorageService } from './storageService';
 
 export class KYCService {
   /**
@@ -76,20 +76,12 @@ export class KYCService {
     if (!user || user.kycLevel !== 'pending' || !user.kycData) return;
 
     try {
-      // Télécharger les images pour les envoyer à Gemini
-      // On convertit les URLs publiques en URLs internes si nécessaire
-      const docUrl = this.getInternalUrl(user.kycData.documentImageUrl!);
-      const selfieUrl = this.getInternalUrl(user.kycData.selfieImageUrl!);
-
-      logger.debug(`Fetching images internally: DOC=${docUrl}, SELFIE=${selfieUrl}`);
-
+      // Les documents KYC sont stockés en privé (voir StorageService/uploadController) :
+      // on les récupère via le SDK S3 authentifié, pas par un simple GET HTTP anonyme
+      // qui serait rejeté (403) sur un objet privé.
       const [docBuffer, selfieBuffer] = await Promise.all([
-        axios
-          .get(docUrl, { responseType: 'arraybuffer', timeout: 10000 })
-          .then((res: any) => Buffer.from(res.data)),
-        axios
-          .get(selfieUrl, { responseType: 'arraybuffer', timeout: 10000 })
-          .then((res: any) => Buffer.from(res.data)),
+        this.downloadKycImage(user.kycData.documentImageUrl!),
+        this.downloadKycImage(user.kycData.selfieImageUrl!),
       ]);
 
       const prompt = PromptBuilder.buildKycAnalysisPrompt(user.kycData);
@@ -145,16 +137,38 @@ export class KYCService {
   }
 
   /**
-   * Convertit une URL publique MinIO en URL interne accessible par le conteneur API
+   * Télécharge le contenu d'une image KYC stockée (privée) via le SDK S3 authentifié
+   * — un simple GET HTTP anonyme serait rejeté (403) sur un objet privé.
    */
-  private static getInternalUrl(publicUrl: string): string {
-    const publicBase = process.env.MINIO_PUBLIC_URL || 'http://localhost:15010';
-    const internalBase = process.env.MINIO_ENDPOINT || 'http://minio:9000';
+  private static async downloadKycImage(storedUrl: string): Promise<Buffer> {
+    const parsed = StorageService.parseStoredUrl(storedUrl);
+    if (!parsed) throw new AppError('Référence de document KYC invalide.', 500);
+    return StorageService.downloadBuffer(parsed.bucket, parsed.key);
+  }
 
-    if (publicUrl.startsWith(publicBase)) {
-      return publicUrl.replace(publicBase, internalBase);
-    }
-    return publicUrl;
+  /**
+   * Génère des URLs signées à courte durée de vie pour afficher les documents KYC
+   * d'un utilisateur (revue admin, ou l'utilisateur consultant son propre dossier).
+   * Ne JAMAIS renvoyer `kycData.documentImageUrl`/`selfieImageUrl` bruts : ce sont
+   * des objets privés, l'URL stockée n'est plus fetchable telle quelle.
+   */
+  static async getSignedDocumentUrls(userId: string, expiresInSeconds = 300) {
+    const user = await User.findById(userId).select('kycData');
+    if (!user?.kycData) return { documentUrl: null, selfieUrl: null };
+
+    const sign = async (storedUrl?: string) => {
+      if (!storedUrl) return null;
+      const parsed = StorageService.parseStoredUrl(storedUrl);
+      if (!parsed) return null;
+      return StorageService.getSignedUrl(parsed.bucket, parsed.key, expiresInSeconds);
+    };
+
+    const [documentUrl, selfieUrl] = await Promise.all([
+      sign(user.kycData.documentImageUrl),
+      sign(user.kycData.selfieImageUrl),
+    ]);
+
+    return { documentUrl, selfieUrl };
   }
 
   /**

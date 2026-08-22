@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcrypt';
 import User, { IUserDocument } from '../models/User';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
@@ -11,12 +12,28 @@ import { AuditService } from './auditService';
 import Country from '../models/Country';
 import redis from '../config/redis';
 import { hashToken } from '../utils/cryptoUtils';
+import { generateBase32Secret, generateOtpauthUrl, verifyTotp, generateBackupCodes } from '../utils/totp';
 
 const signToken = (id: string, secret: string, expiresIn: any) => {
   return jwt.sign({ id }, secret, {
     expiresIn,
   });
 };
+
+// The 2FA challenge token is deliberately signed with a DIFFERENT key than
+// real access tokens (derived from, but distinct from, JWT_ACCESS_SECRET) —
+// it proves only "this user got the password right", not "this user is
+// logged in". If it reused JWT_ACCESS_SECRET with the same {id} shape, the
+// `protect` middleware (which just checks {id} against that secret) would
+// accept it as a full session before TOTP was ever verified.
+const getTotpChallengeSecret = () =>
+  crypto
+    .createHash('sha256')
+    .update(`${process.env.JWT_ACCESS_SECRET}:totp-challenge`)
+    .digest('hex');
+
+const signTotpChallengeToken = (id: string) =>
+  jwt.sign({ id, purpose: '2fa_challenge' }, getTotpChallengeSecret(), { expiresIn: '2m' });
 
 export const createSendToken = (user: IUserDocument) => {
   const accessToken = signToken(
@@ -35,6 +52,9 @@ export const createSendToken = (user: IUserDocument) => {
 };
 
 export class AuthService {
+  private static readonly LOGIN_LOCKOUT_THRESHOLD = 10;
+  private static readonly LOGIN_LOCKOUT_WINDOW_SECONDS = 15 * 60;
+
   static async register(userData: any) {
     const existingUser = await User.findOne({ email: userData.email });
     if (existingUser) {
@@ -181,7 +201,7 @@ export class AuthService {
           user.isEmailVerified = true;
         }
         await (user as any).save({ validateBeforeSave: false });
-        logger.info(`User logged in via Firebase Auth: ${user.email || user.phone}`);
+        logger.info(`User logged in via Firebase Auth: ${user._id}`);
       }
 
       // 4) Generate backend tokens
@@ -257,21 +277,192 @@ export class AuthService {
       throw new AppError('Please provide email and password', 400);
     }
 
+    // Per-account lockout, independent of source IP: authLimiter on the route
+    // only throttles per-IP, so a distributed attacker spreading attempts across
+    // many IPs could still brute-force one specific account's password. Fails
+    // open on a Redis error (consistent with idempotency.ts) rather than
+    // blocking every login on an infrastructure outage.
+    const lockKey = `login_attempts:${email.toLowerCase()}`;
+    try {
+      const attempts = await redis.get(lockKey);
+      if (attempts && parseInt(attempts, 10) >= AuthService.LOGIN_LOCKOUT_THRESHOLD) {
+        throw new AppError(
+          'Trop de tentatives échouées sur ce compte. Réessayez dans quelques minutes.',
+          429,
+        );
+      }
+    } catch (err: any) {
+      if (err instanceof AppError) throw err;
+      logger.error(`Login lockout check Redis error: ${err.message}`);
+    }
+
     // 2) Check if user exists && password is correct
-    const user = await User.findOne({ email }).select('+password');
+    const user = await User.findOne({ email }).select('+password +security.totpEnabled');
     if (!user || !(await user.comparePassword(password))) {
       if (user) {
+        // Alert by user ID, not email/PII — this alert may flow into Slack, which
+        // isn't scoped as a store for user PII.
         SlackService.sendNotification(
-          `🔐 *Security Alert: Failed Login*\n*User*: ${email}\n*Reason*: Incorrect password\n*Time*: ${new Date().toISOString()}`,
+          `🔐 *Security Alert: Failed Login*\n*User ID*: ${user._id}\n*Reason*: Incorrect password\n*Time*: ${new Date().toISOString()}`,
         );
       }
       MonitoringService.recordAuthFailure(
         user ? 'wrong_password' : 'user_not_found',
         user?.country,
       );
+      (async () => {
+        try {
+          await redis
+            .multi()
+            .incr(lockKey)
+            .expire(lockKey, AuthService.LOGIN_LOCKOUT_WINDOW_SECONDS)
+            .exec();
+        } catch (err: any) {
+          logger.error(`Login lockout increment Redis error: ${err.message}`);
+        }
+      })();
       throw new AppError('Incorrect email or password', 401);
     }
 
+    // Successful login clears the counter for this account.
+    redis.del(lockKey).catch((err: any) => logger.error(`Login lockout clear Redis error: ${err.message}`));
+
+    // 2FA is opt-in and currently only ever surfaced to admin/support
+    // accounts (via the admin dashboard's Settings page) — never forced on
+    // regular consumer-app users, who share this same login endpoint.
+    if ((user.role === 'admin' || user.role === 'support') && user.security?.totpEnabled) {
+      return { requiresTotp: true, challengeToken: signTotpChallengeToken(user._id.toString()) };
+    }
+
+    return AuthService.completeLogin(user, sessionData);
+  }
+
+  /** Verifies a TOTP/backup code against a login challenge and finishes the login. */
+  static async verifyTotpAndLogin(challengeToken: string, code: string, sessionData?: any) {
+    if (!challengeToken || typeof code !== 'string' || !code) {
+      throw new AppError('Code de vérification requis', 400);
+    }
+
+    let decoded: { id: string; purpose: string };
+    try {
+      decoded = jwt.verify(challengeToken, getTotpChallengeSecret(), {
+        algorithms: ['HS256'],
+      }) as { id: string; purpose: string };
+    } catch {
+      throw new AppError('Session de vérification expirée, veuillez vous reconnecter', 401);
+    }
+    if (decoded.purpose !== '2fa_challenge') {
+      throw new AppError('Jeton de vérification invalide', 401);
+    }
+
+    const user = await User.findById(decoded.id).select(
+      '+security.totpSecret +security.totpEnabled +security.backupCodeHashes',
+    );
+    if (!user || !user.security?.totpEnabled || !user.security.totpSecret) {
+      throw new AppError("La double authentification n'est plus disponible pour ce compte", 400);
+    }
+
+    let usedBackupCode = false;
+    if (!verifyTotp(user.security.totpSecret, code)) {
+      const hashes = user.security.backupCodeHashes || [];
+      let matchedIndex = -1;
+      for (let i = 0; i < hashes.length; i++) {
+        // eslint-disable-next-line no-await-in-loop
+        if (await bcrypt.compare(code.toUpperCase(), hashes[i])) {
+          matchedIndex = i;
+          break;
+        }
+      }
+      if (matchedIndex === -1) {
+        AuditService.record({
+          userId: user._id as any,
+          action: 'LOGIN_2FA_FAILED',
+          resource: 'USER',
+          status: 'failure',
+        });
+        throw new AppError('Code de vérification invalide', 401);
+      }
+      usedBackupCode = true;
+      user.security.backupCodeHashes.splice(matchedIndex, 1);
+      await (user as any).save({ validateBeforeSave: false });
+    }
+
+    const result = await AuthService.completeLogin(user, sessionData);
+    AuditService.record({
+      userId: user._id as any,
+      action: usedBackupCode ? 'LOGIN_2FA_BACKUP_CODE_USED' : 'LOGIN_2FA_SUCCESS',
+      resource: 'USER',
+      status: 'success',
+    });
+    return result;
+  }
+
+  static async setupTotp(userId: string) {
+    const user = await User.findById(userId);
+    if (!user) throw new AppError('Utilisateur non trouvé', 404);
+
+    const secret = generateBase32Secret();
+    user.security = { ...(user.security as any), totpTempSecret: secret };
+    await (user as any).save({ validateBeforeSave: false });
+
+    return { secret, otpauthUrl: generateOtpauthUrl(secret, user.email) };
+  }
+
+  static async enableTotp(userId: string, code: string) {
+    const user = await User.findById(userId).select('+security.totpTempSecret');
+    if (!user?.security?.totpTempSecret) {
+      throw new AppError('Aucune configuration 2FA en cours — relancez la configuration.', 400);
+    }
+    if (!verifyTotp(user.security.totpTempSecret, code)) {
+      throw new AppError('Code invalide', 400);
+    }
+
+    const backupCodes = generateBackupCodes();
+    const backupCodeHashes = await Promise.all(backupCodes.map((c) => bcrypt.hash(c, 10)));
+
+    user.security.totpSecret = user.security.totpTempSecret;
+    user.security.totpTempSecret = undefined;
+    user.security.totpEnabled = true;
+    user.security.backupCodeHashes = backupCodeHashes;
+    await (user as any).save({ validateBeforeSave: false });
+
+    AuditService.record({ userId: user._id as any, action: '2FA_ENABLED', resource: 'USER', status: 'success' });
+    return { backupCodes };
+  }
+
+  static async disableTotp(userId: string, code: string) {
+    if (typeof code !== 'string' || !code) {
+      throw new AppError('Code de vérification requis', 400);
+    }
+    const user = await User.findById(userId).select('+security.totpSecret +security.backupCodeHashes');
+    if (!user?.security?.totpEnabled) {
+      throw new AppError("La double authentification n'est pas activée", 400);
+    }
+
+    let valid = user.security.totpSecret ? verifyTotp(user.security.totpSecret, code) : false;
+    if (!valid) {
+      for (const hash of user.security.backupCodeHashes || []) {
+        // eslint-disable-next-line no-await-in-loop
+        if (await bcrypt.compare(code.toUpperCase(), hash)) {
+          valid = true;
+          break;
+        }
+      }
+    }
+    if (!valid) throw new AppError('Code invalide', 400);
+
+    user.security.totpEnabled = false;
+    user.security.totpSecret = undefined;
+    user.security.totpTempSecret = undefined;
+    user.security.backupCodeHashes = [];
+    await (user as any).save({ validateBeforeSave: false });
+
+    AuditService.record({ userId: user._id as any, action: '2FA_DISABLED', resource: 'USER', status: 'success' });
+    return { success: true };
+  }
+
+  /** Shared tail of both plain-password login and post-2FA login: issues tokens, records the session, audits. */
+  private static async completeLogin(user: IUserDocument, sessionData?: any) {
     // 3) Generate tokens
     const tokens = createSendToken(user);
 
@@ -324,8 +515,10 @@ export class AuthService {
     }
 
     try {
-      // 1) Verify refresh token
-      const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET!) as { id: string };
+      // 1) Verify refresh token (algorithm pinned — see middleware/auth.ts for why)
+      const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET!, {
+        algorithms: ['HS256'],
+      }) as { id: string };
 
       // 2) Check if user still exists and HAS this session
       const user = await User.findById(decoded.id);

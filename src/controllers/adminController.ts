@@ -25,6 +25,7 @@ import redis from '../config/redis';
 import Payment from '../models/Payment';
 import { PayoutService } from '../services/payoutService';
 import { KYCService } from '../services/kycService';
+import SupportTicket from '../models/SupportTicket';
 
 export class AdminController {
   // --- AI ANALYTICS ---
@@ -186,6 +187,16 @@ export class AdminController {
 
       const uptime = process.uptime();
 
+      // NotchPay (retraits/paiements MoMo) et Gemini (fonctionnalités IA) sont
+      // des services tiers payants : on ne les ping pas en direct pour éviter
+      // tout effet de bord (quota/rate-limit) depuis un simple écran de
+      // monitoring — on vérifie seulement que les identifiants nécessaires
+      // sont bien configurés côté serveur.
+      const notchpayConfigured = Boolean(
+        process.env.NOTCHPAY_PUBLIC_KEY && process.env.NOTCHPAY_PRIVATE_KEY,
+      );
+      const geminiConfigured = Boolean(process.env.GEMINI_API_KEY);
+
       res.status(200).json({
         status: 'success',
         data: {
@@ -194,7 +205,30 @@ export class AdminController {
           uptime: `${Math.floor(uptime / 60)} minutes`,
           memory: process.memoryUsage(),
           serverTime: new Date(),
+          integrations: {
+            notchpay: { configured: notchpayConfigured },
+            gemini: { configured: geminiConfigured },
+          },
         },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Compteurs légers pour le centre de notifications de l'admin (cloche du
+  // Topbar) : ce qui attend une action humaine, en un seul appel.
+  static async getNotificationsSummary(req: Request, res: Response, next: NextFunction) {
+    try {
+      const [kycPending, payoutsPending, supportOpen] = await Promise.all([
+        User.countDocuments({ kycLevel: 'pending' }),
+        Payment.countDocuments({ type: 'withdrawal', status: 'pending' }),
+        SupportTicket.countDocuments({ status: { $in: ['open', 'in_progress'] } }),
+      ]);
+
+      res.status(200).json({
+        status: 'success',
+        data: { kycPending, payoutsPending, supportOpen },
       });
     } catch (error) {
       next(error);
@@ -269,7 +303,18 @@ export class AdminController {
         filename = `${prefix}-${today}.log`;
       }
 
-      const filePath = path.join(logsDir, filename);
+      // Reject anything that isn't a plain log filename — Express decodes
+      // URL-encoded path segments before routing, so without this a request
+      // like "..%2F..%2F.env" would resolve outside logsDir via path.join
+      // below and let res.download() stream arbitrary files off disk.
+      if (!/^[\w.-]+\.log$/.test(filename)) {
+        return next(new AppError('Invalid filename', 400));
+      }
+
+      const filePath = path.resolve(logsDir, filename);
+      if (filePath !== path.join(logsDir, filename) || !filePath.startsWith(logsDir + path.sep)) {
+        return next(new AppError('Invalid filename', 400));
+      }
 
       if (!fs.existsSync(filePath)) {
         return next(
@@ -490,6 +535,18 @@ export class AdminController {
         return next(new AppError('No user found with that ID', 404));
       }
 
+      AuditService.record(
+        {
+          userId: (req as any).user._id,
+          action: 'USER_STATUS_UPDATE',
+          resource: 'User',
+          resourceId: id,
+          newValue: updatePayload,
+          status: 'success',
+        },
+        req,
+      );
+
       // Notification de suspension / réactivation
       const isSuspended =
         updatePayload.status === 'suspended' ||
@@ -593,6 +650,18 @@ export class AdminController {
       if (!user) {
         return next(new AppError('No user found with that ID', 404));
       }
+
+      AuditService.record(
+        {
+          userId: (req as any).user._id,
+          action: 'role' in updates ? 'USER_ROLE_CHANGE' : 'USER_UPDATE',
+          resource: 'User',
+          resourceId: id,
+          newValue: updates,
+          status: 'success',
+        },
+        req,
+      );
 
       res.status(200).json({
         status: 'success',
@@ -781,6 +850,31 @@ export class AdminController {
     }
   }
 
+  // Allowlist of comparison operators the "advanced filtering" query-string syntax
+  // (e.g. ?amount[gte]=1000) is allowed to produce. Any other `$`-prefixed key —
+  // $where, $expr, $function, or an operator injected via a raw query-string key
+  // like ?$where=... (which `qs` parses straight into an object) — is stripped.
+  // These admin list endpoints build their Mongo filter directly from req.query,
+  // and are reachable by the lower-trust `support` role too, not just `admin`.
+  private static readonly SAFE_QUERY_OPERATORS = new Set(['$gte', '$gt', '$lte', '$lt', '$ne', '$in']);
+
+  private static sanitizeQueryObject(obj: any): any {
+    if (Array.isArray(obj)) {
+      return obj.map((v) => AdminController.sanitizeQueryObject(v));
+    }
+    if (obj !== null && typeof obj === 'object') {
+      const clean: any = {};
+      for (const key of Object.keys(obj)) {
+        if (key.startsWith('$') && !AdminController.SAFE_QUERY_OPERATORS.has(key)) {
+          continue;
+        }
+        clean[key] = AdminController.sanitizeQueryObject(obj[key]);
+      }
+      return clean;
+    }
+    return obj;
+  }
+
   // --- TRANSACTIONS SUPERVISION ---
   static async getAllTransactions(req: Request, res: Response, next: NextFunction) {
     try {
@@ -796,13 +890,15 @@ export class AdminController {
       let queryStr = JSON.stringify(queryObj);
       queryStr = queryStr.replace(/\b(gte|gt|lte|lt)\b/g, (match) => `$${match}`);
 
-      const transactions = await Transaction.find(JSON.parse(queryStr))
+      const safeQuery = AdminController.sanitizeQueryObject(JSON.parse(queryStr));
+
+      const transactions = await Transaction.find(safeQuery)
         .populate('userId', 'email firstName lastName country currency')
         .sort({ date: -1 })
         .skip(skip)
         .limit(limit);
 
-      const total = await Transaction.countDocuments(JSON.parse(queryStr));
+      const total = await Transaction.countDocuments(safeQuery);
 
       res.status(200).json({
         status: 'success',
@@ -830,11 +926,59 @@ export class AdminController {
   static async updateSystemSetting(req: Request, res: Response, next: NextFunction) {
     try {
       const { key, value, description, group, isPublic } = req.body;
+
+      // `key` becomes a Mongo filter/upsert field below, so it must be a
+      // plain, safe identifier — reject anything that could be used for
+      // prototype pollution (__proto__/constructor/prototype) or that isn't
+      // a real setting key.
+      const ALLOWED_GROUPS = [
+        'general',
+        'maintenance',
+        'payment',
+        'app_version',
+        'legal',
+        'app_info',
+        'mobile',
+      ];
+      const DANGEROUS_KEYS = ['__proto__', 'constructor', 'prototype'];
+
+      if (
+        typeof key !== 'string' ||
+        !/^[a-zA-Z0-9_.-]{1,100}$/.test(key) ||
+        DANGEROUS_KEYS.includes(key)
+      ) {
+        return next(new AppError('Clé de paramètre invalide', 400));
+      }
+      if (group !== undefined && !ALLOWED_GROUPS.includes(group)) {
+        return next(
+          new AppError(`Groupe de paramètre invalide. Valeurs autorisées : ${ALLOWED_GROUPS.join(', ')}`, 400),
+        );
+      }
+      if (value === undefined) {
+        return next(new AppError('La valeur du paramètre est requise', 400));
+      }
+
+      const previous = await SystemSetting.findOne({ key }).lean();
+
       const setting = await SystemSetting.findOneAndUpdate(
         { key },
         { value, description, group, isPublic },
-        { new: true, upsert: true, setDefaultsOnInsert: true },
+        { new: true, upsert: true, setDefaultsOnInsert: true, runValidators: true },
       );
+
+      AuditService.record(
+        {
+          userId: (req as any).user._id,
+          action: 'SETTINGS_UPDATE',
+          resource: 'SystemSetting',
+          resourceId: key,
+          oldValue: previous ? { value: previous.value, group: previous.group } : undefined,
+          newValue: { value, group },
+          status: 'success',
+        },
+        req,
+      );
+
       res.status(200).json({ status: 'success', data: setting });
     } catch (error) {
       next(error);
@@ -1103,6 +1247,20 @@ export class AdminController {
     }
   }
 
+  // Fields to strip per collection when exporting via the raw driver (which bypasses
+  // Mongoose's `select: false`) — password hashes, TOTP secrets/backup codes, and
+  // refresh tokens must never leave the system in a bulk admin export.
+  private static readonly EXPORT_EXCLUDED_FIELDS: Record<string, Record<string, 0>> = {
+    users: {
+      password: 0,
+      'security.totpSecret': 0,
+      'security.totpTempSecret': 0,
+      'security.backupCodeHashes': 0,
+      refreshToken: 0,
+      'sessions.refreshToken': 0,
+    },
+  };
+
   static async exportDatabase(req: Request, res: Response, next: NextFunction) {
     try {
       if (!mongoose.connection.db) {
@@ -1113,12 +1271,25 @@ export class AdminController {
       const exportData: Record<string, any[]> = {};
 
       for (const col of collections) {
-        const documents = await mongoose.connection.db.collection(col.name).find({}).toArray();
+        const projection = AdminController.EXPORT_EXCLUDED_FIELDS[col.name];
+        const documents = await mongoose.connection.db
+          .collection(col.name)
+          .find({}, projection ? { projection } : undefined)
+          .toArray();
         exportData[col.name] = documents;
       }
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const filename = `db_dump_${timestamp}.json`;
+
+      AuditService.record({
+        userId: (req as any).user._id,
+        action: 'DB_EXPORT',
+        resource: 'DATABASE',
+        resourceId: filename,
+        status: 'success',
+        metadata: { collections: collections.map((c) => c.name) },
+      });
 
       res.setHeader('Content-Type', 'application/json');
       res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
@@ -1140,18 +1311,24 @@ export class AdminController {
       const excludedFields = ['page', 'sort', 'limit', 'fields', 'search'];
       excludedFields.forEach((el) => delete queryObj[el]);
 
-      // Search functionality
+      // Search functionality (regex metacharacters escaped to avoid a
+      // pathological-pattern denial-of-service against the MongoDB server)
       if (req.query.search) {
-        queryObj['name'] = { $regex: req.query.search, $options: 'i' };
+        queryObj['name'] = {
+          $regex: String(req.query.search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+          $options: 'i',
+        };
       }
 
-      const tontines = await Tontine.find(queryObj)
+      const safeQuery = AdminController.sanitizeQueryObject(queryObj);
+
+      const tontines = await Tontine.find(safeQuery)
         .populate('creatorId', 'firstName lastName email')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit);
 
-      const total = await Tontine.countDocuments(queryObj);
+      const total = await Tontine.countDocuments(safeQuery);
 
       res.status(200).json({
         status: 'success',
@@ -1207,18 +1384,23 @@ export class AdminController {
       const excludedFields = ['page', 'sort', 'limit', 'fields', 'search'];
       excludedFields.forEach((el) => delete queryObj[el]);
 
-      // Search functionality
+      // Search functionality (regex metacharacters escaped — see getAllTontines)
       if (req.query.search) {
-        queryObj['name'] = { $regex: req.query.search, $options: 'i' };
+        queryObj['name'] = {
+          $regex: String(req.query.search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+          $options: 'i',
+        };
       }
 
-      const subscriptions = await Subscription.find(queryObj)
+      const safeQuery = AdminController.sanitizeQueryObject(queryObj);
+
+      const subscriptions = await Subscription.find(safeQuery)
         .populate('userId', 'firstName lastName email')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit);
 
-      const total = await Subscription.countDocuments(queryObj);
+      const total = await Subscription.countDocuments(safeQuery);
 
       res.status(200).json({
         status: 'success',
@@ -1410,9 +1592,30 @@ export class AdminController {
         User.countDocuments({ kycLevel: 'pending' }),
       ]);
 
+      // Les documents KYC sont stockés en privé : on ne renvoie jamais l'URL brute
+      // (non fetchable telle quelle), on la remplace par une URL signée à courte
+      // durée de vie (5 min), suffisante pour l'affichage dans l'écran de revue admin.
+      const usersWithSignedDocs = await Promise.all(
+        users.map(async (u: any) => {
+          if (!u.kycData?.documentImageUrl && !u.kycData?.selfieImageUrl) return u;
+          const signed = await KYCService.getSignedDocumentUrls(u._id.toString());
+          return {
+            ...u,
+            kycData: {
+              ...u.kycData,
+              documentImageUrl: signed.documentUrl,
+              selfieImageUrl: signed.selfieUrl,
+            },
+          };
+        }),
+      );
+
       res.status(200).json({
         success: true,
-        data: { users, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } },
+        data: {
+          users: usersWithSignedDocs,
+          pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+        },
       });
     } catch (error) {
       next(error);
@@ -1461,8 +1664,8 @@ export class AdminController {
       const skip = (page - 1) * limit;
 
       const filter: any = {};
-      if (req.query.type) filter.type = req.query.type;
-      if (req.query.paymentMethod) filter.paymentMethod = req.query.paymentMethod;
+      if (typeof req.query.type === 'string') filter.type = req.query.type;
+      if (typeof req.query.paymentMethod === 'string') filter.paymentMethod = req.query.paymentMethod;
 
       const [transactions, total] = await Promise.all([
         Transaction.find(filter)
@@ -1519,7 +1722,7 @@ export class AdminController {
       const skip = (page - 1) * limit;
 
       const filter: any = { type: 'withdrawal' };
-      if (req.query.status) filter.status = req.query.status;
+      if (typeof req.query.status === 'string') filter.status = req.query.status;
 
       const [payouts, total] = await Promise.all([
         Payment.find(filter)
@@ -1552,20 +1755,43 @@ export class AdminController {
     }
   }
 
+  // Étape 1/2 du contrôle à deux mains : un admin DEMANDE la relance. Ne
+  // touche pas encore au statut réel du paiement — une relance effective
+  // nécessite l'approbation d'un second admin via approvePayoutRetry.
   static async retryPayout(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const payout = await Payment.findById(id);
-      if (!payout) throw new AppError('Retrait non trouvé', 404);
-      if (payout.type !== 'withdrawal') throw new AppError('Ce paiement n\'est pas un retrait', 400);
+      const requesterId = (req as any).user._id;
 
-      payout.status = 'pending';
-      await payout.save();
+      // Atomic guard against two simultaneous retry requests on the same
+      // payout — same reasoning as approvePayoutRetry/rejectPayoutRetry.
+      const payout = await Payment.findOneAndUpdate(
+        {
+          _id: id,
+          type: 'withdrawal',
+          $or: [{ 'retryApproval.status': { $exists: false } }, { 'retryApproval.status': { $ne: 'pending_approval' } }],
+        },
+        {
+          retryApproval: {
+            status: 'pending_approval',
+            requestedBy: requesterId,
+            requestedAt: new Date(),
+          },
+        },
+        { new: true },
+      );
+
+      if (!payout) {
+        const existing = await Payment.findById(id);
+        if (!existing) throw new AppError('Retrait non trouvé', 404);
+        if (existing.type !== 'withdrawal') throw new AppError("Ce paiement n'est pas un retrait", 400);
+        throw new AppError('Une demande de relance est déjà en attente d\'approbation', 400);
+      }
 
       AuditService.record(
         {
-          userId: (req as any).user._id,
-          action: 'PAYOUT_RETRY',
+          userId: requesterId,
+          action: 'PAYOUT_RETRY_REQUESTED',
           resource: 'Payment',
           resourceId: id,
           metadata: { reference: payout.reference },
@@ -1574,7 +1800,118 @@ export class AdminController {
         req,
       );
 
-      res.status(200).json({ success: true, message: 'Statut du retrait réinitialisé à pending' });
+      res.status(200).json({
+        success: true,
+        message: "Demande de relance enregistrée — en attente de l'approbation d'un second administrateur",
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Étape 2/2 : un SECOND admin (jamais celui qui a demandé la relance)
+  // approuve — c'est seulement à ce moment que le statut repasse à
+  // 'pending' et déclenche réellement une nouvelle tentative de transfert.
+  static async approvePayoutRetry(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const approverId = (req as any).user._id;
+
+      // findById-then-save left a check-then-act gap: two concurrent
+      // approvals (or an approve racing a reject) could both read
+      // 'pending_approval' before either write landed, and the second
+      // .save() would silently overwrite the first. The status/requester
+      // guard now lives in the filter of a single atomic findOneAndUpdate,
+      // so only one concurrent request can ever match and succeed — the
+      // other gets back `null` and a normal "nothing pending" error.
+      const payout = await Payment.findOneAndUpdate(
+        {
+          _id: id,
+          'retryApproval.status': 'pending_approval',
+          'retryApproval.requestedBy': { $ne: approverId },
+        },
+        {
+          status: 'pending',
+          'retryApproval.status': 'approved',
+          'retryApproval.approvedBy': approverId,
+          'retryApproval.approvedAt': new Date(),
+        },
+        { new: true },
+      );
+
+      if (!payout) {
+        // Distinguish "nothing pending" from "you requested this yourself"
+        // only for the error message — the atomic filter above is what
+        // actually enforces both, so this read can't be raced to bypass it.
+        const existing = await Payment.findById(id).select('retryApproval');
+        if (existing?.retryApproval?.status === 'pending_approval') {
+          throw new AppError(
+            'Un administrateur ne peut pas approuver sa propre demande de relance',
+            403,
+          );
+        }
+        throw new AppError('Aucune demande de relance en attente pour ce retrait', 400);
+      }
+
+      AuditService.record(
+        {
+          userId: approverId,
+          action: 'PAYOUT_RETRY_APPROVED',
+          resource: 'Payment',
+          resourceId: id,
+          metadata: {
+            reference: payout.reference,
+            requestedBy: payout.retryApproval?.requestedBy,
+          },
+          status: 'success',
+        },
+        req,
+      );
+
+      res.status(200).json({ success: true, message: 'Relance approuvée — statut réinitialisé à pending' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async rejectPayoutRetry(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const { reason } = req.body;
+      const approverId = (req as any).user._id;
+
+      // Same atomicity concern as approvePayoutRetry — see comment there.
+      const payout = await Payment.findOneAndUpdate(
+        { _id: id, 'retryApproval.status': 'pending_approval' },
+        {
+          'retryApproval.status': 'rejected',
+          'retryApproval.approvedBy': approverId,
+          'retryApproval.approvedAt': new Date(),
+          'retryApproval.reason': reason,
+        },
+        { new: true },
+      );
+      if (!payout) {
+        throw new AppError('Aucune demande de relance en attente pour ce retrait', 400);
+      }
+
+      AuditService.record(
+        {
+          userId: approverId,
+          action: 'PAYOUT_RETRY_REJECTED',
+          resource: 'Payment',
+          resourceId: id,
+          metadata: {
+            reference: payout.reference,
+            requestedBy: payout.retryApproval?.requestedBy,
+            reason,
+          },
+          status: 'success',
+        },
+        req,
+      );
+
+      res.status(200).json({ success: true, message: 'Demande de relance rejetée' });
     } catch (error) {
       next(error);
     }

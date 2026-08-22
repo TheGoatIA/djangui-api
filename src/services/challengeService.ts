@@ -61,29 +61,41 @@ export class ChallengeService {
    * Quitter un challenge
    */
   static async unjoinChallenge(userChallengeId: string, userId: string) {
-    const uc = await UserChallenge.findOne({ _id: userChallengeId, userId });
-    if (!uc) throw new AppError('Challenge non trouvé ou non autorisé', 404);
+    const transaction = await WalletService.runInTransaction(async (session) => {
+      const uc = await UserChallenge.findOne({ _id: userChallengeId, userId }).session(session);
+      if (!uc) throw new AppError('Challenge non trouvé ou non autorisé', 404);
 
-    // Si le challenge contient de l'argent, on rembourse avant de supprimer
-    if (uc.currentValue > 0) {
-      let fees = 0;
-      // Pénalité de 0.5% si le challenge n'est pas "completed" ou "redeemed"
-      if (!['completed', 'redeemed'].includes(uc.status)) {
-        fees = uc.currentValue * 0.005;
+      // Si le challenge contient de l'argent, on rembourse avant de supprimer
+      let tx: any = null;
+      if (uc.currentValue > 0) {
+        let fees = 0;
+        // Pénalité de 0.5% si le challenge n'est pas "completed" ou "redeemed"
+        if (!['completed', 'redeemed'].includes(uc.status)) {
+          fees = uc.currentValue * 0.005;
+        }
+
+        tx = await WalletService.executeTransaction(
+          {
+            userId,
+            amount: uc.currentValue,
+            fees,
+            type: 'deposit',
+            description: `Remboursement (Quitter Challenge) : ${userChallengeId}`,
+            paymentMethod: 'wallet',
+            metadata: { userChallengeId, action: 'unjoin_refund', penaltyApplied: fees > 0 },
+          },
+          { session },
+        );
       }
 
-      await WalletService.executeTransaction({
-        userId,
-        amount: uc.currentValue,
-        fees,
-        type: 'deposit',
-        description: `Remboursement (Quitter Challenge) : ${userChallengeId}`,
-        paymentMethod: 'wallet',
-        metadata: { userChallengeId, action: 'unjoin_refund', penaltyApplied: fees > 0 },
-      });
-    }
+      await UserChallenge.findByIdAndDelete(userChallengeId, { session });
+      return tx;
+    });
 
-    await UserChallenge.findByIdAndDelete(userChallengeId);
+    transaction?._postCommit?.().catch((err: any) =>
+      logger.error(`Post-commit hook error: ${err.message}`),
+    );
+
     return true;
   }
   /**
@@ -95,34 +107,48 @@ export class ChallengeService {
     weekNumber: number,
     amount: number,
   ) {
-    const userChallenge = await UserChallenge.findOne({ _id: userChallengeId, userId });
-    if (!userChallenge) throw new AppError('Challenge utilisateur non trouvé ou non autorisé', 404);
+    const result = await WalletService.runInTransaction(async (session) => {
+      const userChallenge = await UserChallenge.findOne({ _id: userChallengeId, userId }).session(
+        session,
+      );
+      if (!userChallenge)
+        throw new AppError('Challenge utilisateur non trouvé ou non autorisé', 404);
 
-    const week = userChallenge.weeks.find((w) => w.weekNumber === weekNumber);
-    if (!week) throw new AppError('Semaine non trouvée', 404);
+      const week = userChallenge.weeks.find((w) => w.weekNumber === weekNumber);
+      if (!week) throw new AppError('Semaine non trouvée', 404);
 
-    // 1. Débiter le wallet (Argent Réel)
-    const transaction = await WalletService.executeTransaction({
-      userId,
-      amount,
-      type: 'saving_transfer',
-      description: `Dépôt pour le challenge : Semaine ${weekNumber}`,
-      paymentMethod: 'wallet',
-      metadata: { userChallengeId, weekNumber },
+      // 1. Débiter le wallet (Argent Réel)
+      const transaction = await WalletService.executeTransaction(
+        {
+          userId,
+          amount,
+          type: 'saving_transfer',
+          description: `Dépôt pour le challenge : Semaine ${weekNumber}`,
+          paymentMethod: 'wallet',
+          metadata: { userChallengeId, weekNumber },
+        },
+        { session },
+      );
+
+      // 2. Mettre à jour l'état du challenge (Dépôt réel), dans la même transaction
+      week.savedAmount += amount;
+      if (week.savedAmount >= week.targetAmount) {
+        week.status = 'completed';
+        week.validatedAt = new Date();
+      }
+      week.transactionId = transaction.reference;
+
+      userChallenge.currentValue += amount;
+      await userChallenge.save({ session });
+
+      return { userChallenge, transaction };
     });
 
-    // 2. Mettre à jour l'état du challenge (Dépôt réel)
-    week.savedAmount += amount;
-    if (week.savedAmount >= week.targetAmount) {
-      week.status = 'completed';
-      week.validatedAt = new Date();
-    }
-    week.transactionId = transaction.reference;
+    (result.transaction as any)?._postCommit?.().catch((err: any) =>
+      logger.error(`Post-commit hook error: ${err.message}`),
+    );
 
-    userChallenge.currentValue += amount;
-    await userChallenge.save();
-
-    return userChallenge;
+    return result.userChallenge;
   }
 
   /**
@@ -134,84 +160,125 @@ export class ChallengeService {
     weekNumber: number,
     data?: { proofImageUrl?: string; note?: string; amount?: number },
   ) {
-    const uc = await UserChallenge.findOne({ _id: userChallengeId, userId }).populate(
-      'challengeId',
+    const result = await WalletService.runInTransaction(async (session) => {
+      const uc = await UserChallenge.findOne({ _id: userChallengeId, userId })
+        .populate('challengeId')
+        .session(session);
+      if (!uc) throw new AppError('Challenge non trouvé ou non autorisé', 404);
+
+      const week = uc.weeks.find((w) => w.weekNumber === weekNumber);
+      if (!week) throw new AppError('Semaine non trouvée', 404);
+
+      const challenge = uc.challengeId as any;
+      let transaction: any = null;
+
+      // Si c'est un challenge d'épargne, on effectue le transfert réel
+      if (challenge.type === 'saving' && week.status !== 'completed') {
+        // Ne débiter que le reliquat, pas le montant cible complet : si l'utilisateur
+        // a déjà partiellement financé la semaine via addChallengeDeposit, utiliser
+        // week.targetAmount ici le débiterait une seconde fois pour le montant total.
+        const remaining = Math.max(0, week.targetAmount - week.savedAmount);
+        const amountToWithdraw = data?.amount ?? remaining;
+        if (amountToWithdraw < 0) throw new AppError('Montant de dépôt invalide', 400);
+
+        if (amountToWithdraw > 0) {
+          transaction = await WalletService.executeTransaction(
+            {
+              userId,
+              amount: amountToWithdraw,
+              type: 'saving_transfer',
+              description: `Validation Challenge : ${challenge.title} - Semaine ${weekNumber}`,
+              paymentMethod: 'wallet',
+              metadata: { userChallengeId, weekNumber },
+            },
+            { session },
+          );
+
+          week.savedAmount += amountToWithdraw;
+          week.transactionId = transaction.reference;
+          uc.currentValue += amountToWithdraw;
+        }
+      }
+
+      week.status = 'completed';
+      week.validatedAt = new Date();
+      if (data?.proofImageUrl) week.proofImageUrl = data.proofImageUrl;
+      if (data?.note) week.verificationNote = data.note;
+
+      // Mise à jour de la progression globale
+      const completedWeeks = uc.weeks.filter((w) => w.status === 'completed').length;
+      uc.progress = Math.round((completedWeeks / uc.weeks.length) * 100);
+
+      const shouldAwardCompletion = uc.progress >= 100;
+      if (shouldAwardCompletion) {
+        uc.status = 'completed';
+        uc.completedAt = new Date();
+      }
+
+      await uc.save({ session });
+
+      return { uc, transaction, shouldAwardCompletion };
+    });
+
+    result.transaction?._postCommit?.().catch((err: any) =>
+      logger.error(`Post-commit hook error: ${err.message}`),
     );
-    if (!uc) throw new AppError('Challenge non trouvé ou non autorisé', 404);
 
-    const week = uc.weeks.find((w) => w.weekNumber === weekNumber);
-    if (!week) throw new AppError('Semaine non trouvée', 404);
-
-    const challenge = uc.challengeId as any;
-
-    // Si c'est un challenge d'épargne, on effectue le transfert réel
-    if (challenge.type === 'saving' && week.status !== 'completed') {
-      const amountToWithdraw = data?.amount || week.targetAmount;
-      if (amountToWithdraw <= 0) throw new AppError('Montant de dépôt invalide', 400);
-
-      const transaction = await WalletService.executeTransaction({
-        userId,
-        amount: amountToWithdraw,
-        type: 'saving_transfer',
-        description: `Validation Challenge : ${challenge.title} - Semaine ${weekNumber}`,
-        paymentMethod: 'wallet',
-        metadata: { userChallengeId, weekNumber },
-      });
-
-      week.savedAmount += amountToWithdraw;
-      week.transactionId = transaction.reference;
-      uc.currentValue += amountToWithdraw;
+    // Gamification : effet secondaire non-critique, hors transaction. Une
+    // erreur ici ne doit pas annuler la validation de la semaine déjà actée.
+    if (result.shouldAwardCompletion) {
+      GamificationService.awardChallengeCompletion(userId, 'Challenge Réussi').catch((err: any) =>
+        logger.error(`Gamification award error: ${err.message}`),
+      );
     }
 
-    week.status = 'completed';
-    week.validatedAt = new Date();
-    if (data?.proofImageUrl) week.proofImageUrl = data.proofImageUrl;
-    if (data?.note) week.verificationNote = data.note;
-
-    // Mise à jour de la progression globale
-    const completedWeeks = uc.weeks.filter((w) => w.status === 'completed').length;
-    uc.progress = Math.round((completedWeeks / uc.weeks.length) * 100);
-
-    if (uc.progress >= 100) {
-      uc.status = 'completed';
-      uc.completedAt = new Date();
-      await GamificationService.awardChallengeCompletion(userId, 'Challenge Réussi');
-    }
-
-    await uc.save();
-    return uc;
+    return result.uc;
   }
 
   /**
    * Récupère les fonds accumulés dans un challenge terminé
    */
   static async redeemChallenge(userId: string, userChallengeId: string) {
-    const uc = await UserChallenge.findOne({ _id: userChallengeId, userId });
-    if (!uc) throw new AppError('Challenge non trouvé ou non autorisé', 404);
+    const result = await WalletService.runInTransaction(async (session) => {
+      const uc = await UserChallenge.findOne({ _id: userChallengeId, userId }).session(session);
+      if (!uc) throw new AppError('Challenge non trouvé ou non autorisé', 404);
 
-    if (uc.status !== 'completed' && uc.progress < 100) {
-      throw new AppError('Le challenge doit être terminé pour récupérer les fonds', 400);
-    }
+      if (uc.status !== 'completed' && uc.progress < 100) {
+        throw new AppError('Le challenge doit être terminé pour récupérer les fonds', 400);
+      }
 
-    if (uc.currentValue <= 0) {
-      throw new AppError('Aucun fond à récupérer (solde nul)', 400);
-    }
+      if (uc.currentValue <= 0) {
+        throw new AppError('Aucun fond à récupérer (solde nul)', 400);
+      }
 
-    // Transfert vers le wallet principal
-    await WalletService.executeTransaction({
-      userId,
-      amount: uc.currentValue,
-      type: 'challenge_reward',
-      description: `Remboursement Challenge : ${userChallengeId}`,
-      paymentMethod: 'wallet',
+      const redeemedAmount = uc.currentValue;
+
+      // Transfert vers le wallet principal, dans la même transaction que le
+      // marquage "redeemed" pour éviter un double crédit si l'un des deux
+      // écrit sans que l'autre persiste.
+      const transaction = await WalletService.executeTransaction(
+        {
+          userId,
+          amount: redeemedAmount,
+          type: 'challenge_reward',
+          description: `Remboursement Challenge : ${userChallengeId}`,
+          paymentMethod: 'wallet',
+        },
+        { session },
+      );
+
+      uc.currentValue = 0;
+      uc.status = 'redeemed';
+      await uc.save({ session });
+
+      return { redeemedAmount, userChallenge: uc, transaction };
     });
 
-    const redeemedAmount = uc.currentValue;
-    uc.currentValue = 0;
-    uc.status = 'redeemed';
-    await uc.save();
+    (result.transaction as any)?._postCommit?.().catch((err: any) =>
+      logger.error(`Post-commit hook error: ${err.message}`),
+    );
 
-    return { redeemedAmount, userChallenge: uc };
+    return { redeemedAmount: result.redeemedAmount, userChallenge: result.userChallenge };
   }
 
   /**

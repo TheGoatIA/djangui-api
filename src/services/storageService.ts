@@ -5,6 +5,8 @@ import fs from 'fs';
 import path from 'path';
 import logger from '../utils/logger';
 
+type Visibility = 'public' | 'private';
+
 export class StorageService {
   private static s3Client: S3Client;
   private static readonly ENDPOINT = process.env.MINIO_ENDPOINT || 'http://minio:9000';
@@ -49,12 +51,20 @@ export class StorageService {
   }
 
   /**
-   * Upload a file from local path to MinIO
+   * Upload a file from local path to MinIO.
+   *
+   * @param visibility 'public' (default, preserves existing behaviour for avatars,
+   * receipts, invoices, ...) or 'private' — MUST be 'private' for anything containing
+   * PII or secrets (KYC documents, database backups): those objects must never be
+   * fetchable by an anonymous, unsigned request. The URL returned for a private object
+   * is NOT publicly fetchable; use {@link getSignedUrl} or {@link downloadBuffer} to
+   * read it back.
    */
   static async uploadFile(
     localPath: string,
     bucket: string,
     destinationKey: string,
+    visibility: Visibility = 'public',
   ): Promise<string> {
     try {
       await this.ensureBucketExists(bucket);
@@ -65,7 +75,7 @@ export class StorageService {
           Bucket: bucket,
           Key: destinationKey,
           Body: fileStream,
-          ACL: 'public-read',
+          ACL: visibility === 'private' ? 'private' : 'public-read',
         },
         queueSize: 4,
         partSize: 1024 * 1024 * 5, // 5MB
@@ -75,7 +85,7 @@ export class StorageService {
       await parallelUploads3.done();
 
       const url = `${this.PUBLIC_URL}/${bucket}/${destinationKey}`;
-      logger.info(`[STORAGE] File uploaded to MinIO: ${url}`);
+      logger.info(`[STORAGE] File uploaded to MinIO (${visibility}): ${url}`);
       return url;
     } catch (err: any) {
       logger.error(`[STORAGE] MinIO Upload Error: ${err.message}`);
@@ -84,13 +94,14 @@ export class StorageService {
   }
 
   /**
-   * Upload a buffer to MinIO
+   * Upload a buffer to MinIO. See {@link uploadFile} for the `visibility` contract.
    */
   static async uploadBuffer(
     buffer: Buffer,
     bucket: string,
     destinationKey: string,
     contentType: string,
+    visibility: Visibility = 'public',
   ): Promise<string> {
     try {
       await this.ensureBucketExists(bucket);
@@ -99,13 +110,13 @@ export class StorageService {
         Key: destinationKey,
         Body: buffer,
         ContentType: contentType,
-        ACL: 'public-read',
+        ACL: visibility === 'private' ? 'private' : 'public-read',
       });
 
       await this.getClient().send(command);
 
       const url = `${this.PUBLIC_URL}/${bucket}/${destinationKey}`;
-      logger.info(`[STORAGE] Buffer uploaded to MinIO: ${url}`);
+      logger.info(`[STORAGE] Buffer uploaded to MinIO (${visibility}): ${url}`);
       return url;
     } catch (err: any) {
       logger.error(`[STORAGE] MinIO Buffer Upload Error: ${err.message}`);
@@ -132,5 +143,35 @@ export class StorageService {
       logger.error(`[STORAGE] Signed URL Error: ${err.message}`);
       throw err;
     }
+  }
+
+  /**
+   * Download an object's bytes directly via the S3 SDK (authenticated request), for
+   * server-side processing of PRIVATE objects — a plain HTTP GET against the stored
+   * URL (as used to work for public-read objects) would be rejected for these.
+   */
+  static async downloadBuffer(bucket: string, key: string): Promise<Buffer> {
+    const command = new GetObjectCommand({ Bucket: bucket, Key: key });
+    const response = await this.getClient().send(command);
+    const stream = response.Body as NodeJS.ReadableStream;
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
+  }
+
+  /**
+   * Extract the `{ bucket, key }` this service encoded into a URL previously
+   * returned by {@link uploadFile}/{@link uploadBuffer} (`${PUBLIC_URL}/${bucket}/${key}`),
+   * so a stored URL can be dereferenced again (e.g. to build a signed URL, or to
+   * download a private object) without having to separately persist bucket/key.
+   */
+  static parseStoredUrl(url: string): { bucket: string; key: string } | null {
+    if (!url.startsWith(`${this.PUBLIC_URL}/`)) return null;
+    const rest = url.slice(this.PUBLIC_URL.length + 1);
+    const firstSlash = rest.indexOf('/');
+    if (firstSlash === -1) return null;
+    return { bucket: rest.slice(0, firstSlash), key: rest.slice(firstSlash + 1) };
   }
 }

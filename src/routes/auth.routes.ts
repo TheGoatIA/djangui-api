@@ -3,7 +3,7 @@ import { AuthController } from '../controllers/authController';
 import { CountryRequestController } from '../controllers/countryRequestController';
 import validate from '../middleware/validation';
 import { registerSchema, loginSchema, refreshTokenSchema } from '../validators/authValidator';
-import protect from '../middleware/auth';
+import protect, { restrictTo } from '../middleware/auth';
 import rateLimit from 'express-rate-limit';
 
 const authLimiter = rateLimit({
@@ -23,19 +23,34 @@ const refreshLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// 2FA setup/enable/disable only require `protect` (a valid session), so a holder
+// of a stolen/hijacked access token could otherwise brute-force the 6-digit TOTP
+// code or an 8-char backup code at the global rate limit (1000 req/15min).
+const totpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: 'Trop de tentatives, veuillez réessayer dans 15 minutes',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 const router = Router();
 
 router.post('/register', authLimiter, validate(registerSchema), AuthController.register);
 router.post('/login', authLimiter, validate(loginSchema), AuthController.login);
+// Second step of login when the account has TOTP enabled — not behind `protect`
+// since the caller isn't fully authenticated yet, only holds a short-lived
+// challengeToken proving they already passed the password check.
+router.post('/2fa/verify', authLimiter, AuthController.verifyTotp);
 router.post('/refresh', refreshLimiter, validate(refreshTokenSchema), AuthController.refresh);
 router.post('/firebase', AuthController.firebaseAuth);
 router.post('/google', AuthController.firebaseAuth); // Alias for backward compatibility
 router.post('/apple', AuthController.firebaseAuth); // Alias for Apple
 
 router.post('/forgot-password', authLimiter, AuthController.forgotPassword);
-router.patch('/reset-password/:token', AuthController.resetPassword);
-router.get('/verify-email', AuthController.verifyEmail);
-router.post('/resend-verification', AuthController.resendVerificationEmail);
+router.patch('/reset-password/:token', authLimiter, AuthController.resetPassword);
+router.get('/verify-email', authLimiter, AuthController.verifyEmail);
+router.post('/resend-verification', authLimiter, AuthController.resendVerificationEmail);
 
 // Protected routes
 router.use(protect);
@@ -47,6 +62,13 @@ router.delete('/delete-me', AuthController.deleteMe);
 router.get('/sessions', AuthController.getSessions);
 router.delete('/sessions/:sessionId', AuthController.revokeSession);
 router.delete('/sessions', AuthController.revokeAllSessions);
+// Self-service TOTP 2FA management. Restricted to admin/support to match the
+// only place 2FA is actually enforced (AuthService.login's role check) — a
+// plain 'user' account could otherwise "enable" 2FA and be issued backup
+// codes for a protection that silently never activates on login.
+router.post('/2fa/setup', totpLimiter, restrictTo('admin', 'support'), AuthController.setupTotp);
+router.post('/2fa/enable', totpLimiter, restrictTo('admin', 'support'), AuthController.enableTotp);
+router.post('/2fa/disable', totpLimiter, restrictTo('admin', 'support'), AuthController.disableTotp);
 router.post('/logout', AuthController.logout);
 router.post('/fcm-token', AuthController.updateFCMToken);
 router.post('/link-phone', AuthController.linkPhoneNumber);

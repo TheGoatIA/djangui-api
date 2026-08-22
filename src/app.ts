@@ -16,11 +16,21 @@ import swaggerDocument from '../docs/swagger.json';
 import { currencyMiddleware } from './middleware/currencyMiddleware';
 import mongoose from 'mongoose';
 import os from 'os';
+import crypto from 'node:crypto';
 import { AuthController } from './controllers/authController';
 
 // Rate limiting using Redis
 
 const app = express();
+
+// The app runs behind a single reverse proxy (see server.ts's keepAliveTimeout/
+// headersTimeout comment). Without this, Express derives req.ip from the raw
+// socket peer — i.e. the proxy's own address — for every request: the IP-based
+// rate limiters below (and req.ip anywhere else, e.g. session/audit logging)
+// would then treat every real client as the same "IP", letting one abusive
+// client exhaust the shared bucket and locking out everyone else, while also
+// making distributed brute-force attempts invisible to per-IP limiting.
+app.set('trust proxy', 1);
 
 const productionOrigins = [
   'https://kauri-app.com',
@@ -80,13 +90,24 @@ app.use(
 app.use(limiter);
 app.use(MonitoringService.metricsMiddleware.bind(MonitoringService));
 app.use(requestLogger);
+// Per-request CSP nonce so the one legitimate inline <script> left on this app
+// (the reset-password deep-link redirect, see AuthController.renderResetPasswordPage)
+// can run without `'unsafe-inline'` in script-src — 'unsafe-inline' disables CSP's
+// XSS mitigation entirely for every route it applies to, and was previously the
+// only thing standing between a token-injection bug on that page and arbitrary
+// script execution (the token is now also strictly validated, see authController.ts).
+app.use((req, res, next) => {
+  res.locals.cspNonce = crypto.randomBytes(16).toString('base64');
+  next();
+});
+
 // Strict CSP for all routes — no unsafe-inline
 app.use(
   helmet({
     contentSecurityPolicy: {
       directives: {
         ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-        'script-src': ["'self'", "'unsafe-inline'"], // Needed for some internal tools and Swagger
+        'script-src': ["'self'", (req: any, res: any) => `'nonce-${res.locals.cspNonce}'`],
         'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         'font-src': ["'self'", 'https://fonts.gstatic.com'],
         'img-src': ["'self'", 'data:', 'https://validator.swagger.io'],
@@ -121,7 +142,12 @@ app.use(compression());
 app.use(
   express.json({
     verify: (req: any, res, buf) => {
-      if (req.originalUrl.includes('/webhooks/stripe')) {
+      // Both webhook signatures must be verified against the exact bytes the
+      // provider signed — re-serializing the parsed JSON (JSON.stringify(req.body))
+      // isn't guaranteed to byte-match the original (key order, number formatting,
+      // unicode escaping can all differ), which would silently reject legitimate
+      // webhook deliveries. See utils/cryptoUtils.ts for the NotchPay side.
+      if (req.originalUrl.includes('/webhooks/stripe') || req.originalUrl.includes('/webhooks/notchpay')) {
         req.rawBody = buf;
       }
     },

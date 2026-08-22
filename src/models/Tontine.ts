@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
+import crypto from 'crypto';
 
 export interface ITontine extends Document {
   name: string;
@@ -77,10 +78,12 @@ const tontineSchema = new Schema<ITontine>(
   { timestamps: true },
 );
 
-// Pre-save to generate invite code if missing
+// Pre-save to generate invite code if missing. Uses a CSPRNG (not Math.random, which is
+// predictable and not suitable for anything access-control-adjacent) so codes can't be
+// brute-forced/guessed in a feasible number of attempts.
 tontineSchema.pre('save', function (next) {
   if (!this.inviteCode) {
-    this.inviteCode = Math.random().toString(36).substring(2, 10).toUpperCase();
+    this.inviteCode = crypto.randomBytes(6).toString('hex').toUpperCase();
   }
   next();
 });

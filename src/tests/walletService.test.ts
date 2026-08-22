@@ -23,6 +23,11 @@ describe('WalletService Simple Test', () => {
       commitTransaction: jest.fn(),
       abortTransaction: jest.fn(),
       endSession: jest.fn(),
+      // WalletService.runInTransaction relies on the MongoDB-recommended
+      // withTransaction retry pattern; mimic just enough of its contract
+      // (invoke the callback once, propagate its result/errors) for tests
+      // that don't need to exercise retry behavior.
+      withTransaction: jest.fn(async (fn: () => Promise<any>) => fn()),
     };
     // Mock global mongoose.startSession
     jest.spyOn(mongoose, 'startSession').mockResolvedValue(mockSession as any);

@@ -21,6 +21,23 @@ export class ExportService {
         return null;
       }
 
+      // CSV/Excel formula injection defense: description/merchant/category can
+      // contain free-text (user-entered or SMS-parsed) content. A cell starting
+      // with =, +, -, or @ is interpreted as a formula by Excel/Sheets when the
+      // export is opened — prefixing with a single quote neutralizes it while
+      // leaving the value readable.
+      const neutralizeFormula = (value: any) => {
+        if (typeof value !== 'string') return value;
+        return /^[=+\-@]/.test(value) ? `'${value}` : value;
+      };
+      const sanitized = transactions.map((t: any) => ({
+        ...t,
+        description: neutralizeFormula(t.description),
+        merchant: neutralizeFormula(t.merchant),
+        category: neutralizeFormula(t.category),
+        subcategory: neutralizeFormula(t.subcategory),
+      }));
+
       const fields = [
         'date',
         'type',
@@ -33,7 +50,7 @@ export class ExportService {
       ];
       const opts = { fields };
       const parser = new Parser(opts);
-      const csv = parser.parse(transactions);
+      const csv = parser.parse(sanitized);
 
       return csv;
     } catch (error: any) {

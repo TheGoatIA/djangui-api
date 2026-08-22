@@ -2,6 +2,14 @@ import { Request, Response, NextFunction } from 'express';
 import Country from '../models/Country';
 import { AppError } from '../middleware/errorHandler';
 
+// Explicit field whitelist for admin-supplied Country data — defense in depth
+// even though addCountry/updateCountry are already admin-only routes, so a
+// schema field added later can't be set unexpectedly through mass assignment.
+const pickCountryFields = (body: any) => {
+  const { code, name, currency, currencySymbol, isActive } = body || {};
+  return { code, name, currency, currencySymbol, isActive };
+};
+
 export class CountryController {
   /**
    * Public: Get all active countries
@@ -38,7 +46,7 @@ export class CountryController {
    */
   static async addCountry(req: Request, res: Response, next: NextFunction) {
     try {
-      const country = await Country.create(req.body);
+      const country = await Country.create(pickCountryFields(req.body));
       res.status(201).json({
         success: true,
         data: { country },
@@ -53,7 +61,7 @@ export class CountryController {
    */
   static async updateCountry(req: Request, res: Response, next: NextFunction) {
     try {
-      const country = await Country.findByIdAndUpdate(req.params.id, req.body, {
+      const country = await Country.findByIdAndUpdate(req.params.id, pickCountryFields(req.body), {
         new: true,
         runValidators: true,
       });

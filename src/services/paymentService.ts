@@ -34,15 +34,52 @@ export class PaymentService {
   }
 
   /**
+   * Authoritative, server-side Premium subscription price by country (mirrors the
+   * display-only pricing table in the mobile app's PaymentService.getSubscriptionPrice).
+   * MUST be used instead of any client-supplied amount for `type === 'subscription'`,
+   * otherwise a client can request an arbitrary (e.g. near-zero) checkout amount and
+   * still be granted Premium once the payment completes.
+   */
+  private static getSubscriptionPrice(countryCode?: string | null): { amount: number; currency: string } {
+    switch (countryCode) {
+      case 'FR':
+      case 'BE':
+      case 'DE':
+      case 'IT':
+      case 'ES':
+        return { amount: 5.0, currency: 'EUR' };
+      case 'US':
+      case 'CA':
+      case 'GB':
+        return { amount: 6.0, currency: 'USD' };
+      case 'CM':
+      default:
+        return { amount: 2000.0, currency: 'XAF' };
+    }
+  }
+
+  /**
    * Create a Stripe Checkout Session for subscription or deposit
    */
-  static async createStripeSession(userId: any, amount: number, type: 'deposit' | 'subscription') {
+  static async createStripeSession(
+    userId: any,
+    clientAmount: number,
+    type: 'deposit' | 'subscription',
+  ) {
     const userIdStr = userId.toString();
     const user = await User.findById(userIdStr);
     if (!user) throw new AppError('User not found', 404);
 
     const reference = `STP-${uuidv4().split('-')[0].toUpperCase()}`;
-    const currency = user.currency || 'USD';
+
+    // For subscriptions, the price is a fixed, server-determined amount based on the
+    // user's country — never trust a client-supplied amount for this. For deposits,
+    // the user genuinely chooses how much to add to their own wallet, so the
+    // client-supplied amount is what's actually charged and credited, which is safe.
+    const { amount, currency } =
+      type === 'subscription'
+        ? this.getSubscriptionPrice(user.country)
+        : { amount: clientAmount, currency: user.currency || 'USD' };
 
     let session; // Declare session outside try block for wider scope
     const start = Date.now();
@@ -113,7 +150,7 @@ export class PaymentService {
    */
   static async initializeNotchPay(
     userId: any,
-    amount: number,
+    clientAmount: number,
     type: 'deposit' | 'subscription',
     phone?: string,
   ) {
@@ -141,7 +178,12 @@ export class PaymentService {
     }
 
     const reference = `NTP-${uuidv4().split('-')[0].toUpperCase()}`;
-    const currency = user.currency || 'XAF';
+
+    // Same rule as Stripe: subscription price is fixed server-side, never client-supplied.
+    const { amount, currency } =
+      type === 'subscription'
+        ? this.getSubscriptionPrice(user.country)
+        : { amount: clientAmount, currency: user.currency || 'XAF' };
 
     const start = Date.now();
     try {
@@ -201,55 +243,87 @@ export class PaymentService {
   }
 
   /**
-   * Complete payment (usually called via webhook)
+   * Complete payment (usually called via webhook).
+   *
+   * The status transition and the wallet credit / premium upgrade are committed
+   * together in one Mongo transaction. Previously the status flip to 'completed'
+   * was persisted first, then the wallet credit attempted separately — if the
+   * credit failed (AML single-transaction limit, transient DB error), the
+   * customer had already been charged by Stripe/NotchPay but the Payment record
+   * was permanently stuck as 'completed' with no wallet credit and no retry path
+   * (every future webhook retry / verifyTransaction call would see 'completed'
+   * and no-op). Wrapping both in one transaction means a failed credit rolls
+   * back the status too, leaving the payment 'pending' and genuinely retriable.
    */
   static async completePayment(reference: string, externalRef?: string) {
-    // Atomic status transition: only proceed if the payment was NOT already
-    // completed. findOneAndUpdate with a status guard prevents two near-simultaneous
-    // webhook deliveries (a routine occurrence with Stripe/NotchPay retries) from
-    // both passing a check-then-act and crediting the wallet twice.
-    const update: Record<string, any> = { status: 'completed', completedAt: new Date() };
-    if (externalRef) update.externalReference = externalRef;
+    const result = await WalletService.runInTransaction(async (session) => {
+      // Atomic status transition: only proceed if the payment was NOT already
+      // completed. The status guard prevents two near-simultaneous webhook
+      // deliveries (a routine occurrence with Stripe/NotchPay retries) from both
+      // passing a check-then-act and crediting the wallet twice.
+      const update: Record<string, any> = { status: 'completed', completedAt: new Date() };
+      if (externalRef) update.externalReference = externalRef;
 
-    const payment = await Payment.findOneAndUpdate(
-      { reference, status: { $ne: 'completed' } },
-      { $set: update },
-      { new: true },
-    );
+      const payment = await Payment.findOneAndUpdate(
+        { reference, status: { $ne: 'completed' } },
+        { $set: update },
+        { new: true, session },
+      );
 
-    if (!payment) {
-      const existing = await Payment.findOne({ reference });
-      if (!existing) throw new AppError('Payment not found', 404);
-      // Already completed by a previous (possibly concurrent) call — idempotent no-op.
-      return existing;
+      if (!payment) {
+        const existing = await Payment.findOne({ reference }).session(session);
+        if (!existing) throw new AppError('Payment not found', 404);
+        // Already completed by a previous (possibly concurrent) call — idempotent no-op.
+        return { payment: existing, alreadyCompleted: true, walletTransaction: null };
+      }
+
+      let walletTransaction: any = null;
+      if (payment.type === 'deposit') {
+        walletTransaction = await WalletService.executeTransaction(
+          {
+            userId: payment.userId.toString(),
+            amount: payment.amount,
+            type: 'deposit',
+            description: 'Recharge Portefeuille Kauri',
+            paymentMethod: payment.method,
+            externalReference: payment.externalReference,
+            reference: payment.reference,
+          },
+          { session },
+        );
+      } else if (payment.type === 'subscription') {
+        logger.info(`Upgrading user ${payment.userId} to Premium...`);
+
+        await User.findByIdAndUpdate(
+          payment.userId,
+          {
+            'subscription.plan': 'premium',
+            'subscription.status': 'active',
+            'subscription.startDate': new Date(),
+            'subscription.endDate': new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          },
+          { session },
+        );
+      }
+
+      return { payment, alreadyCompleted: false, walletTransaction };
+    });
+
+    const { payment, alreadyCompleted, walletTransaction } = result;
+    if (alreadyCompleted) {
+      return payment;
     }
 
     MonitoringService.recordPaymentGateway(payment.method || 'unknown', 'complete', 'success');
 
-    // If it's a deposit, update wallet via WalletService (ACID)
-    if (payment.type === 'deposit') {
-      const transaction = await WalletService.executeTransaction({
-        userId: payment.userId.toString(),
-        amount: payment.amount,
-        type: 'deposit',
-        description: 'Recharge Portefeuille Kauri',
-        paymentMethod: payment.method,
-        externalReference: payment.externalReference,
-        reference: payment.reference,
-      });
-
-      // Générer la facture automatique
-      await InvoiceService.generateForTransaction(transaction._id.toString());
+    // Post-commit side effects: the transaction above has committed, so it's now
+    // safe to generate invoices / fire the wallet transaction's own notification.
+    if (payment.type === 'deposit' && walletTransaction) {
+      (walletTransaction as any)._postCommit?.().catch((err: any) =>
+        logger.error(`Post-commit hook error: ${err.message}`),
+      );
+      await InvoiceService.generateForTransaction(walletTransaction._id.toString());
     } else if (payment.type === 'subscription') {
-      logger.info(`Upgrading user ${payment.userId} to Premium...`);
-
-      await User.findByIdAndUpdate(payment.userId, {
-        'subscription.plan': 'premium',
-        'subscription.status': 'active',
-        'subscription.startDate': new Date(),
-        'subscription.endDate': new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      });
-
       await InvoiceService.generateForPayment(payment._id.toString());
     }
 
@@ -360,9 +434,9 @@ export class PaymentService {
 
     MonitoringService.recordChurn(user.subscription.plan, 'manual_cancel');
 
-    // Notify Slack
+    // Notify Slack (user ID is enough to look the account up; no need for email/PII here)
     SlackService.sendNotification(
-      `📉 *Subscription Cancelled*\n*User ID*: ${userId}\n*Email*: ${user.email}\n*Plan*: ${user.subscription.plan}`,
+      `📉 *Subscription Cancelled*\n*User ID*: ${userId}\n*Plan*: ${user.subscription.plan}`,
     );
 
     // Audit Log for subscription cancellation

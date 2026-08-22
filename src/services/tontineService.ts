@@ -1,3 +1,5 @@
+import mongoose from 'mongoose';
+import crypto from 'crypto';
 import Tontine, { ITontine } from '../models/Tontine';
 import TontineMember from '../models/TontineMember';
 import TontineAuction from '../models/TontineAuction';
@@ -16,41 +18,76 @@ import logger from '../utils/logger';
 
 export class TontineService {
   /**
+   * Guard used by every read/write endpoint that exposes tontine-internal data
+   * (messages, member list, votes, details, ...): only an accepted member of the
+   * tontine (which includes its creator) may access it. Throws 404 if the tontine
+   * doesn't exist and 403 if the requester isn't a member, mirroring the ownership
+   * checks already used on update/delete/removeMember.
+   */
+  static async assertIsMember(tontineId: string, userId: string): Promise<ITontine> {
+    const tontine = await Tontine.findById(tontineId);
+    if (!tontine) throw new AppError('Tontine non trouvée', 404);
+
+    const isMember = await TontineMember.exists({
+      tontineId,
+      userId,
+      invitationStatus: 'accepted',
+    });
+    if (!isMember) throw new AppError("Vous n'êtes pas membre de cette tontine", 403);
+
+    return tontine;
+  }
+  /**
    * Créer une nouvelle tontine
    */
   static async createTontine(userId: string, data: Partial<ITontine>): Promise<ITontine> {
-    const user = await User.findById(userId);
-    if (!user) throw new AppError('Utilisateur non trouvé', 404);
+    // Wrapped in a transaction so the free-tier "1 active tontine" count-then-create
+    // can't be raced by two concurrent create requests both passing the check.
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+      const user = await User.findById(userId).session(session);
+      if (!user) throw new AppError('Utilisateur non trouvé', 404);
 
-    const activeCount = await Tontine.countDocuments({
-      creatorId: userId,
-      status: { $ne: 'completed' },
-    });
-    const isPremium = user.subscription?.plan === 'premium';
+      const activeCount = await Tontine.countDocuments({
+        creatorId: userId,
+        status: { $ne: 'completed' },
+      }).session(session);
+      const isPremium = user.subscription?.plan === 'premium';
 
-    if (!isPremium && activeCount >= 1) {
-      throw new AppError(
-        'Les utilisateurs non-premium sont limités à une seule tontine active.',
-        403,
+      if (!isPremium && activeCount >= 1) {
+        throw new AppError(
+          'Les utilisateurs non-premium sont limités à une seule tontine active.',
+          403,
+        );
+      }
+
+      const tontine = (
+        await Tontine.create([{ ...data, creatorId: userId, status: 'pending' }], { session })
+      )[0];
+
+      await TontineMember.create(
+        [
+          {
+            tontineId: tontine._id,
+            userId: userId,
+            displayName: `${user.firstName} (Créateur)`,
+            parts: 1,
+            invitationStatus: 'accepted',
+            joinedAt: new Date(),
+          },
+        ],
+        { session },
       );
+
+      await session.commitTransaction();
+      return tontine;
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
     }
-
-    const tontine = await Tontine.create({
-      ...data,
-      creatorId: userId,
-      status: 'pending',
-    });
-
-    await TontineMember.create({
-      tontineId: tontine._id,
-      userId: userId,
-      displayName: `${user.firstName} (Créateur)`,
-      parts: 1,
-      invitationStatus: 'accepted',
-      joinedAt: new Date(),
-    });
-
-    return tontine;
   }
 
   /**
@@ -61,46 +98,87 @@ export class TontineService {
     inviteCode: string,
     data: { displayName: string; parts: number; payoutDetails?: any },
   ): Promise<any> {
-    const tontine = await Tontine.findOne({ inviteCode });
-    if (!tontine) throw new AppError('Tontine non trouvée', 404);
-    if (tontine.status !== 'pending') throw new AppError('Les adhésions sont fermées', 400);
+    // Wrapped in a transaction: the free-tier count check, the member-already-in-tontine
+    // check, and the remaining-slots check must all be consistent with the actual insert,
+    // otherwise two concurrent joins can both pass and over-fill the tontine or the
+    // free-tier limit.
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+      const tontine = await Tontine.findOne({ inviteCode }).session(session);
+      if (!tontine) throw new AppError('Tontine non trouvée', 404);
+      if (tontine.status !== 'pending') throw new AppError('Les adhésions sont fermées', 400);
 
-    const user = await User.findById(userId);
-    if (!user) throw new AppError('Utilisateur non trouvé', 404);
+      const user = await User.findById(userId).session(session);
+      if (!user) throw new AppError('Utilisateur non trouvé', 404);
 
-    const isPremium = user.subscription?.plan === 'premium';
-    if (!isPremium) {
-      const activeCount = await Tontine.countDocuments({
-        _id: {
-          $in: (await TontineMember.find({ userId, invitationStatus: 'accepted' })).map(
-            (m) => m.tontineId,
-          ),
-        },
-        status: { $ne: 'completed' },
-      });
-      if (activeCount >= 3)
-        throw new AppError('Limite de 3 tontines actives pour les utilisateurs gratuits.', 403);
+      const isPremium = user.subscription?.plan === 'premium';
+      if (!isPremium) {
+        const memberships = await TontineMember.find({
+          userId,
+          invitationStatus: 'accepted',
+        }).session(session);
+        const activeCount = await Tontine.countDocuments({
+          _id: { $in: memberships.map((m) => m.tontineId) },
+          status: { $ne: 'completed' },
+        }).session(session);
+        if (activeCount >= 3)
+          throw new AppError('Limite de 3 tontines actives pour les utilisateurs gratuits.', 403);
+      }
+
+      const requestedParts = data.parts || 1;
+      const existingMembers = await TontineMember.find({
+        tontineId: tontine._id,
+        invitationStatus: 'accepted',
+      }).session(session);
+      if (existingMembers.some((m) => m.userId.toString() === userId)) {
+        throw new AppError('Vous êtes déjà membre de cette tontine.', 400);
+      }
+      const takenParts = existingMembers.reduce((sum, m) => sum + (m.parts || 1), 0);
+      if (takenParts + requestedParts > tontine.totalParts) {
+        throw new AppError(
+          `Places insuffisantes : il ne reste que ${Math.max(
+            0,
+            tontine.totalParts - takenParts,
+          )} part(s) disponible(s) sur ${tontine.totalParts}.`,
+          400,
+        );
+      }
+
+      const member = (
+        await TontineMember.create(
+          [
+            {
+              tontineId: tontine._id,
+              userId: userId,
+              displayName: data.displayName,
+              parts: requestedParts,
+              payoutDetails: data.payoutDetails,
+              invitationStatus: 'accepted',
+              joinedAt: new Date(),
+            },
+          ],
+          { session },
+        )
+      )[0];
+
+      await session.commitTransaction();
+
+      NotificationService.sendToUser(tontine.creatorId.toString(), {
+        title: '',
+        body: '',
+        translationKey: 'TONTINE_JOIN',
+        translationData: { name: data.displayName, tontineName: tontine.name },
+        category: 'important',
+      }).catch((err) => logger.error(`Tontine join notification error: ${err.message}`));
+
+      return member;
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
     }
-
-    const member = await TontineMember.create({
-      tontineId: tontine._id,
-      userId: userId,
-      displayName: data.displayName,
-      parts: data.parts || 1,
-      payoutDetails: data.payoutDetails,
-      invitationStatus: 'accepted',
-      joinedAt: new Date(),
-    });
-
-    await NotificationService.sendToUser(tontine.creatorId.toString(), {
-      title: '',
-      body: '',
-      translationKey: 'TONTINE_JOIN',
-      translationData: { name: data.displayName, tontineName: tontine.name },
-      category: 'important',
-    });
-
-    return member;
   }
 
   static async updateTontine(
@@ -142,8 +220,24 @@ export class TontineService {
     if (!tontine || tontine.creatorId.toString() !== creatorId)
       throw new AppError('Non autorisé', 403);
     const member = await TontineMember.findById(memberId);
-    if (member?.userId.toString() === creatorId)
+    if (!member) throw new AppError('Membre non trouvé', 404);
+    if (member.userId.toString() === creatorId)
       throw new AppError("Le créateur ne peut s'auto-retirer", 400);
+
+    // Once the tontine is active, every accepted member has a `rotationOrder`
+    // assigned by startTontine — removing ANY of them (not just one whose turn
+    // already happened) leaves that turn number permanently without an owner.
+    // rotateTurn/processAutoDebits would then still collect contributions for
+    // that turn from the remaining members but never find a winner to pay out,
+    // silently stranding the collected funds. So membership is locked for
+    // anyone already in the rotation once the tontine has started.
+    if (tontine.status === 'active' && (member as any).rotationOrder != null) {
+      throw new AppError(
+        "Ce membre ne peut pas être retiré : la tontine est active et son tour de versement est déjà planifié. Attendez la fin du cycle, ou contactez le support pour un remboursement manuel.",
+        400,
+      );
+    }
+
     await TontineMember.findByIdAndDelete(memberId);
   }
 
@@ -251,56 +345,192 @@ export class TontineService {
   }
 
   /**
-   * Passer au tour suivant
+   * Passer au tour suivant.
+   *
+   * Le versement du gagnant et l'avancement de `currentTurn` sont exécutés dans
+   * une seule transaction Mongo : si le versement échoue (limite AML, solde,
+   * erreur DB...), toute la transaction est annulée, le tour ne bouge pas, et
+   * l'erreur remonte à l'appelant (au lieu d'être avalée) pour qu'un crash ou
+   * un échec de paiement ne fasse jamais perdre son tour à un gagnant. Un
+   * même appel rejoué (retry après crash) ne peut donc jamais payer deux fois
+   * le même tour : soit le versement + l'avancement ont été persistés
+   * ensemble, soit aucun des deux ne l'a été.
    */
   static async rotateTurn(tontineId: string): Promise<ITontine> {
-    const tontine = await Tontine.findById(tontineId);
-    if (!tontine) throw new AppError('Tontine non trouvée', 404);
+    const result = await WalletService.runInTransaction(async (session) => {
+      const tontine = await Tontine.findById(tontineId).session(session);
+      if (!tontine) throw new AppError('Tontine non trouvée', 404);
 
-    const members = await TontineMember.find({ tontineId, invitationStatus: 'accepted' });
-
-    // --- LOGIQUE FINTECH : Versement ---
-    try {
-      const winner = members.find((m) => (m as any).rotationOrder === tontine.currentTurn);
-      if (winner) {
-        const summary = await this.getTurnSummary(tontineId);
-        const kauriFee = Math.floor(summary.collectedAmount * 0.01);
-        const transaction = await WalletService.executeTransaction({
-          userId: winner.userId.toString(),
-          amount: summary.collectedAmount,
-          fees: kauriFee,
-          type: 'tontine_payout',
-          description: `Gain Tontine : ${tontine.name} (Tour ${tontine.currentTurn})`,
-          paymentMethod: 'wallet',
-        });
-        await InvoiceService.generateForTransaction(transaction._id.toString());
+      if (tontine.status !== 'active') {
+        // Déjà clôturée ou pas encore démarrée : no-op idempotent (utile si
+        // le job cron est rejoué sur une tontine déjà traitée).
+        return { tontine, transaction: null };
       }
-    } catch (err: any) {
-      logger.error(`Rotation Payout Error: ${err.message}`);
+
+      const members = await TontineMember.find({ tontineId, invitationStatus: 'accepted' }).session(
+        session,
+      );
+      const winner = members.find((m) => (m as any).rotationOrder === tontine.currentTurn);
+
+      let transaction: any = null;
+      if (!winner) {
+        // Should no longer happen now that removeMember refuses to remove a member
+        // already assigned a rotationOrder — kept as a loud safety net in case a
+        // tontine reaches this state through older data or another path, since the
+        // alternative (silently skipping) would strand any funds already collected
+        // for this turn with no recipient.
+        const summary = await this.getTurnSummary(tontineId);
+        if (summary.collectedAmount > 0) {
+          logger.error(
+            `Tontine ${tontineId} tour ${tontine.currentTurn} : aucun gagnant trouvé mais ${summary.collectedAmount} déjà collecté — fonds immobilisés, intervention manuelle requise.`,
+          );
+          SlackService.sendNotification(
+            `🚨 Tontine "${tontine.name}" (${tontineId}), tour ${tontine.currentTurn} : aucun gagnant trouvé alors que ${summary.collectedAmount} ${tontine.currency} ont été collectés. Intervention manuelle requise (remboursement des cotisants).`,
+            true,
+          ).catch(() => {});
+        }
+      } else {
+        const summary = await this.getTurnSummary(tontineId);
+        if (summary.collectedAmount > 0) {
+          const kauriFee = Math.floor(summary.collectedAmount * 0.01);
+          // Référence déterministe : si ce même tour est traité deux fois en
+          // parallèle, l'index unique sur Transaction.reference rejette la
+          // seconde tentative au lieu de payer le gagnant deux fois.
+          const payoutReference = `TONTINE-PAYOUT-${tontine._id}-T${tontine.currentTurn}`;
+          transaction = await WalletService.executeTransaction(
+            {
+              userId: winner.userId.toString(),
+              amount: summary.collectedAmount,
+              fees: kauriFee,
+              type: 'tontine_payout',
+              description: `Gain Tontine : ${tontine.name} (Tour ${tontine.currentTurn})`,
+              paymentMethod: 'wallet',
+              reference: payoutReference,
+            },
+            { session },
+          );
+        } else {
+          logger.warn(
+            `Tontine ${tontineId} tour ${tontine.currentTurn} : aucun fond collecté, versement ignoré.`,
+          );
+        }
+      }
+
+      tontine.currentTurn += 1;
+      if (tontine.currentTurn > tontine.totalParts) {
+        tontine.status = 'completed';
+      }
+      await tontine.save({ session });
+
+      return { tontine, transaction };
+    });
+
+    if (result.transaction) {
+      result.transaction._postCommit?.().catch((err: any) =>
+        logger.error(`Post-commit hook error: ${err.message}`),
+      );
+      InvoiceService.generateForTransaction(result.transaction._id.toString()).catch((err: any) =>
+        logger.error(`Invoice generation error: ${err.message}`),
+      );
     }
 
-    tontine.currentTurn += 1;
-    if (tontine.currentTurn > tontine.totalParts) {
-      tontine.status = 'completed';
-      if (tontine.autoRenew) await this.renewTontine(tontine);
+    // Le renouvellement automatique est volontairement hors de la transaction
+    // ci-dessus : un renouvellement raté ne doit pas invalider le versement et
+    // la clôture du cycle qui viennent d'être actés.
+    if (result.tontine.status === 'completed' && result.tontine.autoRenew) {
+      try {
+        await this.renewTontine(result.tontine);
+      } catch (err: any) {
+        logger.error(`Tontine renewal failed for ${tontineId}: ${err.message}`);
+        SlackService.sendNotification(
+          `🚨 Le renouvellement automatique de la tontine "${result.tontine.name}" (${tontineId}) a échoué : ${err.message}`,
+          true,
+        ).catch(() => {});
+      }
     }
 
-    await tontine.save();
-    return tontine;
+    return result.tontine;
   }
 
   static async renewTontine(old: ITontine) {
+    // On clone le document sans les champs qui doivent être uniques ou propres
+    // à ce cycle : réutiliser l'inviteCode de l'ancienne tontine viole son
+    // index unique et fait échouer la création (la tontine reste alors bloquée
+    // sur son dernier tour, jamais renouvelée).
+    const oldObj: any = old.toObject();
+    delete oldObj._id;
+    delete oldObj.inviteCode;
+    delete oldObj.createdAt;
+    delete oldObj.updatedAt;
+    delete oldObj.__v;
+
     const newT = await Tontine.create({
-      ...old.toObject(),
-      _id: undefined,
+      ...oldObj,
       status: 'pending',
       currentTurn: 1,
       startDate: undefined,
     });
+
     const members = await TontineMember.find({ tontineId: old._id, invitationStatus: 'accepted' });
-    for (const m of members)
-      await TontineMember.create({ ...m.toObject(), _id: undefined, tontineId: newT._id });
+    for (const m of members) {
+      const mObj: any = m.toObject();
+      delete mObj._id;
+      delete mObj.createdAt;
+      delete mObj.updatedAt;
+      delete mObj.__v;
+      await TontineMember.create({ ...mObj, tontineId: newT._id });
+    }
     return newT;
+  }
+
+  /**
+   * Valide ou rejette manuellement une cotisation en attente de révision
+   * (tontines en mode `ia_plus_manual`). Seul le créateur de la tontine peut
+   * trancher.
+   */
+  static async validateContribution(
+    tontineId: string,
+    contributionId: string,
+    userId: string,
+    decision: 'approve' | 'reject',
+    reason?: string,
+  ) {
+    const tontine = await Tontine.findById(tontineId);
+    if (!tontine) throw new AppError('Tontine non trouvée', 404);
+    if (tontine.creatorId.toString() !== userId) {
+      throw new AppError('Seul le créateur de la tontine peut valider les cotisations', 403);
+    }
+
+    const contribution = await TontineContribution.findOne({ _id: contributionId, tontineId });
+    if (!contribution) throw new AppError('Cotisation non trouvée', 404);
+    if (contribution.validationStatus !== 'manual_pending') {
+      throw new AppError('Cette cotisation ne requiert pas de validation manuelle', 400);
+    }
+
+    if (decision === 'approve') {
+      contribution.validationStatus = 'completed';
+    } else {
+      contribution.validationStatus = 'rejected';
+      if (reason) contribution.rejectionReason = reason;
+    }
+    await contribution.save();
+
+    const member = await TontineMember.findById(contribution.memberId);
+    if (member) {
+      NotificationService.sendToUser(member.userId.toString(), {
+        title: '',
+        body: '',
+        translationKey:
+          decision === 'approve' ? 'TONTINE_CONTRIBUTION_VALIDATED' : 'TONTINE_CONTRIBUTION_REJECTED',
+        translationData: { turn: contribution.turnIndex, tontineName: tontine.name },
+        data: {
+          tontineId,
+          type: decision === 'approve' ? 'TONTINE_CONTRIBUTION_VALIDATED' : 'TONTINE_CONTRIBUTION_REJECTED',
+        },
+      }).catch((err) => logger.error(`Contribution validation notification error: ${err.message}`));
+    }
+
+    return contribution;
   }
 
   static async sendMessage(
@@ -309,10 +539,12 @@ export class TontineService {
     content: string,
     type: any = 'text',
   ) {
+    await this.assertIsMember(tontineId, senderId);
     return await TontineMessage.create({ tontineId, senderId, content, type });
   }
 
-  static async getMessages(tontineId: string) {
+  static async getMessages(tontineId: string, userId: string) {
+    await this.assertIsMember(tontineId, userId);
     return await TontineMessage.find({ tontineId })
       .populate('senderId', 'firstName lastName')
       .sort({ createdAt: -1 });
@@ -350,24 +582,58 @@ export class TontineService {
               tontine._id.toString(),
               member.userId.toString(),
             );
-            const tx = await WalletService.executeTransaction({
-              userId: member.userId.toString(),
-              amount: amounts.convertedAmount,
-              type: 'tontine_contribution',
-              description: `Cotisation : ${tontine.name}`,
-              paymentMethod: 'wallet',
+
+            // Le débit du wallet et la création de la cotisation doivent
+            // réussir ou échouer ensemble : sans cela, un crash entre les deux
+            // débite le membre sans qu'aucune cotisation ne soit enregistrée,
+            // ce qui le sous-compte définitivement dans le calcul du pot.
+            const result = await WalletService.runInTransaction(async (session) => {
+              const alreadyPaid = await TontineContribution.findOne({
+                tontineId: tontine._id,
+                memberId: member._id,
+                turnIndex: tontine.currentTurn,
+                validationStatus: { $in: ['completed', 'ai_validated'] },
+              }).session(session);
+              if (alreadyPaid) return null;
+
+              const tx = await WalletService.executeTransaction(
+                {
+                  userId: member.userId.toString(),
+                  amount: amounts.convertedAmount,
+                  type: 'tontine_contribution',
+                  description: `Cotisation : ${tontine.name}`,
+                  paymentMethod: 'wallet',
+                },
+                { session },
+              );
+
+              const [contribution] = await TontineContribution.create(
+                [
+                  {
+                    tontineId: tontine._id,
+                    memberId: member._id,
+                    turnIndex: tontine.currentTurn,
+                    amountPaid: amounts.convertedAmount,
+                    currency: amounts.currency,
+                    paidAt: new Date(),
+                    validationStatus: 'completed',
+                    transactionRef: tx.reference,
+                  },
+                ],
+                { session },
+              );
+
+              return { tx, contribution };
             });
-            await TontineContribution.create({
-              tontineId: tontine._id,
-              memberId: member._id,
-              turnIndex: tontine.currentTurn,
-              amountPaid: amounts.convertedAmount,
-              currency: amounts.currency,
-              paidAt: new Date(),
-              validationStatus: 'completed',
-              transactionRef: tx.reference,
-            });
-            await InvoiceService.generateForTransaction(tx._id.toString());
+
+            if (result) {
+              (result.tx as any)._postCommit?.().catch((err: any) =>
+                logger.error(`Post-commit hook error: ${err.message}`),
+              );
+              InvoiceService.generateForTransaction(result.tx._id.toString()).catch((err: any) =>
+                logger.error(`Invoice generation error: ${err.message}`),
+              );
+            }
           } catch (err: any) {
             logger.warn(`Auto-debit fail for ${member.userId}: ${err.message}`);
           }
@@ -401,7 +667,8 @@ export class TontineService {
     return { tontine, members, contributions };
   }
 
-  static async getTontineMembers(tontineId: string) {
+  static async getTontineMembers(tontineId: string, userId: string) {
+    await this.assertIsMember(tontineId, userId);
     return TontineMember.find({ tontineId }).populate('userId', 'firstName lastName');
   }
 
@@ -412,6 +679,7 @@ export class TontineService {
     options: string[],
     durationHours: number,
   ) {
+    await this.assertIsMember(tontineId, creatorId);
     return TontineVote.create({
       tontineId,
       creatorId,
@@ -424,7 +692,21 @@ export class TontineService {
   static async castVote(userId: string, voteId: string, optionIndex: number) {
     const vote = await TontineVote.findById(voteId);
     if (!vote) throw new AppError('Vote non trouvé', 404);
-    if (vote.voters.includes(userId as any)) throw new AppError('Déjà voté', 400);
+    await this.assertIsMember(vote.tontineId.toString(), userId);
+    // `voters` holds Mongoose ObjectIds; userId here is a plain string. Array.includes
+    // compares objects by reference, so it never matched — every member could vote
+    // an unlimited number of times. Compare by string value instead.
+    if (vote.voters.some((v) => v.toString() === userId)) throw new AppError('Déjà voté', 400);
+    if (
+      !Number.isInteger(optionIndex) ||
+      optionIndex < 0 ||
+      optionIndex >= vote.options.length
+    ) {
+      throw new AppError('Option de vote invalide', 400);
+    }
+    if (vote.status === 'closed' || vote.expiresAt < new Date()) {
+      throw new AppError('Ce vote est clos', 400);
+    }
 
     vote.options[optionIndex].count += 1;
     vote.voters.push(userId as any);
@@ -432,7 +714,11 @@ export class TontineService {
     return vote;
   }
 
-  static async exportTontineReport(tontineId: string, turn?: number) {
+  static async exportTontineReport(tontineId: string, userId: string, turn?: number) {
+    const tontine = await Tontine.findById(tontineId);
+    if (!tontine || tontine.creatorId.toString() !== userId) {
+      throw new AppError('Non autorisé', 403);
+    }
     const query: any = { tontineId };
     if (turn) query.turnIndex = turn;
     const contributions = await TontineContribution.find(query).populate('memberId');

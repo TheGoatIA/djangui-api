@@ -107,16 +107,27 @@ export class SystemController {
           .json({ success: false, message: 'Metrics endpoint is deprecated. Use traces.' });
       }
 
+      // This route only requires `identify` (optional auth, so pre-login crash/boot
+      // telemetry from the mobile app still works) — reachable unauthenticated.
+      // Explicitly whitelisting `type` prevents an arbitrary path suffix from being
+      // proxied to the internal OTEL collector below (the fallback branch used to
+      // accept anything that wasn't literally 'metrics' or 'logs').
+      if (type !== 'traces' && type !== 'logs') {
+        return res.status(404).json({ success: false, message: 'Unknown telemetry type.' });
+      }
+
       // Handle Logs separately: Direct bridge to Graylog via Winston
       if (type === 'logs') {
         const body = req.body;
         // Expected format: { level: 'info'|'error', message: string, metadata: {} }
-        // If it's a list (batch), process each
-        const logs = Array.isArray(body) ? body : [body];
+        // If it's a list (batch), process each. Capped since this endpoint is
+        // reachable unauthenticated — an unbounded batch is a log-flooding vector
+        // against the central logging pipeline.
+        const logs = (Array.isArray(body) ? body : [body]).slice(0, 50);
 
         for (const logItem of logs) {
           const level = (logItem.level || 'info').toLowerCase();
-          const message = logItem.message || 'Mobile log';
+          const message = String(logItem.message || 'Mobile log').slice(0, 2000);
           const meta = {
             ...logItem.metadata,
             platform: logItem.platform || req.headers['x-platform'],
@@ -154,12 +165,14 @@ export class SystemController {
       // Fire-and-forget: Return 202 Accepted immediately so mobile app doesn't wait
       res.status(202).json({ success: true, message: 'ACCEPTED' });
 
-      // Process forwarding in background
+      // Process forwarding in background. Body size is capped (this route is
+      // reachable unauthenticated) — matches the 10MB limit already applied to
+      // the raw-body parser for this same path in app.ts.
       axios
         .post(collectorUrl, req.body, {
           headers,
-          maxBodyLength: Infinity,
-          maxContentLength: Infinity, // 50MB
+          maxBodyLength: 10 * 1024 * 1024,
+          maxContentLength: 10 * 1024 * 1024,
           responseType: 'arraybuffer',
           timeout: 30000,
         })

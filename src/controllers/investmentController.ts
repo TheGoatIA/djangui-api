@@ -22,11 +22,15 @@ export class InvestmentController {
     }
   }
 
+  /**
+   * Admin-only: see routes/admin.routes.ts. Never expose this to the investment's
+   * own owner — see InvestmentService.updateValue for why.
+   */
   static async updateValue(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
       const { value } = req.body;
-      const investment = await InvestmentService.updateValue(req.user!._id, id, value);
+      const investment = await InvestmentService.updateValue(id, value);
       res.status(200).json({ success: true, data: investment });
     } catch (error) {
       next(error);

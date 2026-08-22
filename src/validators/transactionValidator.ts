@@ -1,7 +1,7 @@
 import Joi from 'joi';
 
 export const createTransactionSchema = Joi.object({
-  amount: Joi.number().min(0).required(),
+  amount: Joi.number().min(0).max(1_000_000_000_000).required(),
   type: Joi.string().valid('income', 'expense').required(),
   category: Joi.string().required(),
   subcategory: Joi.string().optional(),
@@ -17,7 +17,7 @@ export const createTransactionSchema = Joi.object({
 });
 
 export const updateTransactionSchema = Joi.object({
-  amount: Joi.number().min(0).optional(),
+  amount: Joi.number().min(0).max(1_000_000_000_000).optional(),
   type: Joi.string().valid('income', 'expense').optional(),
   category: Joi.string().optional(),
   subcategory: Joi.string().optional(),

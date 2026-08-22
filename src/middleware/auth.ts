@@ -33,7 +33,14 @@ const protect = async (req: AuthRequest, res: Response, next: NextFunction) => {
     }
 
     // 3) Verification token
-    const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET!) as {
+    // Pin the expected algorithm explicitly: tokens are always signed HS256 (see
+    // authService.signToken), and without this option a future code path using an
+    // asymmetric key (RS256) alongside the same secret would be vulnerable to an
+    // algorithm-confusion attack (a token signed HS256 with the public key as the
+    // "secret" would otherwise still verify).
+    const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET!, {
+      algorithms: ['HS256'],
+    }) as {
       id: string;
     };
 
@@ -97,7 +104,14 @@ const identify = async (req: AuthRequest, res: Response, next: NextFunction) => 
 
     if (!token) return next();
 
-    const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET!) as {
+    // Pin the expected algorithm explicitly: tokens are always signed HS256 (see
+    // authService.signToken), and without this option a future code path using an
+    // asymmetric key (RS256) alongside the same secret would be vulnerable to an
+    // algorithm-confusion attack (a token signed HS256 with the public key as the
+    // "secret" would otherwise still verify).
+    const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET!, {
+      algorithms: ['HS256'],
+    }) as {
       id: string;
     };
 

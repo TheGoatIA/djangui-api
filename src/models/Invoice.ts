@@ -14,12 +14,10 @@ const invoiceSchema = new Schema<IInvoiceDocument>(
     transactionId: {
       type: Schema.Types.ObjectId,
       ref: 'Transaction',
-      sparse: true,
     },
     paymentId: {
       type: Schema.Types.ObjectId,
       ref: 'Payment',
-      sparse: true,
     },
     invoiceNumber: {
       type: String,
@@ -29,6 +27,7 @@ const invoiceSchema = new Schema<IInvoiceDocument>(
     amount: {
       type: Number,
       required: true,
+      min: 0,
     },
     currency: {
       type: String,
@@ -50,6 +49,14 @@ const invoiceSchema = new Schema<IInvoiceDocument>(
 );
 
 invoiceSchema.index({ userId: 1, createdAt: -1 });
+// Prevents two concurrent triggers (e.g. the automatic post-payment generation
+// racing a client polling GET /fintech/invoice/:transactionId) from both passing
+// a "does an invoice exist yet" check before either persists, which previously
+// could create two Invoice documents — and two PDF/MinIO uploads — for one
+// transaction/payment. Sparse so documents that only set the other reference
+// (transactionId vs paymentId) aren't compared against each other.
+invoiceSchema.index({ transactionId: 1 }, { unique: true, sparse: true });
+invoiceSchema.index({ paymentId: 1 }, { unique: true, sparse: true });
 
 const Invoice = mongoose.model<IInvoiceDocument>('Invoice', invoiceSchema);
 
