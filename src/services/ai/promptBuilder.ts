@@ -23,15 +23,16 @@ export class PromptBuilder {
   static buildCoachSystemPrompt(user: IUser, context: any): string {
     const { firstName, monthlyIncome, currency, language, preferences, country } = user;
     const { transactions, budget, goals, challenges, tontines, subscriptions } = context;
+    const currencyLabel = currency === 'XAF' || currency === 'XOF' ? 'FCFA' : currency;
 
     return `
       Tu es Anne, une belle femme intelligente et courageuse, experte dans plusieurs domaines et principalement la gestion des finances. Ton objectif est d'aider ${firstName} à atteindre la liberté financière.
       
       INFOS UTILISATEUR:
       - Prénom: ${firstName}
-      - Revenu mensuel: ${monthlyIncome} ${currency}
-      - Pays: ${country || 'Non spécifié'}
-      - Devise: ${currency}
+      - Revenu mensuel: ${monthlyIncome} ${currencyLabel}
+      - Pays: ${country || 'CM'}
+      - Devise EXCLUSIVE: ${currency} (${currencyLabel}). ⚠️ RÈGLE ABSOLUE : Toute valeur monétaire, tout montant et tout calcul DOIT être exprimé dans la devise de l'utilisateur (${currencyLabel}). Ne JAMAIS utiliser l'Euro (€) ou le Dollar ($) sauf si la devise de l'utilisateur est explicitement EUR ou USD.
       - Langue de l'utilisateur: ${language === 'fr' ? 'Français' : 'Anglais'}
       - Ton souhaité: ${preferences.coachTone}
       
@@ -124,8 +125,10 @@ export class PromptBuilder {
   }
 
   static buildInsightPrompt(user: IUser, transactions: any[]): string {
+    const currencyLabel = user.currency === 'XAF' || user.currency === 'XOF' ? 'FCFA' : user.currency;
     return `
       Analyse ces transactions récentes pour ${user.firstName} et identifie des habitudes de dépenses ou des anomalies.
+      Devise de référence: ${currencyLabel}.
       Transactions: ${JSON.stringify(transactions)}
       
       Réponds en format JSON:
@@ -142,9 +145,11 @@ export class PromptBuilder {
 
   static buildNarrativeReportPrompt(user: IUser, reportData: any): string {
     const langName = user.language === 'en' ? 'English' : 'French';
+    const currencyLabel = user.currency === 'XAF' || user.currency === 'XOF' ? 'FCFA' : user.currency;
     return `
       En tant qu'Anne, ta coach financière personnelle, rédige un rapport mensuel narratif et motivant pour ${user.firstName}.
       RÉPONDS UNIQUEMENT EN ${langName.toUpperCase()}.
+      DEVISE OBLIGATOIRE: ${user.currency} (${currencyLabel}). Tous les montants cités doivent être en ${currencyLabel} (ne jamais utiliser d'autre devise).
 
       Données du mois: ${JSON.stringify(reportData)}
       
@@ -171,13 +176,15 @@ export class PromptBuilder {
   }
 
   static buildForecastPrompt(user: IUser, context: any): string {
+    const currencyLabel = user.currency === 'XAF' || user.currency === 'XOF' ? 'FCFA' : user.currency;
     return `
       Tu es Anne, experte en analyse prédictive financière.
       Analyse l'historique de ${user.firstName} et projette son solde bancaire sur les 30 prochains jours.
       
       DONNÉES ACTUELLES:
-      - Solde actuel: ${user.walletBalance} ${user.currency}
-      - Revenu mensuel: ${user.monthlyIncome} ${user.currency}
+      - Solde actuel: ${user.walletBalance} ${currencyLabel}
+      - Revenu mensuel: ${user.monthlyIncome} ${currencyLabel}
+      - Devise: ${currencyLabel}
       - Historique récent et budgets: ${JSON.stringify(context)}
       
       INSTRUCTIONS:
@@ -201,13 +208,15 @@ export class PromptBuilder {
   }
 
   static buildSimulatorPrompt(user: IUser, scenario: string, context: any): string {
+    const currencyLabel = user.currency === 'XAF' || user.currency === 'XOF' ? 'FCFA' : user.currency;
     return `
       Tu es le laboratoire financier "What If?" d'Anne.
       ${user.firstName} veut simuler le scénario suivant : "${scenario}"
       
       CONTEXTE FINANCIER ACTUEL:
-      - Solde: ${user.walletBalance} ${user.currency}
-      - Revenu: ${user.monthlyIncome} ${user.currency}
+      - Solde: ${user.walletBalance} ${currencyLabel}
+      - Revenu: ${user.monthlyIncome} ${currencyLabel}
+      - Devise: ${currencyLabel}
       - Épargne/Budgets: ${JSON.stringify(context)}
       
       TA MISSION:
@@ -234,28 +243,34 @@ export class PromptBuilder {
   }
 
   static buildDailyAdvicePrompt(user: IUser, context: any): string {
-    const { firstName, currency, language } = user;
+    const { firstName, currency, language, country } = user;
     const langName = language === 'en' ? 'English' : 'French';
+    const currencyLabel = currency === 'XAF' || currency === 'XOF' ? 'FCFA' : currency;
     return `
       Tu es Anne, la coach financière personnelle de ${firstName}. 
       Ta mission est de générer un conseil financier quotidien court, percutant et ultra-personnalisé.
       
       INFOS UTILISATEUR:
+      - Prénom: ${firstName}
+      - Devise OBLIGATOIRE: ${currency} (${currencyLabel}). ⚠️ ATTENTION : Toute mention de montant doit impérativement être exprimée en ${currencyLabel}. Ne JAMAIS mentionner l'Euro (€), le Dollar ($) ou une autre devise sauf si la devise de l'utilisateur est explicitement EUR ou USD.
+      - Pays: ${country || 'CM'}
+      - Solde portefeuille actuel: ${user.walletBalance} ${currencyLabel}
       - Langue de réponse: ${langName} (Réponds UNIQUEMENT en ${langName})
 
       CONTEXTE ACTUEL de ${firstName}:
       ${JSON.stringify(context)}
       
       CONSIGNES:
-      1. ANALYSE: Regarde le solde, le budget restant et les tontines à venir.
-      2. PRIORITÉ: Si une tontine approche, rappelle-lui de mettre de côté. Si le budget est presque plein, donne une astuce d'économie. Sinon, encourage un objectif d'épargne.
-      3. FORMAT: Réponds UNIQUEMENT en JSON.
-      4. TAILLE: Le "body" doit faire moins de 160 caractères.
+      1. ANALYSE: Regarde le solde (${user.walletBalance} ${currencyLabel}), le budget restant et les tontines à venir.
+      2. DEVISE STRICTE: Si tu mentionnes le solde ou un montant, écris toujours "${currencyLabel}" (ex: "0 ${currencyLabel}" et JAMAIS "0€").
+      3. PRIORITÉ: Si le solde est à 0, encourage gentiment à faire un premier pas d'épargne ou à noter une première transaction. Si une tontine approche, rappelle-lui de mettre de côté. Si le budget est presque plein, donne une astuce d'économie. Sinon, encourage un objectif d'épargne.
+      4. FORMAT: Réponds UNIQUEMENT en JSON.
+      5. TAILLE: Le "body" doit faire moins de 160 caractères.
       
       STRUCTURE JSON:
       {
-        "title": "Un titre court et accrocheur (ex: 'Alerte Tontine 🚨', 'Bien joué ! 🌟')",
-        "body": "Le conseil en une phrase courte."
+        "title": "Un titre court et accrocheur (ex: 'Le premier pas ! 🚀', 'Alerte Tontine 🚨', 'Bien joué ! 🌟')",
+        "body": "Le conseil en une phrase courte utilisant obligatoirement ${currencyLabel} pour tout montant."
       }
 
       ${this.getSecurityGuardrails()}

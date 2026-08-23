@@ -1,4 +1,5 @@
 import SavingGoal from '../models/SavingGoal';
+import User from '../models/User';
 import { NotificationService } from './notificationService';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
@@ -11,17 +12,22 @@ export class GoalService {
     // debits the wallet) — never accept a starting balance/progress from the caller,
     // even defensively here on top of the validator, since a fabricated currentAmount
     // can later be redeemed or refunded for real wallet credit with nothing deposited.
-    const { currentAmount, progress, contributions, status, ...safeData } = data;
+    // `currency` is also excluded here — always the creating user's own currency
+    // (fetched below), never a client-supplied value, so currencyMiddleware can
+    // tell targetAmount is already native to that currency instead of assuming XAF.
+    const { currentAmount, progress, contributions, status, currency, ...safeData } = data;
+    const user = await User.findById(userId).select('currency').lean();
     const goal = await SavingGoal.create({
       ...safeData,
       userId,
       currentAmount: 0,
       contributions: [],
+      currency: user?.currency || 'XAF',
     });
 
     // Metrique business
     MonitoringService.recordGoalEvent('create', data.type || 'regular');
-    MonitoringService.recordGoalAmount('create', 'XAF', goal.targetAmount);
+    MonitoringService.recordGoalAmount('create', user?.currency || 'XAF', goal.targetAmount);
 
     return goal;
   }

@@ -5,9 +5,11 @@ import { CurrencyService } from '../services/currencyService';
 const MONETARY_FIELDS = new Set([
   'amount',
   'targetAmount',
+  'currentAmount',
   'balance',
   'walletBalance',
   'currentValue',
+  'initialAmount',
   'contributionAmount',
   'savedAmount',
   'weeklyTarget',
@@ -15,6 +17,10 @@ const MONETARY_FIELDS = new Set([
   'absenceFee',
   'socialFundAmount',
   'monthlyIncome',
+  'totalAllocated',
+  'totalSpent',
+  'allocated',
+  'spent',
 ]);
 
 const TEXT_FIELDS = new Set(['description', 'title', 'message', 'body']);
@@ -48,10 +54,17 @@ export const currencyMiddleware = (req: AuthRequest, res: Response, next: NextFu
 
 /**
  * Convertit récursivement les champs monétaires d'un objet ou tableau.
+ *
+ * `inheritedCurrency` est la devise source résolue au niveau parent — un
+ * sous-document imbriqué sans son propre champ `currency` (ex: les entrées
+ * de `categories`/`contributions` d'un Budget/Goal) est nécessairement dans
+ * la même devise que son parent, jamais XAF par défaut. Sans cet héritage,
+ * chaque niveau d'imbrication retombe sur XAF indépendamment et convertit
+ * des montants déjà correctement libellés comme s'ils étaient en XAF.
  */
-function convertObject(obj: any, targetCurrency: string): any {
+function convertObject(obj: any, targetCurrency: string, inheritedCurrency: string = 'XAF'): any {
   if (Array.isArray(obj)) {
-    return obj.map((item) => convertObject(item, targetCurrency));
+    return obj.map((item) => convertObject(item, targetCurrency, inheritedCurrency));
   }
 
   if (obj !== null && typeof obj === 'object') {
@@ -63,11 +76,12 @@ function convertObject(obj: any, targetCurrency: string): any {
     }
 
     // La devise déclarée par l'objet lui-même (ex: une tontine en EUR) est la
-    // vraie devise source de ses champs monétaires. Supposer XAF sans regarder
-    // ce champ convertit un montant déjà en EUR/USD comme s'il était en XAF,
-    // ce qui produit un montant totalement faux (sur/sous-paiement réel).
+    // vraie devise source de ses champs monétaires. À défaut, on hérite de la
+    // devise résolue du parent plutôt que de supposer XAF à l'aveugle — l'un
+    // ou l'autre cas erroné convertit un montant déjà correct, ce qui produit
+    // un montant totalement faux (sur/sous-paiement réel).
     const sourceCurrency: string =
-      typeof obj.currency === 'string' && obj.currency ? obj.currency : 'XAF';
+      typeof obj.currency === 'string' && obj.currency ? obj.currency : inheritedCurrency;
 
     const newObj: any = {};
 
@@ -83,7 +97,7 @@ function convertObject(obj: any, targetCurrency: string): any {
           if (key === 'currency') value = targetCurrency;
           if (key === 'currencySymbol') value = CurrencyService.getSymbol(targetCurrency);
         } else if (typeof value === 'object') {
-          value = convertObject(value, targetCurrency);
+          value = convertObject(value, targetCurrency, sourceCurrency);
         }
 
         newObj[key] = value;

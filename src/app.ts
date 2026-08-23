@@ -6,16 +6,15 @@ import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import { RedisStore } from 'rate-limit-redis';
 import redis from './config/redis';
-import path from 'path';
+import path from 'node:path';
+import fs from 'node:fs';
 import errorHandler from './middleware/errorHandler';
 import { requestLogger } from './middleware/requestLogger';
 import { MonitoringService } from './services/monitoringService';
 import routes from './routes';
 import swaggerUi from 'swagger-ui-express';
-import swaggerDocument from '../docs/swagger.json';
 import { currencyMiddleware } from './middleware/currencyMiddleware';
 import mongoose from 'mongoose';
-import os from 'os';
 import crypto from 'node:crypto';
 import { AuthController } from './controllers/authController';
 
@@ -157,10 +156,6 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(currencyMiddleware);
 
-// Static files
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
-
-import fs from 'fs';
 
 // Routes
 app.get('/', (req, res) => {
@@ -382,10 +377,14 @@ app.use('/api/v1', routes);
 
 // Basic Auth Middleware for Documentation
 const swaggerAuth = (req: any, res: any, next: any) => {
-  const auth = {
-    login: process.env.SWAGGER_USER || 'admin',
-    password: process.env.SWAGGER_PASSWORD || 'kauri2026',
-  };
+  // No fallback: if SWAGGER_PASSWORD is not set the server should not have started
+  // (env.ts validates this at boot). If somehow reached, reject safely.
+  const swaggerUser = process.env.SWAGGER_USER;
+  const swaggerPassword = process.env.SWAGGER_PASSWORD;
+  if (!swaggerUser || !swaggerPassword) {
+    return res.status(503).send('Documentation unavailable: server misconfigured.');
+  }
+  const auth = { login: swaggerUser, password: swaggerPassword };
   const b64auth = (req.headers.authorization || '').split(' ')[1] || '';
   const [login, password] = Buffer.from(b64auth, 'base64').toString().split(':');
 
@@ -495,6 +494,14 @@ app.get('/metrics', metricsAuth, MonitoringService.getMetrics.bind(MonitoringSer
 import { PaymentController } from './controllers/paymentController';
 app.get('/payment/success', PaymentController.handlePaymentSuccess);
 app.get('/payment/cancel', PaymentController.handlePaymentCancel);
+
+// 404 Fallback for unhandled API routes (ensures mobile clients always receive clean JSON instead of HTML)
+app.use((req, res, _next) => {
+  res.status(404).json({
+    status: 'error',
+    message: `Route introuvable: ${req.method} ${req.originalUrl}`,
+  });
+});
 
 // Error handling
 app.use(errorHandler);

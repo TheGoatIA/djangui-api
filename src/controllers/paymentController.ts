@@ -15,6 +15,18 @@ const escapeHtml = (str: string): string =>
     .replace(/\//g, '&#x2F;');
 
 export class PaymentController {
+  static async payWithWallet(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const result = await PaymentService.paySubscriptionWithWallet(req.user._id);
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
   static async checkoutStripe(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const { amount, type } = req.body;

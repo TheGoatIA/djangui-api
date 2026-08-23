@@ -33,6 +33,15 @@ const savingGoalSchema = new Schema<ISavingGoalDocument>(
       default: 0,
       min: 0,
     },
+    // Native currency of targetAmount/currentAmount/contributions[].amount —
+    // always set server-side from the creating user's own currency (see
+    // GoalService.createGoal), never trust a client-supplied value here.
+    // Without this field, currencyMiddleware has no way to tell these amounts
+    // are already in e.g. EUR and wrongly re-converts them as if they were XAF.
+    currency: {
+      type: String,
+      default: 'XAF',
+    },
     startDate: {
       type: Date,
       default: Date.now,

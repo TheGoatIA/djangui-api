@@ -181,15 +181,18 @@ export class InvoiceService {
       logger.info(`[FINTECH] Header generation...`);
 
       // --- HEADER ---
-      // Logo Officiel Kauri
-      const logoUrl = 'https://kauri-app.com/logo.png';
+      // Logo Kauri : chemin local (évite PDFKit qui ne supporte pas les URLs HTTP)
+      const logoLocalPath = path.join(process.cwd(), 'public', 'logo.png');
       try {
-        // On tente de charger le logo (fallback sur shape si URL inaccessible en local)
-        // Note: En production, il vaut mieux avoir le logo en local ou déjà téléchargé
-        doc.image(logoUrl, 50, 45, { width: 50 });
+        if (fs.existsSync(logoLocalPath)) {
+          doc.image(logoLocalPath, 50, 45, { width: 50 });
+        } else {
+          // Fallback vectoriel Kauri (vert/jaune) si logo absent
+          throw new Error(`Logo file not found at ${logoLocalPath}`);
+        }
       } catch (e: any) {
         // Fallback Shape Kauri Style (Vert/Jaune)
-        logger.warn(`Could not load remote logo for invoice, using fallback: ${e.message}`);
+        logger.debug(`Using fallback logo shape for invoice: ${e.message}`);
         doc
           .save()
           .fillColor('#16A34A') // Vert Kauri
@@ -324,16 +327,24 @@ export class InvoiceService {
         stream.on('error', reject);
       });
 
-      // 3. Upload vers MinIO
+      // 3. Upload vers MinIO (non bloquant si MinIO indisponible en dev local)
       const bucket = 'kauri-invoices';
       const destinationKey = `invoices/${fileName}`;
-      const publicUrl = await StorageService.uploadFile(filePath, bucket, destinationKey);
-
-      // 4. Nettoyage local (Optionnel, mais recommandé si on veut être full cloud)
+      let publicUrl: string;
       try {
-        fs.unlinkSync(filePath);
-      } catch (e: any) {
-        logger.warn(`Failed to cleanup temporary invoice file at ${filePath}: ${e.message}`);
+        publicUrl = await StorageService.uploadFile(filePath, bucket, destinationKey);
+        // Cleanup local temp file only if successfully uploaded to MinIO
+        try {
+          fs.unlinkSync(filePath);
+        } catch (e: any) {
+          logger.warn(`Failed to cleanup temporary invoice file at ${filePath}: ${e.message}`);
+        }
+      } catch (storageErr: any) {
+        // MinIO unavailable (e.g. dev local without Docker) — keep file local, don't crash
+        logger.warn(
+          `[FINTECH] MinIO upload failed (dev fallback: keeping local file): ${storageErr.message}`,
+        );
+        publicUrl = `file://${filePath}`;
       }
 
       invoice.pdfUrl = publicUrl;
@@ -343,11 +354,12 @@ export class InvoiceService {
         await Transaction.findByIdAndUpdate(invoice.transactionId, { receiptUrl: publicUrl });
       }
 
-      logger.info(`Invoice PDF generated real-world: ${publicUrl}`);
+      logger.info(`Invoice PDF generated: ${publicUrl}`);
     } catch (err: any) {
       logger.error(`[FINTECH] createPhysicalPDF Error: ${err.message}`);
-      throw err; // On relance pour que generateForTransaction le voit
+      throw err;
     }
+
   }
 
   /**

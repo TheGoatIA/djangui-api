@@ -74,6 +74,13 @@ export class NotificationService {
         return;
       }
 
+      // Guard: Firebase may not be initialized in dev if credentials are missing
+      if (!admin.apps.length) {
+        logger.debug(`[FCM] Firebase not initialized — push skipped for user ${userId}: ${payload.title}`);
+        MonitoringService.recordNotificationEvent('skipped', 'firebase_not_configured');
+        return;
+      }
+
       const message: messaging.MulticastMessage = {
         notification: {
           title: payload.title,
@@ -126,6 +133,12 @@ export class NotificationService {
    */
   static async sendToTopic(topic: string, payload: NotificationPayload) {
     try {
+      // Guard: Firebase may not be initialized in dev if credentials are missing
+      if (!admin.apps.length) {
+        logger.debug(`[FCM] Firebase not initialized — topic push skipped (${topic}): ${payload.title}`);
+        return;
+      }
+
       const message: messaging.Message = {
         notification: {
           title: payload.title,

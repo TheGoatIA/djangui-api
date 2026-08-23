@@ -18,6 +18,27 @@ const errorHandler = (err: any, req: Request, res: Response, next: NextFunction)
   err.statusCode = err.statusCode || 500;
   err.status = err.status || 'error';
 
+  // --- MongoDB-specific error normalisation ---
+  // CastError: invalid ObjectId (e.g. /users/not-an-id)
+  if (err.name === 'CastError') {
+    err = new AppError(`Identifiant invalide: ${err.value}`, 400);
+  }
+
+  // ValidationError: Mongoose schema validation failures
+  if (err.name === 'ValidationError') {
+    const messages = Object.values(err.errors)
+      .map((e: any) => e.message)
+      .join(', ');
+    err = new AppError(messages, 400);
+  }
+
+  // Duplicate key error (unique constraint)
+  if (err.code === 11000) {
+    const field = Object.keys(err.keyValue || {})[0] || 'field';
+    err = new AppError(`Cette valeur de '${field}' est déjà utilisée.`, 409);
+  }
+  // --------------------------------------------
+
   if (process.env.NODE_ENV === 'development') {
     logger.error(`Error: ${err.message}`, { stack: err.stack });
     res.status(err.statusCode).json({

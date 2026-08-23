@@ -10,19 +10,36 @@ import { SlackService } from './slackService';
 import { MonitoringService } from './monitoringService';
 import { WalletService } from './walletService';
 import { InvoiceService } from './invoiceService';
+import { FeatureFlagService } from './featureFlagService';
+import { FraudService } from './fraudService';
+import { NotificationService } from './notificationService';
 
 export class PaymentService {
   /**
-   * List of currencies without decimals (e.g., XAF, JPY)
+   * Currencies that are expressed as whole units with no decimals (zero-decimal).
+   * Source: https://stripe.com/docs/currencies#zero-decimal
+   * IMPORTANT: If a currency is missing here, Stripe receives `amount * 100`
+   * instead of `amount`, causing a 100x over-charge. Keep this list in sync
+   * with Stripe's official documentation on every currency addition.
    */
   private static readonly ZERO_DECIMAL_CURRENCIES = [
-    'XAF',
-    'JPY',
-    'CLP',
-    'GNF',
-    'KRW',
-    'PYG',
-    'VND',
+    'BIF', // Franc burundais
+    'CLP', // Peso chilien
+    'DJF', // Franc djiboutien
+    'GNF', // Franc guinéen
+    'ISK', // Couronne islandaise
+    'JPY', // Yen japonais
+    'KMF', // Franc comorien
+    'KRW', // Won coréen
+    'MGA', // Ariary malgache
+    'PYG', // Guaraní paraguayen
+    'RWF', // Franc rwandais
+    'UGX', // Shilling ougandais
+    'VND', // Dong vietnamien
+    'VUV', // Vatu vanuatuan
+    'XAF', // Franc CFA BEAC (Cameroun, Congo, Gabon...)
+    'XOF', // Franc CFA BCEAO (Côte d'Ivoire, Sénégal...)
+    'XPF', // Franc CFP (Polynésie française)
   ];
 
   /**
@@ -70,6 +87,35 @@ export class PaymentService {
     const user = await User.findById(userIdStr);
     if (!user) throw new AppError('User not found', 404);
 
+    // Real-money kill-switch: when the admin has switched the platform to
+    // virtual/simulation mode, no real card charge should be possible either —
+    // otherwise a user could deposit/subscribe with real money while
+    // withdrawals stay blocked, leaving funds stuck with no way out.
+    if (!(await FeatureFlagService.isRealMoneyEnabled())) {
+      throw new AppError(
+        'Les paiements réels sont actuellement désactivés (Mode Portefeuille Virtuel / Simulation).',
+        400,
+      );
+    }
+
+    // Launch scope: real money currently starts in Cameroon only, wherever the
+    // user actually is (see FeatureFlagService.getRealMoneyCountries).
+    if (!(await FeatureFlagService.isCountryAllowedForRealMoney(user.country))) {
+      throw new AppError(
+        "Les paiements réels ne sont pas encore disponibles dans votre pays.",
+        400,
+      );
+    }
+
+    // Recharge (deposit) money into the wallet is exclusively via NotchPay
+    // Mobile Money for now — Stripe is only used for subscription payments.
+    if (type === 'deposit') {
+      throw new AppError(
+        'La recharge du portefeuille se fait uniquement via Mobile Money (NotchPay) pour le moment.',
+        400,
+      );
+    }
+
     const reference = `STP-${uuidv4().split('-')[0].toUpperCase()}`;
 
     // For subscriptions, the price is a fixed, server-determined amount based on the
@@ -99,8 +145,8 @@ export class PaymentService {
           },
         ],
         mode: 'payment',
-        success_url: `${process.env.FRONTEND_URL}/payment/success?ref=${reference}`,
-        cancel_url: `${process.env.FRONTEND_URL}/payment/cancel`,
+        success_url: `${process.env.SERVER_URL || `http://localhost:${process.env.PORT || 5000}`}/payment/success?ref=${reference}`,
+        cancel_url: `${process.env.SERVER_URL || `http://localhost:${process.env.PORT || 5000}`}/payment/cancel`,
         customer_email: user.email,
         client_reference_id: userIdStr,
         metadata: {
@@ -158,8 +204,17 @@ export class PaymentService {
     const user = await User.findById(userIdStr);
     if (!user) throw new AppError('User not found', 404);
 
-    // Geo-fencing: NotchPay only for Cameroon
-    if (user.country !== 'CM') {
+    // Real-money kill-switch — see the equivalent guard in createStripeSession.
+    if (!(await FeatureFlagService.isRealMoneyEnabled())) {
+      throw new AppError(
+        'Les paiements réels sont actuellement désactivés (Mode Portefeuille Virtuel / Simulation).',
+        400,
+      );
+    }
+
+    // Geo-fencing: launch scope is Cameroon-only for now (admin-editable allowlist,
+    // see FeatureFlagService.getRealMoneyCountries).
+    if (!(await FeatureFlagService.isCountryAllowedForRealMoney(user.country))) {
       throw new AppError('NotchPay is only available for users in Cameroon.', 400);
     }
 
@@ -172,9 +227,26 @@ export class PaymentService {
       );
     }
 
-    // Basic format check for NotchPay (must be valid number, ideally starting with +)
-    if (!/^\+?[1-9]\d{1,14}$/.test(finalPhone.replaceAll(' ', ''))) {
-      throw new AppError('The phone number provided is not valid for NotchPay (+237...).', 400);
+    // Basic format check for NotchPay (must be valid phone number, e.g. +2376XXXXXXXX or 6XXXXXXXX)
+    const sanitizedPhone = finalPhone.replace(/[\s\-()]/g, '');
+    if (!/^\+?[1-9]\d{6,14}$/.test(sanitizedPhone)) {
+      throw new AppError(
+        'Numéro de téléphone invalide pour NotchPay. Veuillez fournir un numéro au format international (ex: +237 6XXXXXXXX).',
+        400,
+      );
+    }
+
+    // Fraud screening: deposits previously had zero fraud assessment (only
+    // withdrawals were checked) — velocity and deposit-clustering rules now
+    // apply here too. See FraudService for the exact heuristics.
+    if (type === 'deposit') {
+      const fraud = await FraudService.assess(userIdStr, clientAmount, 'deposit', user.currency || 'XAF');
+      if (fraud.block) {
+        throw new AppError(
+          'Opération temporairement suspendue par notre système de sécurité. Veuillez contacter le support.',
+          403,
+        );
+      }
     }
 
     const reference = `NTP-${uuidv4().split('-')[0].toUpperCase()}`;
@@ -197,7 +269,7 @@ export class PaymentService {
         },
         description: type === 'subscription' ? 'Abonnement Kauri Premium' : 'Recharge Portefeuille',
         reference,
-        callback: `${process.env.FRONTEND_URL}/payment/success?ref=${reference}`,
+        callback: `${process.env.SERVER_URL || `http://localhost:${process.env.PORT || 5000}`}/payment/success?ref=${reference}`,
       });
 
       MonitoringService.recordPaymentGateway('notchpay', 'initialize', 'success');
@@ -420,6 +492,102 @@ export class PaymentService {
   /**
    * Cancel active subscription
    */
+  /**
+   * Pay Premium subscription using Kauri Wallet balance
+   */
+  static async paySubscriptionWithWallet(userId: any) {
+    const userIdStr = userId.toString();
+    const user = await User.findById(userIdStr);
+    if (!user) throw new AppError('User not found', 404);
+
+    const priceInfo = this.getSubscriptionPrice(user.country);
+    const amount = priceInfo.amount;
+    const currency = priceInfo.currency;
+
+    if (user.walletBalance < amount) {
+      throw new AppError(
+        `Solde insuffisant dans votre portefeuille (${user.walletBalance.toLocaleString()} ${user.currency || 'XAF'} disponible, ${amount.toLocaleString()} ${currency} requis).`,
+        400,
+      );
+    }
+
+    const reference = `WAL-${uuidv4().split('-')[0].toUpperCase()}`;
+
+    const result = await WalletService.runInTransaction(async (session) => {
+      const walletTransaction = await WalletService.executeTransaction(
+        {
+          userId: userIdStr,
+          amount,
+          type: 'withdrawal',
+          description: 'Abonnement Kauri Premium (Portefeuille)',
+          paymentMethod: 'wallet',
+          reference,
+        },
+        { session },
+      );
+
+      const payment = await Payment.create(
+        [
+          {
+            userId: userIdStr,
+            amount,
+            currency,
+            method: 'wallet',
+            type: 'subscription',
+            reference,
+            status: 'completed',
+            completedAt: new Date(),
+          },
+        ],
+        { session },
+      );
+
+      const updatedUser = await User.findByIdAndUpdate(
+        userIdStr,
+        {
+          'subscription.plan': 'premium',
+          'subscription.status': 'active',
+          'subscription.startDate': new Date(),
+          'subscription.endDate': new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        },
+        { new: true, session },
+      );
+
+      return { payment: payment[0], walletTransaction, user: updatedUser };
+    });
+
+    InvoiceService.generateForPayment(result.payment._id.toString()).catch((err: any) =>
+      logger.error(`Error generating invoice for wallet subscription: ${err.message}`),
+    );
+
+    AuditService.record({
+      userId,
+      action: 'SUBSCRIBE_WALLET',
+      resource: 'PAYMENT',
+      resourceId: reference,
+      status: 'success',
+      metadata: { method: 'wallet', amount, type: 'subscription' },
+    });
+
+    NotificationService.sendToUser(userIdStr, {
+      title: 'Abonnement Premium Activé 🌟',
+      body: `Félicitations ! Votre abonnement Kauri Premium (1 mois) a été payé avec succès depuis votre portefeuille (${amount} ${currency}).`,
+      category: 'transactional',
+      data: { reference, type: 'subscription_success' },
+    }).catch((err: any) => logger.error(`Notification Error: ${err.message}`));
+
+    SlackService.sendNotification(
+      `⭐ *Wallet Subscription Completed*\n*User ID*: ${userIdStr}\n*Amount*: ${amount} ${currency}\n*Reference*: ${reference}`,
+    );
+
+    return {
+      reference,
+      status: 'completed',
+      message: 'Abonnement Kauri Premium activé avec succès !',
+      user: result.user,
+    };
+  }
+
   static async cancelSubscription(userId: string) {
     const user = await User.findById(userId);
     if (!user) throw new AppError('User not found', 404);

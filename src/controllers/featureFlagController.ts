@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import FeatureFlag from '../models/FeatureFlag';
 import { RedisService } from '../services/redisService';
+import { FeatureFlagService } from '../services/featureFlagService';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 
@@ -33,6 +34,13 @@ export class FeatureFlagController {
         };
         return acc;
       }, {});
+
+      // Exposed alongside the flags so the mobile client can locally decide
+      // whether ITS user's country is currently allowed for real money
+      // (e.g. to skip navigating to the wallet at all), without duplicating
+      // a hardcoded country literal that would drift from the real,
+      // admin-editable allowlist this same value is read from server-side.
+      (featuresMap as any).real_money_countries = await FeatureFlagService.getRealMoneyCountries();
 
       // Save to cache
       await RedisService.set(FEATURES_CACHE_KEY, featuresMap, CACHE_TTL);
@@ -98,6 +106,22 @@ export class FeatureFlagController {
     try {
       const { id } = req.params;
       const updates = req.body;
+
+      const existing = await FeatureFlag.findById(id);
+      if (!existing) {
+        return next(new AppError('Feature flag not found', 404));
+      }
+
+      // The real-money flag is special-cased: route through
+      // FeatureFlagService.setRealMoneyMode so the SystemSetting override
+      // (authoritative for FeatureFlagService.isRealMoneyEnabled) stays in
+      // sync with this flag document, with a single consolidated notification
+      // broadcast — see the equivalent guard in adminController.updateSystemSetting.
+      if (existing.slug === 'feat_real_money' && updates.isEnabled !== undefined) {
+        await FeatureFlagService.setRealMoneyMode(Boolean(updates.isEnabled), (req as any).user._id);
+        const flag = await FeatureFlag.findById(id);
+        return res.status(200).json({ status: 'success', data: flag });
+      }
 
       const flag = await FeatureFlag.findByIdAndUpdate(id, updates, {
         new: true,

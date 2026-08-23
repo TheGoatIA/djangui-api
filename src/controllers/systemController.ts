@@ -25,6 +25,10 @@ export class SystemController {
 
       const maintenanceSetting = settings.find((s) => s.key === 'maintenance_mode');
       const isMaintenance = maintenanceSetting?.value === true;
+      const maintenanceMessageSetting = settings.find((s) => s.key === 'maintenance_message');
+      const maintenanceMessage = maintenanceMessageSetting
+        ? (maintenanceMessageSetting.value as string)
+        : undefined;
 
       const minVersionKey = `${platform}_min_version`;
       const latestVersionKey = `${platform}_latest_version`;
@@ -53,6 +57,7 @@ export class SystemController {
           minVersion,
           updateUrl,
           maintenanceMode: isMaintenance,
+          maintenanceMessage,
         },
       });
     } catch (error) {

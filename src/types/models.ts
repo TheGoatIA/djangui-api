@@ -40,9 +40,11 @@ export interface IUser {
   passwordResetExpires?: Date;
   isPremium: boolean;
   walletBalance: number;
-  kycLevel: 'none' | 'pending' | 'verified' | 'rejected';
+  kycLevel: 'none' | 'pending' | 'verified' | 'rejected' | 'expired' | 'update_required';
   kycData?: {
-    documentType: 'cni' | 'passport' | 'driver_license';
+    documentType: string;
+    documentExpiryDate?: Date;
+    documentBackImageUrl?: string;
     documentNumber?: string;
     fullName?: string;
     documentImageUrl?: string;
@@ -259,6 +261,7 @@ export interface IBudget {
   }[];
   totalAllocated: number;
   totalSpent: number;
+  currency: string;
   status: 'active' | 'completed' | 'exceeded';
   createdAt: Date;
   updatedAt: Date;
@@ -272,6 +275,7 @@ export interface ISavingGoal {
   type: 'emergency' | 'project' | 'regular' | 'challenge' | 'debt';
   targetAmount: number;
   currentAmount: number;
+  currency: string;
   startDate: Date;
   deadline?: Date;
   priority: 'high' | 'medium' | 'low';

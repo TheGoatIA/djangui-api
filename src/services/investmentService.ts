@@ -243,4 +243,36 @@ export class InvestmentService {
 
     return true;
   }
+
+  /**
+   * Admin: List all investments across all users with user details and filters
+   */
+  static async listAllInvestments(query: { status?: string; type?: string; page?: number; limit?: number }) {
+    const filter: Record<string, any> = {};
+    if (query.status) filter.status = query.status;
+    if (query.type) filter.type = query.type;
+
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    const [investments, total] = await Promise.all([
+      Investment.find(filter)
+        .populate('userId', 'firstName lastName email currency')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      Investment.countDocuments(filter),
+    ]);
+
+    return {
+      investments,
+      pagination: {
+        total,
+        page,
+        limit,
+        pages: Math.ceil(total / limit),
+      },
+    };
+  }
 }

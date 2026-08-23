@@ -45,6 +45,15 @@ const budgetSchema = new Schema<IBudgetDocument>(
       required: true,
       default: 0,
     },
+    // Native currency of totalAllocated/totalSpent/categories[].allocated|spent —
+    // always set server-side from the creating user's own currency (see
+    // BudgetService.createBudget), never trust a client-supplied value here.
+    // Without this field, currencyMiddleware has no way to tell these amounts
+    // are already in e.g. EUR and wrongly re-converts them as if they were XAF.
+    currency: {
+      type: String,
+      default: 'XAF',
+    },
     status: {
       type: String,
       enum: ['active', 'completed', 'exceeded'],

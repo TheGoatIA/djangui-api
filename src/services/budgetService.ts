@@ -1,4 +1,5 @@
 import Budget from '../models/Budget';
+import User from '../models/User';
 import { AppError } from '../middleware/errorHandler';
 
 export class BudgetService {
@@ -13,7 +14,15 @@ export class BudgetService {
       throw new AppError('Budget for this period already exists', 400);
     }
 
-    const budget = await Budget.create({ ...data, userId });
+    // Always the creating user's own currency, never a client-supplied value —
+    // this is what lets currencyMiddleware tell the amounts below are already
+    // native to that currency instead of assuming XAF.
+    const user = await User.findById(userId).select('currency').lean();
+    const budget = await Budget.create({
+      ...data,
+      userId,
+      currency: user?.currency || 'XAF',
+    });
     return budget;
   }
 

@@ -6,6 +6,7 @@ import { AuditService } from './auditService';
 import { NotificationService } from './notificationService';
 import { MonitoringService } from './monitoringService';
 import { FinancialAlertService } from './financialAlertService';
+import { CurrencyService } from './currencyService';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger';
 
@@ -21,15 +22,37 @@ const AML_LIMITS = {
   },
 };
 
-/** Retourne les limites AML applicables selon le plan de l'utilisateur. */
+/** Retourne les limites AML applicables selon le plan et la devise de l'utilisateur. */
+export interface AMLLimits {
+  MAX_SINGLE_TRANSACTION: number;
+  MAX_DAILY_TOTAL: number;
+  currency: string;
+  symbol: string;
+}
+
 const getUserLimits = (user: {
+  currency?: string;
   subscription?: { plan?: string; status?: string; endDate?: Date };
-}) => {
+}): AMLLimits => {
   const isPremium =
     user.subscription?.plan === 'premium' &&
     user.subscription?.status === 'active' &&
     (!user.subscription?.endDate || new Date(user.subscription.endDate) >= new Date());
-  return isPremium ? AML_LIMITS.premium : AML_LIMITS.free;
+  const baseLimits = isPremium ? AML_LIMITS.premium : AML_LIMITS.free;
+
+  const userCurrency = (user.currency || 'XAF').toUpperCase();
+  const rate = CurrencyService.getRate('XAF', userCurrency);
+  const symbol = CurrencyService.getSymbol(userCurrency);
+
+  const isZeroDecimal = ['XAF', 'XOF', 'JPY', 'CLP', 'GNF', 'KRW', 'PYG', 'VND', 'BIF', 'DJF', 'ISK', 'KMF', 'MGA', 'RWF', 'UGX', 'VUV', 'XPF'].includes(userCurrency);
+  const roundLimit = (val: number) => isZeroDecimal ? Math.round(val) : Math.round(val * 100) / 100;
+
+  return {
+    MAX_SINGLE_TRANSACTION: roundLimit(baseLimits.MAX_SINGLE_TRANSACTION * rate),
+    MAX_DAILY_TOTAL: roundLimit(baseLimits.MAX_DAILY_TOTAL * rate),
+    currency: userCurrency,
+    symbol,
+  };
 };
 
 /**
@@ -123,7 +146,7 @@ export class WalletService {
       // AML: limite par transaction unique
       if (amount > limits.MAX_SINGLE_TRANSACTION) {
         throw new AppError(
-          `Montant dépasse la limite par transaction pour les comptes ${planLabel} (${limits.MAX_SINGLE_TRANSACTION.toLocaleString()} FCFA)`,
+          `Montant dépasse la limite par transaction pour les comptes ${planLabel} (${limits.MAX_SINGLE_TRANSACTION.toLocaleString()} ${limits.symbol})`,
           400,
         );
       }
@@ -141,8 +164,11 @@ export class WalletService {
         const dailyTotal = await Transaction.aggregate([
           {
             $match: {
-              userId: new mongoose.Types.ObjectId(userId),
-              type: { $in: ['expense', 'withdrawal'] },
+              userId: mongoose.Types.ObjectId.isValid(userId)
+                ? new mongoose.Types.ObjectId(userId)
+                : userId,
+              // AML: tous les débits du jour, quel que soit leur type
+              type: { $in: ['expense', 'withdrawal', 'tontine_contribution', 'saving_transfer'] },
               status: 'completed',
               date: { $gte: startOfDay },
             },
@@ -153,7 +179,7 @@ export class WalletService {
         const todaySpent = dailyTotal[0]?.total || 0;
         if (todaySpent + amount > limits.MAX_DAILY_TOTAL) {
           throw new AppError(
-            `Limite journalière de transactions atteinte pour les comptes ${planLabel} (${limits.MAX_DAILY_TOTAL.toLocaleString()} FCFA/jour)`,
+            `Limite journalière de transactions atteinte pour les comptes ${planLabel} (${limits.MAX_DAILY_TOTAL.toLocaleString()} ${limits.symbol}/jour)`,
             400,
           );
         }

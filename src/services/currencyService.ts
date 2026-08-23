@@ -166,6 +166,7 @@ export class CurrencyService {
             $set: {
               totalAllocated: { $round: [{ $multiply: ['$totalAllocated', rate] }, 2] },
               totalSpent: { $round: [{ $multiply: ['$totalSpent', rate] }, 2] },
+              currency: newCurrency,
               categories: {
                 $map: {
                   input: '$categories',
@@ -192,6 +193,7 @@ export class CurrencyService {
             $set: {
               targetAmount: { $round: [{ $multiply: ['$targetAmount', rate] }, 2] },
               currentAmount: { $round: [{ $multiply: ['$currentAmount', rate] }, 2] },
+              currency: newCurrency,
               contributions: {
                 $map: {
                   input: '$contributions',

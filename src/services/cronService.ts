@@ -20,6 +20,7 @@ import { SubscriptionService } from './subscriptionService';
 import { SlackService } from './slackService';
 import { MonitoringService } from './monitoringService';
 import { ReconciliationService } from './reconciliationService';
+import { NotchPayReconciliationService } from './notchpayReconciliationService';
 import { FinancialAlertService } from './financialAlertService';
 import { CurrencyService } from './currencyService';
 import UserActivity from '../models/UserActivity';
@@ -171,6 +172,17 @@ export class CronService {
       '0 4 * * *',
       this.runMonitored('global_reconciliation', async () => {
         await ReconciliationService.checkInternalIntegrity();
+      }),
+    );
+
+    // Every 30 minutes: check pending payments/transfers against NotchPay's
+    // own records directly (not just Kauri's internal ledger against itself,
+    // which is all the job above does) — self-heals a missed webhook instead
+    // of leaving a payment stuck pending or a failed withdrawal unrefunded.
+    cron.schedule(
+      '*/30 * * * *',
+      this.runMonitored('notchpay_reconciliation', async () => {
+        await NotchPayReconciliationService.reconcile();
       }),
     );
 
@@ -389,6 +401,9 @@ export class CronService {
               totalAllocated: lastBudget.totalAllocated,
               totalSpent: 0,
               status: 'active',
+              // Cloned amounts are already in the previous budget's currency —
+              // never assume XAF, that mislabels a non-XAF user's rollover budget.
+              currency: lastBudget.currency || user.currency || 'XAF',
             });
           }
         } catch (err: any) {

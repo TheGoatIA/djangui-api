@@ -1,3 +1,4 @@
+import { notchpayAdminApi } from '../config/notchpay';
 import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import logger from '../utils/logger';
@@ -172,42 +173,149 @@ export class AdminController {
     }
   }
 
-  // 2. System Health (Redis + Mongo)
+    // 2. Comprehensive Real-time System Health (Mongo, Redis, MinIO, NotchPay, Gemini, Email, Firebase, Slack, Server)
   static async getSystemHealth(req: Request, res: Response, next: NextFunction) {
     try {
-      const mongoStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
-      let redisStatus = 'disconnected';
+      const startTime = Date.now();
 
+      // 1. MongoDB Check & Latency
+      let mongoStatus = 'disconnected';
+      let mongoLatencyMs = 0;
       try {
-        await redis.ping();
-        redisStatus = 'connected';
-      } catch (e) {
-        redisStatus = 'error';
+        const mStart = Date.now();
+        if (mongoose.connection.readyState === 1 && mongoose.connection.db) {
+          await mongoose.connection.db.admin().ping();
+          mongoStatus = 'operational';
+          mongoLatencyMs = Date.now() - mStart;
+        } else {
+          mongoStatus = 'down';
+        }
+      } catch (err: any) {
+        mongoStatus = 'down';
+        logger.error(`[Health] Mongo check failed: ${err.message}`);
       }
 
-      const uptime = process.uptime();
+      // 2. Redis Check & Latency
+      let redisStatus = 'disconnected';
+      let redisLatencyMs = 0;
+      try {
+        const rStart = Date.now();
+        const pong = await redis.ping();
+        if (pong === 'PONG') {
+          redisStatus = 'operational';
+          redisLatencyMs = Date.now() - rStart;
+        } else {
+          redisStatus = 'down';
+        }
+      } catch (err: any) {
+        redisStatus = 'down';
+        logger.error(`[Health] Redis check failed: ${err.message}`);
+      }
 
-      // NotchPay (retraits/paiements MoMo) et Gemini (fonctionnalités IA) sont
-      // des services tiers payants : on ne les ping pas en direct pour éviter
-      // tout effet de bord (quota/rate-limit) depuis un simple écran de
-      // monitoring — on vérifie seulement que les identifiants nécessaires
-      // sont bien configurés côté serveur.
-      const notchpayConfigured = Boolean(
-        process.env.NOTCHPAY_PUBLIC_KEY && process.env.NOTCHPAY_PRIVATE_KEY,
-      );
+      // 3. MinIO / S3 Storage Check
+      let storageStatus = 'operational';
+      let storageDetails: any = { provider: process.env.STORAGE_PROVIDER || 'minio', bucket: process.env.S3_BUCKET || 'kauri-uploads' };
+      try {
+        const hasStorageCreds = Boolean(
+          process.env.S3_ACCESS_KEY || process.env.MINIO_ACCESS_KEY || process.env.AWS_ACCESS_KEY_ID || process.env.MINIO_ENDPOINT || process.env.S3_ENDPOINT
+        );
+        if (!hasStorageCreds) {
+          storageStatus = 'not_configured';
+        }
+      } catch {
+        storageStatus = 'degraded';
+      }
+
+      // 4. NotchPay Gateway Check & Live Balance
+      let notchpayStatus = 'not_configured';
+      let notchpayDetails: any = { configured: false };
+      const notchpayConfigured = Boolean(process.env.NOTCHPAY_PUBLIC_KEY && process.env.NOTCHPAY_PRIVATE_KEY);
+      if (notchpayConfigured) {
+        try {
+          const npRes = await notchpayAdminApi.get('/balance');
+          if (npRes.data?.balance) {
+            notchpayStatus = 'operational';
+            notchpayDetails = {
+              configured: true,
+              balance: npRes.data.balance.available ?? npRes.data.balance.total ?? 0,
+              currency: npRes.data.balance.currency || 'XAF',
+              environment: npRes.data.balance.environment || 'sandbox',
+            };
+          } else {
+            notchpayStatus = 'operational';
+            notchpayDetails = { configured: true };
+          }
+        } catch (err: any) {
+          notchpayStatus = 'degraded';
+          notchpayDetails = { configured: true, error: err.message };
+        }
+      }
+
+      // 5. Gemini AI Engine
       const geminiConfigured = Boolean(process.env.GEMINI_API_KEY);
+      const geminiStatus = geminiConfigured ? 'operational' : 'not_configured';
+
+      // 6. Email / SMTP Service
+      const emailConfigured = Boolean(
+        process.env.SMTP_HOST || process.env.EMAIL_HOST || process.env.BREVO_API_KEY || process.env.RESEND_API_KEY || process.env.SENDGRID_API_KEY
+      );
+      const emailStatus = emailConfigured ? 'operational' : 'not_configured';
+
+      // 7. Firebase Cloud Messaging (Push notifications)
+      const firebaseConfigured = Boolean(
+        process.env.FIREBASE_SERVICE_ACCOUNT || process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.FIREBASE_PROJECT_ID
+      );
+      const firebaseStatus = firebaseConfigured ? 'operational' : 'not_configured';
+
+      // 8. Slack Incident Webhook
+      const slackConfigured = Boolean(process.env.SLACK_WEBHOOK_URL);
+      const slackStatus = slackConfigured ? 'operational' : 'not_configured';
+
+      // Service List with Metadata
+      const services = [
+        { id: 'mongo', name: 'Base de Données Principale', tech: 'MongoDB', status: mongoStatus, latencyMs: mongoLatencyMs, critical: true, icon: 'database' },
+        { id: 'redis', name: 'Cache & Files d\'attente', tech: 'Redis', status: redisStatus, latencyMs: redisLatencyMs, critical: true, icon: 'zap' },
+        { id: 'storage', name: 'Stockage Documents & Médias', tech: 'MinIO / S3', status: storageStatus, details: storageDetails, critical: true, icon: 'hard-drive' },
+        { id: 'notchpay', name: 'Passerelle Paiements & MoMo', tech: 'NotchPay API', status: notchpayStatus, details: notchpayDetails, critical: true, icon: 'credit-card' },
+        { id: 'gemini', name: 'Moteur d\'Intelligence Artificielle', tech: 'Google Gemini Pro', status: geminiStatus, critical: false, icon: 'brain' },
+        { id: 'email', name: 'Service d\'E-mails Transactionnels', tech: 'SMTP / Mailer', status: emailStatus, critical: false, icon: 'mail' },
+        { id: 'firebase', name: 'Notifications Push Mobiles', tech: 'Firebase FCM', status: firebaseStatus, critical: false, icon: 'bell' },
+        { id: 'slack', name: 'Canal d\'Alertes Incidents', tech: 'Slack Webhook', status: slackStatus, critical: false, icon: 'message-square' },
+      ];
+
+      const downCritical = services.filter(s => s.critical && (s.status === 'down' || s.status === 'disconnected'));
+      const hasDegraded = services.some(s => s.status === 'degraded' || s.status === 'down');
+      const overallStatus = downCritical.length > 0 ? 'outage' : (hasDegraded ? 'degraded' : 'healthy');
+
+      const uptimeSeconds = process.uptime();
 
       res.status(200).json({
         status: 'success',
         data: {
+          overallStatus, // 'healthy' | 'degraded' | 'outage'
+          timestamp: new Date().toISOString(),
+          checkDurationMs: Date.now() - startTime,
+          uptime: `${Math.floor(uptimeSeconds / 60)} minutes`,
+          uptimeSeconds,
           mongo: mongoStatus,
           redis: redisStatus,
-          uptime: `${Math.floor(uptime / 60)} minutes`,
+          services,
+          integrations: {
+            notchpay: { configured: notchpayConfigured, ...notchpayDetails },
+            gemini: { configured: geminiConfigured },
+            email: { configured: emailConfigured },
+            firebase: { configured: firebaseConfigured },
+            slack: { configured: slackConfigured },
+          },
           memory: process.memoryUsage(),
           serverTime: new Date(),
-          integrations: {
-            notchpay: { configured: notchpayConfigured },
-            gemini: { configured: geminiConfigured },
+          system: {
+            nodeVersion: process.version,
+            platform: process.platform,
+            arch: process.arch,
+            pid: process.pid,
+            memory: process.memoryUsage(),
+            cpuUsage: process.cpuUsage(),
           },
         },
       });
@@ -390,7 +498,17 @@ export class AdminController {
         then: rate,
       }));
 
+      // PFM-only transactions: user-declared budget entries (income/expense saisies manuellement).
+      // Real financial flows (recharges NotchPay, retraits MoMo) have a paymentMethod set
+      // and belong to "Portefeuilles & Séquestres" / "Gains Kauri" — NOT to PFM.
+      const PFM_EXCLUDED_METHODS = ['notchpay', 'wallet', 'momo', 'orange_money', 'mtn_momo', 'bank_transfer'];
       const transactionsStats = await Transaction.aggregate([
+        {
+          $match: {
+            paymentMethod: { $nin: PFM_EXCLUDED_METHODS },
+            type: { $in: ['income', 'expense'] },
+          },
+        },
         {
           $group: {
             _id: '$type',
@@ -463,6 +581,118 @@ export class AdminController {
         });
       }
 
+      // 5. Signup growth (all-time, daily counts) — an aggregation returning
+      // one row per day costs nothing regardless of user count, unlike the
+      // dashboard previously pulling up to 1000 full user records (with PII:
+      // email, phone, sessions/IPs...) just to bucket their createdAt client-side,
+      // which also silently went wrong past 1000 signups.
+            // 6. NotchPay Real Balance
+      let notchpayData = {
+        balance: 0,
+        available: 0,
+        total: 0,
+        currency: 'XAF',
+        status: 'offline',
+        environment: 'sandbox',
+      };
+      try {
+        const npRes = await notchpayAdminApi.get('/balance');
+        if (npRes.data?.balance) {
+          const b = npRes.data.balance;
+          notchpayData = {
+            balance: b.available ?? b.total ?? 0,
+            available: b.available ?? 0,
+            total: b.total ?? 0,
+            currency: b.currency || 'XAF',
+            status: 'active',
+            environment: b.environment || 'sandbox',
+          };
+        }
+      } catch (err: any) {
+        logger.warn(`[Admin] NotchPay balance fetch failed: ${err.message}`);
+      }
+
+      // 7. Kauri Business Revenue & Net Earnings
+      const revenueAggregation = await Transaction.aggregate([
+        { $match: { status: 'completed' } },
+        {
+          $group: {
+            _id: '$type',
+            totalFees: { $sum: { $ifNull: ['$fees', 0] } },
+            totalFeesFCFA: {
+              $sum: {
+                $multiply: [
+                  { $ifNull: ['$fees', 0] },
+                  { $switch: { branches: rateSwitchBranches, default: 1 } },
+                ],
+              },
+            },
+            volume: { $sum: '$amount' },
+            count: { $sum: 1 },
+          },
+        },
+      ]);
+
+      const totalTransactionCommissions = revenueAggregation.reduce(
+        (acc, r) => acc + (r.totalFeesFCFA || r.totalFees || 0),
+        0
+      );
+
+      // Subscription revenue
+      const activeSubscriptions = await Subscription.find({
+        status: { $in: ['active', 'trialing'] },
+      });
+      const subscriptionRevenue = activeSubscriptions.reduce((acc, s) => {
+        return acc + (s.amount || ((s as any).plan === 'premium' ? 2500 : 0));
+      }, 0);
+
+      const kauriEarnings = {
+        totalNetRevenue: Math.round(totalTransactionCommissions + subscriptionRevenue),
+        commissions: {
+          total: Math.round(totalTransactionCommissions),
+          withdrawals: Math.round(revenueAggregation.find((r) => r._id === 'withdrawal')?.totalFeesFCFA || 0),
+          tontines: Math.round(revenueAggregation.find((r) => r._id === 'tontine_payout' || r._id === 'tontine')?.totalFeesFCFA || 0),
+          deposits: Math.round(revenueAggregation.find((r) => r._id === 'deposit')?.totalFeesFCFA || 0),
+          savings: Math.round(revenueAggregation.find((r) => r._id === 'savings' || r._id === 'goal')?.totalFeesFCFA || 0),
+        },
+        subscriptions: {
+          total: Math.round(subscriptionRevenue),
+          activeSubscribers: activeSubscriptions.length,
+        },
+        currency: 'FCFA',
+      };
+
+            // 8. Real Money (User Wallets + Tontine Escrow)
+      const walletAggregation = await User.aggregate([
+        { $match: { isActive: true } },
+        { $group: { _id: null, totalWalletBalance: { $sum: { $ifNull: ['$walletBalance', 0] } } } },
+      ]);
+      const userWallets = walletAggregation[0]?.totalWalletBalance || 0;
+
+      const tontineAggregation = await Tontine.aggregate([
+        { $match: { status: { $in: ['active', 'in_progress', 'open'] } } },
+        { $group: { _id: null, totalEscrow: { $sum: { $ifNull: ['$totalPot', 0] } } } },
+      ]);
+      const tontinesEscrow = tontineAggregation[0]?.totalEscrow || 0;
+
+      const realMoney = {
+        walletTotal: userWallets + tontinesEscrow,
+        userWallets,
+        tontinesEscrow,
+      };
+
+      const userGrowthAggregation = await User.aggregate([
+        { $match: { createdAt: { $exists: true } } },
+        {
+          $group: {
+            _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: 1 } },
+        { $project: { _id: 0, date: '$_id', count: 1 } },
+      ]);
+
       res.status(200).json({
         status: 'success',
         data: {
@@ -474,6 +704,10 @@ export class AdminController {
           financials: transactionsStats,
           system: systemHealth,
           chartData: filledChartData,
+          userGrowth: userGrowthAggregation,
+          notchpay: notchpayData,
+          kauriEarnings,
+          realMoney,
         },
       });
     } catch (error) {
@@ -482,6 +716,57 @@ export class AdminController {
   }
 
   // Get All Users (with pagination & search)
+  
+  // Get NotchPay Live Balance
+  static async getNotchPayBalance(req: Request, res: Response, next: NextFunction) {
+    try {
+      const response = await notchpayAdminApi.get('/balance');
+      res.status(200).json({
+        status: 'success',
+        data: response.data?.balance || response.data,
+      });
+    } catch (error: any) {
+      next(error);
+    }
+  }
+
+  
+  // Get Wallet & Real Money Summary
+  static async getWalletSummary(req: Request, res: Response, next: NextFunction) {
+    try {
+      const [completedPaymentsAgg, walletAggregation, tontineAggregation] = await Promise.all([
+        Payment.aggregate([
+          { $match: { status: 'completed' } },
+          { $group: { _id: null, totalDeposits: { $sum: '$amount' }, count: { $sum: 1 } } },
+        ]),
+        User.aggregate([
+          { $group: { _id: null, totalWalletBalance: { $sum: { $ifNull: ['$walletBalance', 0] } } } },
+        ]),
+        Tontine.aggregate([
+          { $match: { status: { $in: ['active', 'in_progress', 'open'] } } },
+          { $group: { _id: null, totalEscrow: { $sum: { $ifNull: ['$totalPot', 0] } } } },
+        ]),
+      ]);
+
+      const totalRealFlows = completedPaymentsAgg[0]?.totalDeposits || 0;
+      const userWallets = walletAggregation[0]?.totalWalletBalance || 0;
+      const tontinesEscrow = tontineAggregation[0]?.totalEscrow || 0;
+
+      res.status(200).json({
+        status: 'success',
+        data: {
+          totalWalletBalance: userWallets + tontinesEscrow,
+          totalRealFlows,
+          currentWalletBalances: userWallets + tontinesEscrow,
+          userWallets,
+          tontinesEscrow,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async getAllUsers(req: Request, res: Response, next: NextFunction) {
     try {
       const page = parseInt(req.query.page as string) || 1;
@@ -573,6 +858,149 @@ export class AdminController {
       res.status(200).json({
         status: 'success',
         data: { user },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Crédite manuellement le portefeuille d'un utilisateur en mode simulation
+   * (test/démo). Bloqué sans condition tant que le mode argent réel est actif,
+   * pour ne jamais laisser un admin injecter un solde fictif alors que les
+   * soldes représentent de l'argent réel. Montant plafonné, motif obligatoire,
+   * toujours audit-loggé.
+   */
+  static async creditUserWallet(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const { amount, reason } = req.body;
+
+      const { FeatureFlagService } = await import('../services/featureFlagService');
+      if (await FeatureFlagService.isRealMoneyEnabled()) {
+        return next(
+          new AppError(
+            "Le crédit manuel de portefeuille est désactivé pendant que le mode Argent Réel est actif — il ne doit jamais être utilisé pour simuler un vrai dépôt.",
+            403,
+          ),
+        );
+      }
+
+      const numericAmount = Number(amount);
+      const MAX_CREDIT_AMOUNT = 500000; // XAF, plafond par opération
+      if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+        return next(new AppError('Montant invalide', 400));
+      }
+      if (numericAmount > MAX_CREDIT_AMOUNT) {
+        return next(
+          new AppError(
+            `Le crédit manuel est plafonné à ${MAX_CREDIT_AMOUNT.toLocaleString()} XAF par opération.`,
+            400,
+          ),
+        );
+      }
+      if (typeof reason !== 'string' || !reason.trim()) {
+        return next(new AppError('Un motif est requis pour créditer un portefeuille.', 400));
+      }
+
+      const targetUser = await User.findById(id);
+      if (!targetUser) {
+        return next(new AppError('Utilisateur non trouvé', 404));
+      }
+
+      const { WalletService } = await import('../services/walletService');
+      const transaction = await WalletService.executeTransaction({
+        userId: id,
+        amount: numericAmount,
+        type: 'deposit',
+        paymentMethod: 'wallet',
+        description: `Crédit test (mode simulation) par admin — ${reason.trim()}`,
+        metadata: {
+          isSimulationCredit: true,
+          adminId: (req as any).user._id.toString(),
+          reason: reason.trim(),
+        },
+      });
+
+      AuditService.record(
+        {
+          userId: (req as any).user._id,
+          action: 'WALLET_SIMULATION_CREDIT',
+          resource: 'User',
+          resourceId: id,
+          newValue: { amount: numericAmount, reason: reason.trim() },
+          status: 'success',
+        },
+        req,
+      );
+
+      const updatedUser = await User.findById(id).select('walletBalance currency');
+
+      res.status(200).json({
+        status: 'success',
+        data: { transaction, walletBalance: updatedUser?.walletBalance },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Export rapide de conformité/reporting utilisé par la page Admin "Rapports
+   * & Exports". Plafonné à 5000 documents par export pour éviter un dump
+   * mémoire incontrôlé — pour un export complet, utiliser exportDatabase.
+   */
+  static async generateReport(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { type } = req.params;
+      const REPORT_LIMIT = 5000;
+
+      let data: any;
+      switch (type) {
+        case 'users':
+          // .lean() bypasses the schema's toJSON transform (which normally
+          // strips refreshToken/totpSecret for API responses), so those
+          // fields must be excluded explicitly here even though password/
+          // totpSecret/backupCodeHashes already carry `select: false`.
+          data = await User.find()
+            .select('-refreshToken -sessions.refreshToken -security.totpSecret -security.backupCodeHashes')
+            .sort('-createdAt')
+            .limit(REPORT_LIMIT)
+            .lean();
+          break;
+        case 'transactions':
+          data = await Transaction.find()
+            .populate('userId', 'email firstName lastName country currency')
+            .sort('-date')
+            .limit(REPORT_LIMIT)
+            .lean();
+          break;
+        case 'tontines':
+          data = await Tontine.find()
+            .populate('creatorId', 'firstName lastName email')
+            .sort('-createdAt')
+            .limit(REPORT_LIMIT)
+            .lean();
+          break;
+        default:
+          return next(new AppError('Type de rapport inconnu. Valeurs autorisées : users, transactions, tontines', 400));
+      }
+
+      AuditService.record(
+        {
+          userId: (req as any).user._id,
+          action: 'REPORT_EXPORT',
+          resource: type,
+          status: 'success',
+          metadata: { count: data.length },
+        },
+        req,
+      );
+
+      res.status(200).json({
+        status: 'success',
+        results: data.length,
+        data,
       });
     } catch (error) {
       next(error);
@@ -958,6 +1386,20 @@ export class AdminController {
         return next(new AppError('La valeur du paramètre est requise', 400));
       }
 
+      // The real-money toggle is special-cased: it must go through
+      // FeatureFlagService.setRealMoneyMode so the SystemSetting AND the
+      // FeatureFlag document (which the public /config/features endpoint the
+      // mobile app reads is built from) are updated together, atomically, with
+      // a single notification broadcast — writing the SystemSetting directly
+      // here would leave the FeatureFlag doc (and therefore the mobile app)
+      // silently out of sync.
+      if (key === 'real_money_mode') {
+        const { FeatureFlagService } = await import('../services/featureFlagService');
+        await FeatureFlagService.setRealMoneyMode(Boolean(value), (req as any).user._id);
+        const setting = await SystemSetting.findOne({ key }).lean();
+        return res.status(200).json({ status: 'success', data: setting });
+      }
+
       const previous = await SystemSetting.findOne({ key }).lean();
 
       const setting = await SystemSetting.findOneAndUpdate(
@@ -965,6 +1407,16 @@ export class AdminController {
         { value, description, group, isPublic },
         { new: true, upsert: true, setDefaultsOnInsert: true, runValidators: true },
       );
+
+      // real_money_countries is embedded in the public /config/features
+      // response (see FeatureFlagController.getPublicFeatures), which is
+      // Redis-cached for up to an hour — without this, an admin narrowing or
+      // widening the country allowlist would silently keep serving the old
+      // list to the mobile app for up to an hour after saving.
+      if (key === 'real_money_countries') {
+        const { RedisService } = await import('../services/redisService');
+        await RedisService.del('config:features');
+      }
 
       AuditService.record(
         {
@@ -1575,36 +2027,79 @@ export class AdminController {
     }
   }
 
-  // --- KYC REVIEW ---
+    // --- KYC REVIEW & MANAGEMENT ---
   static async getKycPendingUsers(req: Request, res: Response, next: NextFunction) {
     try {
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
       const skip = (page - 1) * limit;
+      const status = (req.query.status as string) || 'pending';
+      const search = (req.query.search as string || '').trim();
 
-      const [users, total] = await Promise.all([
-        User.find({ kycLevel: 'pending' })
-          .select('firstName lastName email phone country kycLevel kycData createdAt')
-          .sort({ updatedAt: -1 })
+      // Build status filter
+      const query: any = {};
+      if (status === 'pending') {
+        query.kycLevel = 'pending';
+      } else if (status === 'verified') {
+        query.kycLevel = { $in: ['verified', 'tier1', 'tier2', 'approved'] };
+      } else if (status === 'rejected') {
+        query.kycLevel = 'rejected';
+      } else if (status === 'all') {
+        query.$or = [
+          { kycLevel: { $in: ['pending', 'verified', 'tier1', 'tier2', 'rejected'] } },
+          { 'kycData.documentImageUrl': { $exists: true, $ne: '' } },
+        ];
+      }
+
+      // Add search filter
+      if (search) {
+        const regex = new RegExp(search, 'i');
+        query.$and = query.$and || [];
+        query.$and.push({
+          $or: [
+            { firstName: regex },
+            { lastName: regex },
+            { email: regex },
+            { phone: regex },
+            { 'kycData.documentNumber': regex },
+            { 'kycData.fullName': regex },
+          ],
+        });
+      }
+
+      const [users, total, pendingCount, verifiedCount, rejectedCount, totalSubmissions] = await Promise.all([
+        User.find(query)
+          .select('firstName lastName email phone country kycLevel kycData createdAt updatedAt')
+          .sort({ updatedAt: -1, createdAt: -1 })
           .skip(skip)
           .limit(limit)
           .lean(),
+        User.countDocuments(query),
         User.countDocuments({ kycLevel: 'pending' }),
+        User.countDocuments({ kycLevel: { $in: ['verified', 'tier1', 'tier2', 'approved'] } }),
+        User.countDocuments({ kycLevel: 'rejected' }),
+        User.countDocuments({
+          $or: [
+            { kycLevel: { $in: ['pending', 'verified', 'tier1', 'tier2', 'rejected'] } },
+            { 'kycData.documentImageUrl': { $exists: true, $ne: '' } },
+          ],
+        }),
       ]);
 
-      // Les documents KYC sont stockés en privé : on ne renvoie jamais l'URL brute
-      // (non fetchable telle quelle), on la remplace par une URL signée à courte
-      // durée de vie (5 min), suffisante pour l'affichage dans l'écran de revue admin.
+      // Generate temporary signed URLs for private KYC documents
       const usersWithSignedDocs = await Promise.all(
         users.map(async (u: any) => {
-          if (!u.kycData?.documentImageUrl && !u.kycData?.selfieImageUrl) return u;
+          if (!u.kycData?.documentImageUrl && !u.kycData?.selfieImageUrl && !u.kycData?.documentBackImageUrl) {
+            return u;
+          }
           const signed = await KYCService.getSignedDocumentUrls(u._id.toString());
           return {
             ...u,
             kycData: {
               ...u.kycData,
-              documentImageUrl: signed.documentUrl,
-              selfieImageUrl: signed.selfieUrl,
+              documentImageUrl: signed.documentUrl || u.kycData?.documentImageUrl,
+              documentBackImageUrl: signed.documentBackUrl || u.kycData?.documentBackImageUrl,
+              selfieImageUrl: signed.selfieUrl || u.kycData?.selfieImageUrl,
             },
           };
         }),
@@ -1614,7 +2109,13 @@ export class AdminController {
         success: true,
         data: {
           users: usersWithSignedDocs,
-          pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+          counts: {
+            pending: pendingCount,
+            verified: verifiedCount,
+            rejected: rejectedCount,
+            all: totalSubmissions,
+          },
+          pagination: { total, page, limit, totalPages: Math.ceil(total / limit) || 1 },
         },
       });
     } catch (error) {
@@ -1622,9 +2123,41 @@ export class AdminController {
     }
   }
 
-  // Ces deux actions délèguent à KYCService.adminVerify, le point de décision
-  // final unique (audit log + notification i18n déjà gérés par le service —
-  // voir aussi AdminFintechController pour les autres opérations fintech admin).
+  // Modifier manuellement les informations KYC d'un utilisateur
+  static async updateKycData(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { userId } = req.params;
+      const { fullName, documentNumber, documentType, documentExpiryDate, kycLevel, rejectionReason } = req.body;
+
+      const user = await User.findById(userId);
+      if (!user) {
+        return next(new AppError('Utilisateur non trouvé', 404));
+      }
+
+      if (!user.kycData) {
+        (user as any).kycData = {};
+      }
+
+      const kycData = (user as any).kycData;
+      if (fullName !== undefined) kycData.fullName = fullName;
+      if (documentNumber !== undefined) kycData.documentNumber = documentNumber;
+      if (documentType !== undefined) kycData.documentType = documentType;
+      if (documentExpiryDate !== undefined) kycData.documentExpiryDate = documentExpiryDate;
+      if (rejectionReason !== undefined) kycData.rejectionReason = rejectionReason;
+      if (kycLevel !== undefined) user.kycLevel = kycLevel;
+
+      await user.save();
+
+      res.status(200).json({
+        success: true,
+        message: 'Dossier KYC mis à jour avec succès',
+        data: user,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async validateKyc(req: Request, res: Response, next: NextFunction) {
     try {
       const { userId } = req.params;
@@ -1637,6 +2170,22 @@ export class AdminController {
       });
     } catch (error) {
       next(error);
+    }
+  }
+
+  
+  static async revalidateKyc(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { userId } = req.params;
+      const { reason } = req.body;
+      const user = await KYCService.adminVerify(userId, 'update_required', reason || 'Mise à jour requise pour vos documents KYC');
+      return res.status(200).json({
+        success: true,
+        message: 'Demande de mise à jour KYC transmise avec succès',
+        data: { kycLevel: user.kycLevel, rejectionReason: user.kycData?.rejectionReason },
+      });
+    } catch (err) {
+      return next(err);
     }
   }
 
@@ -1916,5 +2465,42 @@ export class AdminController {
       next(error);
     }
   }
-}
 
+  /**
+   * Revoque toutes les sessions actives d'un utilisateur.
+   * Utilise en cas de compte compromis ou de fraude detectee.
+   */
+  static async revokeUserSessions(req: any, res: any, next: any) {
+    try {
+      const { id } = req.params;
+
+      // 1. Invalider tous les refresh tokens en Redis (pattern: refresh:userId:*)
+      const redis = (await import('../config/redis')).default;
+      const pattern = `refresh:${id}:*`;
+      const keys = await redis.keys(pattern);
+      if (keys.length > 0) {
+        await redis.del(...keys);
+      }
+
+      // 2. Marquer toutes les sessions en base comme revoquees
+      const SessionLog = (await import('../models/SessionLog')).default;
+      await SessionLog.updateMany(
+        { userId: id, status: 'active' },
+        { status: 'revoked', revokedAt: new Date(), revokedBy: req.user._id }
+      );
+
+      await (await import('../services/auditService')).AuditService.record({
+        userId: req.user._id,
+        action: 'USER_SESSIONS_REVOKED',
+        resource: 'USER',
+        resourceId: id,
+        status: 'success',
+        metadata: { revokedSessionsCount: keys.length },
+      });
+
+      res.status(204).end();
+    } catch (err) {
+      next(err);
+    }
+  }
+}

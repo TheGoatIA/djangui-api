@@ -32,9 +32,17 @@ export class TransactionService {
         data.categorizationConfidence = aiResult.confidence;
       }
 
+      // This method only ever creates transactions the user themselves entered
+      // (manual form, SMS parsing, CSV/JSON import) — always their own currency,
+      // never a client-supplied value, so currencyMiddleware can tell `amount`
+      // is already native to that currency instead of assuming XAF (which
+      // otherwise silently corrupts every manual transaction for a non-XAF user).
+      const user = await User.findById(userId).select('currency').session(session);
+
       const transaction = new Transaction({
         ...data,
         userId,
+        currency: user?.currency || 'XAF',
       });
 
       await transaction.save({ session });

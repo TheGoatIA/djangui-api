@@ -13,8 +13,9 @@ export class SlackService {
   static async sendNotification(message: string, isError: boolean = false) {
     const webhookUrl = isError ? this.ERROR_WEBHOOK_URL : this.WEBHOOK_URL;
 
-    if (!webhookUrl) {
-      logger.warn('Slack Webhook URL not configured. Skipping notification.');
+    if (!webhookUrl?.startsWith('https://hooks.slack.com/')) {
+      // Silently skip in dev if URL is a placeholder or not configured
+      logger.debug('Slack Webhook URL not configured or is a placeholder. Skipping notification.');
       return;
     }
 
@@ -39,8 +40,8 @@ export class SlackService {
   static async sendRichNotification(blocks: any[], isError: boolean = false) {
     const webhookUrl = isError ? this.ERROR_WEBHOOK_URL : this.WEBHOOK_URL;
 
-    if (!webhookUrl) {
-      logger.warn('Slack Webhook URL not configured. Skipping notification.');
+    if (!webhookUrl || !webhookUrl.startsWith('https://hooks.slack.com/')) {
+      logger.debug('Slack Webhook URL not configured or is a placeholder. Skipping rich notification.');
       return;
     }
 

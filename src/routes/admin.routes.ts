@@ -1,4 +1,4 @@
-﻿import express from 'express';
+import express from 'express';
 import { AdminController } from '../controllers/adminController';
 import { CountryController } from '../controllers/countryController';
 import { CountryRequestController } from '../controllers/countryRequestController';
@@ -9,7 +9,7 @@ import { protect, restrictTo } from '../middleware/auth';
 
 const router = express.Router();
 
-// Toutes les routes admin necessitent une authentification
+// Toutes les routes admin nécessitent une authentification
 router.use(protect);
 
 // Lecture seule : admin + support
@@ -27,6 +27,7 @@ router.get('/feature-flags', restrictTo('admin', 'support'), FeatureFlagControll
 router.get('/countries', restrictTo('admin', 'support'), CountryController.getAllCountries);
 router.get('/country-requests', restrictTo('admin', 'support'), CountryRequestController.listRequests);
 router.get('/health', restrictTo('admin', 'support'), AdminController.getSystemHealth);
+router.get('/notchpay/balance', restrictTo('admin', 'support'), AdminController.getNotchPayBalance);
 router.get('/db/stats', restrictTo('admin', 'support'), AdminController.getDatabaseStats);
 router.get('/logs', restrictTo('admin', 'support'), AdminController.getLogs);
 router.get('/logs/:filename', restrictTo('admin', 'support'), AdminController.downloadLog);
@@ -39,12 +40,15 @@ router.get('/ai/logs', restrictTo('admin', 'support'), AdminController.getAIUsag
 router.get('/analytics/dashboard', restrictTo('admin', 'support'), AdminController.getAnalyticsDashboard);
 router.get('/support/tickets', restrictTo('admin', 'support'), SupportController.getAllTickets);
 
-// KYC - lecture support autorisee, validation admin seule
+// KYC - lecture support autorisée, validation admin seule
 router.get('/kyc/pending', restrictTo('admin', 'support'), AdminController.getKycPendingUsers);
 router.patch('/kyc/:userId/validate', restrictTo('admin'), AdminController.validateKyc);
+router.patch('/kyc/:userId/edit', restrictTo('admin'), AdminController.updateKycData);
+router.patch('/kyc/:userId/revalidate', AdminController.revalidateKyc);
 router.patch('/kyc/:userId/reject', restrictTo('admin'), AdminController.rejectKyc);
 
 // Wallet Ledger - lecture seule support + admin
+router.get('/wallet/summary', restrictTo('admin', 'support'), AdminController.getWalletSummary);
 router.get('/wallet/ledger', restrictTo('admin', 'support'), AdminController.getWalletLedger);
 router.get('/wallet/ledger/:userId', restrictTo('admin', 'support'), AdminController.getUserWalletLedger);
 
@@ -89,10 +93,19 @@ router.post('/logs', restrictTo('admin'), AdminController.createLog);
 router.patch('/support/tickets/:id/status', restrictTo('admin', 'support'), SupportController.updateTicketStatus);
 router.post('/support/tickets/:id/reply', restrictTo('admin', 'support'), SupportController.replyTicketAdmin);
 
-// Mise à jour manuelle de la valeur d'un investissement (pas de flux de cours en direct
-// pour l'instant). Admin seul : cette valeur est ensuite créditée telle quelle au
-// portefeuille lors de la clôture, donc jamais accessible au propriétaire de
-// l'investissement (voir InvestmentService.updateValue).
+// Investissements : lecture admin + support, modification de valeur admin seul
+router.get('/investments', restrictTo('admin', 'support'), InvestmentController.listAll);
 router.patch('/investments/:id/value', restrictTo('admin'), InvestmentController.updateValue);
+
+// Révocation de toutes les sessions actives d'un utilisateur (admin seul)
+// Utile en cas de compte compromis ou de fraude détectée.
+router.delete('/users/:id/sessions', restrictTo('admin'), AdminController.revokeUserSessions);
+
+// Crédit manuel de portefeuille en mode simulation (admin seul, bloqué si
+// l'argent réel est actif — voir AdminController.creditUserWallet).
+router.post('/users/:id/wallet/credit', restrictTo('admin'), AdminController.creditUserWallet);
+
+// Exports rapides de conformité/reporting (admin + support, lecture seule).
+router.get('/reports/:type', restrictTo('admin', 'support'), AdminController.generateReport);
 
 export default router;

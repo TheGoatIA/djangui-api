@@ -37,7 +37,7 @@ export class StorageService {
    * Ensure a bucket exists, create it if not
    */
   static async ensureBucketExists(bucket: string): Promise<void> {
-    const { CreateBucketCommand, HeadBucketCommand } = require('@aws-sdk/client-s3');
+    const { CreateBucketCommand, HeadBucketCommand, PutBucketPolicyCommand } = require('@aws-sdk/client-s3');
     try {
       await this.getClient().send(new HeadBucketCommand({ Bucket: bucket }));
     } catch (err: any) {
@@ -46,6 +46,32 @@ export class StorageService {
         await this.getClient().send(new CreateBucketCommand({ Bucket: bucket }));
       } else {
         throw err;
+      }
+    }
+
+    // Auto-set public read policy on public buckets (invoices, receipts, avatars)
+    if (bucket !== 'kauri-kyc-documents' && bucket !== 'kauri-backups') {
+      try {
+        const policy = {
+          Version: '2012-10-17',
+          Statement: [
+            {
+              Sid: 'PublicRead',
+              Effect: 'Allow',
+              Principal: '*',
+              Action: ['s3:GetObject'],
+              Resource: [`arn:aws:s3:::${bucket}/*`],
+            },
+          ],
+        };
+        await this.getClient().send(
+          new PutBucketPolicyCommand({
+            Bucket: bucket,
+            Policy: JSON.stringify(policy),
+          }),
+        );
+      } catch (policyErr: any) {
+        logger.debug(`[STORAGE] Could not set public bucket policy on ${bucket}: ${policyErr.message}`);
       }
     }
   }

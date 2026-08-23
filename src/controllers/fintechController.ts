@@ -41,15 +41,23 @@ export class FintechController {
    * Soumettre des documents KYC
    */
   static readonly submitKYC = catchAsync(async (req: any, res: Response) => {
-    const { documentType, documentNumber, fullName } = req.body;
-    // Les URLs d'images devraient normalement venir d'un upload S3/GCS
-    const { documentImageUrl, selfieImageUrl } = req.body;
+    const {
+      documentType,
+      documentNumber,
+      fullName,
+      documentExpiryDate,
+      documentImageUrl,
+      documentBackImageUrl,
+      selfieImageUrl,
+    } = req.body;
 
     const kyc = await KYCService.submitDocuments(req.user._id, {
       documentType,
       documentNumber,
       fullName,
+      documentExpiryDate,
       documentImageUrl,
+      documentBackImageUrl,
       selfieImageUrl,
     });
 

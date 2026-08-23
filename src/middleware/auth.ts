@@ -1,8 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { AppError } from './errorHandler';
-import User from '../models/User';
-import logger from '../utils/logger';
+import User, { IUserDocument } from '../models/User';
 import RequestContext from '../utils/context';
 import redis from '../config/redis';
 
@@ -84,6 +83,9 @@ const premiumOnly = async (req: AuthRequest, res: Response, next: NextFunction) 
 
 const restrictTo = (...roles: string[]) => {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return next(new AppError('Authentification requise.', 401));
+    }
     // roles ['admin', 'lead-guide']. role='user'
     if (!roles.includes(req.user.role)) {
       return next(new AppError('You do not have permission to perform this action', 403));

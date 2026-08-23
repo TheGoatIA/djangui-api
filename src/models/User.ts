@@ -122,18 +122,17 @@ const userSchema = new Schema<IUserDocument>(
     },
     kycLevel: {
       type: String,
-      enum: ['none', 'pending', 'verified', 'rejected'],
+      enum: ['none', 'pending', 'verified', 'rejected', 'expired', 'update_required'],
       default: 'none',
       index: true,
     },
     kycData: {
-      documentType: {
-        type: String,
-        enum: ['cni', 'passport', 'driver_license'],
-      },
+      documentType: { type: String },
       documentNumber: String,
       fullName: String,
       documentImageUrl: String,
+      documentBackImageUrl: String,
+      documentExpiryDate: Date,
       selfieImageUrl: String,
       verifiedAt: Date,
       rejectionReason: String,

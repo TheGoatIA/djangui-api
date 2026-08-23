@@ -1,6 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import Country from '../models/Country';
 import { AppError } from '../middleware/errorHandler';
+import { RedisService } from '../services/redisService';
+
+const ACTIVE_COUNTRIES_CACHE_KEY = 'config:countries:active';
+const CACHE_TTL = 300; // 5 minutes
 
 // Explicit field whitelist for admin-supplied Country data — defense in depth
 // even though addCountry/updateCountry are already admin-only routes, so a
@@ -16,7 +20,17 @@ export class CountryController {
    */
   static async getActiveCountries(req: Request, res: Response, next: NextFunction) {
     try {
+      const cached = await RedisService.get<any[]>(ACTIVE_COUNTRIES_CACHE_KEY);
+      if (cached) {
+        return res.status(200).json({
+          success: true,
+          data: { countries: cached },
+        });
+      }
+
       const countries = await Country.find({ isActive: true }).sort('name');
+      await RedisService.set(ACTIVE_COUNTRIES_CACHE_KEY, countries, CACHE_TTL);
+
       res.status(200).json({
         success: true,
         data: { countries },
@@ -47,6 +61,7 @@ export class CountryController {
   static async addCountry(req: Request, res: Response, next: NextFunction) {
     try {
       const country = await Country.create(pickCountryFields(req.body));
+      await RedisService.del(ACTIVE_COUNTRIES_CACHE_KEY);
       res.status(201).json({
         success: true,
         data: { country },
@@ -67,6 +82,8 @@ export class CountryController {
       });
 
       if (!country) throw new AppError('Country not found', 404);
+
+      await RedisService.del(ACTIVE_COUNTRIES_CACHE_KEY);
 
       res.status(200).json({
         success: true,

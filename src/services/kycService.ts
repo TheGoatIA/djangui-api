@@ -15,19 +15,45 @@ export class KYCService {
   static async submitDocuments(
     userId: string,
     data: {
-      documentType: 'cni' | 'passport' | 'driver_license';
+      documentType: string;
       documentNumber: string;
       fullName: string;
+      documentExpiryDate?: Date | string;
       documentImageUrl: string;
+      documentBackImageUrl?: string;
       selfieImageUrl: string;
     },
   ) {
     const user = await User.findById(userId);
     if (!user) throw new AppError('Utilisateur non trouvé', 404);
 
+    // Bloquer la re-soumission si le KYC est déjà validé
+    if (user.kycLevel === 'verified') {
+      throw new AppError('Votre identité est déjà vérifiée. Aucune nouvelle soumission n\'est nécessaire.', 400);
+    }
+
+    // Whitelist des champs autorisés pour éviter l'injection de champs sensibles
+    const allowedFields: (keyof typeof data)[] = [
+      'documentType',
+      'documentNumber',
+      'fullName',
+      'documentExpiryDate',
+      'documentImageUrl',
+      'documentBackImageUrl',
+      'selfieImageUrl',
+    ];
+    const filteredData = allowedFields.reduce(
+      (acc, key) => {
+        if (data[key] !== undefined) acc[key] = data[key] as any;
+        return acc;
+      },
+      {} as typeof data,
+    );
+
     user.kycLevel = 'pending';
     user.kycData = {
-      ...data,
+      ...filteredData,
+      documentExpiryDate: data.documentExpiryDate ? new Date(data.documentExpiryDate) : undefined,
       verifiedAt: undefined,
       rejectionReason: undefined,
       aiAnalysisStatus: 'pending',
@@ -78,13 +104,14 @@ export class KYCService {
     try {
       // Les documents KYC sont stockés en privé (voir StorageService/uploadController) :
       // on les récupère via le SDK S3 authentifié, pas par un simple GET HTTP anonyme
-      // qui serait rejeté (403) sur un objet privé.
       const [docBuffer, selfieBuffer] = await Promise.all([
         this.downloadKycImage(user.kycData.documentImageUrl!),
         this.downloadKycImage(user.kycData.selfieImageUrl!),
       ]);
 
       const prompt = PromptBuilder.buildKycAnalysisPrompt(user.kycData);
+      const docMime = this.detectMimeType(docBuffer, user.kycData.documentImageUrl);
+      const selfieMime = this.detectMimeType(selfieBuffer, user.kycData.selfieImageUrl);
 
       // Format multi-modal pour Gemini
       const aiResult = await GeminiService.generateJSON(
@@ -93,13 +120,13 @@ export class KYCService {
           {
             inlineData: {
               data: docBuffer.toString('base64'),
-              mimeType: 'image/jpeg',
+              mimeType: docMime,
             },
           },
           {
             inlineData: {
               data: selfieBuffer.toString('base64'),
-              mimeType: 'image/jpeg',
+              mimeType: selfieMime,
             },
           },
         ],
@@ -138,7 +165,6 @@ export class KYCService {
 
   /**
    * Télécharge le contenu d'une image KYC stockée (privée) via le SDK S3 authentifié
-   * — un simple GET HTTP anonyme serait rejeté (403) sur un objet privé.
    */
   private static async downloadKycImage(storedUrl: string): Promise<Buffer> {
     const parsed = StorageService.parseStoredUrl(storedUrl);
@@ -148,13 +174,10 @@ export class KYCService {
 
   /**
    * Génère des URLs signées à courte durée de vie pour afficher les documents KYC
-   * d'un utilisateur (revue admin, ou l'utilisateur consultant son propre dossier).
-   * Ne JAMAIS renvoyer `kycData.documentImageUrl`/`selfieImageUrl` bruts : ce sont
-   * des objets privés, l'URL stockée n'est plus fetchable telle quelle.
    */
   static async getSignedDocumentUrls(userId: string, expiresInSeconds = 300) {
     const user = await User.findById(userId).select('kycData');
-    if (!user?.kycData) return { documentUrl: null, selfieUrl: null };
+    if (!user?.kycData) return { documentUrl: null, documentBackUrl: null, selfieUrl: null };
 
     const sign = async (storedUrl?: string) => {
       if (!storedUrl) return null;
@@ -163,18 +186,19 @@ export class KYCService {
       return StorageService.getSignedUrl(parsed.bucket, parsed.key, expiresInSeconds);
     };
 
-    const [documentUrl, selfieUrl] = await Promise.all([
+    const [documentUrl, documentBackUrl, selfieUrl] = await Promise.all([
       sign(user.kycData.documentImageUrl),
+      sign(user.kycData.documentBackImageUrl),
       sign(user.kycData.selfieImageUrl),
     ]);
 
-    return { documentUrl, selfieUrl };
+    return { documentUrl, documentBackUrl, selfieUrl };
   }
 
   /**
    * Validation manuelle par un admin (Point de décision final)
    */
-  static async adminVerify(userId: string, status: 'verified' | 'rejected', reason?: string) {
+  static async adminVerify(userId: string, status: 'verified' | 'rejected' | 'expired' | 'update_required', reason?: string) {
     const user = await User.findById(userId);
     if (!user) throw new AppError('Utilisateur non trouvé', 404);
 
@@ -192,7 +216,6 @@ export class KYCService {
       if (user.kycData)
         user.kycData.rejectionReason = reason || 'Documents non valides après examen.';
 
-      // On pourrait ajouter une clé KYC_REJECTED
       await NotificationService.sendToUser(userId, {
         title: 'Vérification Rejetée',
         body: `Votre vérification KYC a été refusée. Raison : ${reason || 'Documents non conformes.'}`,
@@ -212,5 +235,35 @@ export class KYCService {
     });
 
     return user;
+  }
+
+  /**
+   * Détecte le type MIME réel d'un buffer à partir de ses magic bytes
+   */
+  private static detectMimeType(buffer: Buffer, url?: string): string {
+    if (buffer && buffer.length >= 4) {
+      if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
+        return 'image/png';
+      }
+      if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+        return 'image/jpeg';
+      }
+      if (
+        buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46 &&
+        buffer.length >= 12 && buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50
+      ) {
+        return 'image/webp';
+      }
+      if (buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46) {
+        return 'application/pdf';
+      }
+    }
+    if (url) {
+      const lower = url.toLowerCase();
+      if (lower.endsWith('.png')) return 'image/png';
+      if (lower.endsWith('.webp')) return 'image/webp';
+      if (lower.endsWith('.pdf')) return 'application/pdf';
+    }
+    return 'image/jpeg';
   }
 }
