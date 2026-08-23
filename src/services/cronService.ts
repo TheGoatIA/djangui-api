@@ -24,6 +24,8 @@ import { NotchPayReconciliationService } from './notchpayReconciliationService';
 import { FinancialAlertService } from './financialAlertService';
 import { CurrencyService } from './currencyService';
 import UserActivity from '../models/UserActivity';
+import SharedSlot from '../models/SharedSlot';
+import { ResellerNotificationDispatcher } from './resellerNotificationService';
 
 export class CronService {
   /**
@@ -151,6 +153,18 @@ export class CronService {
     cron.schedule(
       '*/10 * * * *',
       this.runMonitored('economy_pulse', () => this.updateEconomyMetrics()),
+    );
+
+    // Daily at 08:30 AM: Reseller Slot Reminders (J-3, J-0, Overdue)
+    cron.schedule(
+      '30 8 * * *',
+      this.runMonitored('reseller_slot_reminders', () => this.checkResellerSlotReminders()),
+    );
+
+    // Daily at 00:15 AM: Reseller Slot Status Transitions (due_soon -> overdue -> blocked)
+    cron.schedule(
+      '15 0 * * *',
+      this.runMonitored('reseller_slot_status_update', () => this.updateResellerSlotStatuses()),
     );
 
     // Daily at 02:00 AM: Tontine Auto-Debits
@@ -949,6 +963,92 @@ export class CronService {
       );
     } catch (error: any) {
       logger.error(`Error in updateTontineHealthMetrics job: ${error.message}`);
+    }
+  }
+
+  /**
+   * Check upcoming and overdue reseller slots and dispatch reminders
+   */
+  private static async checkResellerSlotReminders() {
+    try {
+      const now = new Date();
+      const in3DaysStart = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000);
+      const in3DaysEnd = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+
+      // 1. J-3 Reminders
+      const jMinus3Slots = await SharedSlot.find({
+        status: { $in: ['active', 'due_soon'] },
+        currentPeriodEnd: { $gte: in3DaysStart, $lte: in3DaysEnd },
+        autoSendReminders: true,
+      });
+
+      for (const slot of jMinus3Slots) {
+        await ResellerNotificationDispatcher.dispatch(slot, 'J-3');
+      }
+
+      // 2. J-0 Reminders
+      const jZeroSlots = await SharedSlot.find({
+        status: { $in: ['active', 'due_soon'] },
+        currentPeriodEnd: { $gte: todayStart, $lte: todayEnd },
+        autoSendReminders: true,
+      });
+
+      for (const slot of jZeroSlots) {
+        await ResellerNotificationDispatcher.dispatch(slot, 'J-0');
+      }
+
+      logger.info(
+        `Reseller slot reminders check completed: ${jMinus3Slots.length} (J-3), ${jZeroSlots.length} (J-0)`,
+      );
+    } catch (error: any) {
+      logger.error(`Error in checkResellerSlotReminders job: ${error.message}`);
+    }
+  }
+
+  /**
+   * Daily transition of slot statuses (active -> due_soon -> overdue -> blocked)
+   */
+  private static async updateResellerSlotStatuses() {
+    try {
+      const now = new Date();
+      const in3Days = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+
+      // 1. Mark due_soon
+      await SharedSlot.updateMany(
+        {
+          status: 'active',
+          currentPeriodEnd: { $lte: in3Days, $gt: now },
+        },
+        { $set: { status: 'due_soon' } },
+      );
+
+      // 2. Mark overdue
+      await SharedSlot.updateMany(
+        {
+          status: { $in: ['active', 'due_soon'] },
+          currentPeriodEnd: { $lte: now },
+        },
+        { $set: { status: 'overdue' } },
+      );
+
+      // 3. Mark blocked (if grace period exceeded)
+      const overdueSlots = await SharedSlot.find({ status: 'overdue' });
+      for (const slot of overdueSlots) {
+        const graceDeadline = new Date(
+          new Date(slot.currentPeriodEnd).getTime() + (slot.gracePeriodDays || 2) * 24 * 60 * 60 * 1000,
+        );
+        if (now > graceDeadline) {
+          slot.status = 'blocked';
+          await slot.save();
+        }
+      }
+
+      logger.info('Reseller slot statuses updated successfully');
+    } catch (error: any) {
+      logger.error(`Error in updateResellerSlotStatuses job: ${error.message}`);
     }
   }
 }

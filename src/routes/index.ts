@@ -28,6 +28,8 @@ import premiumRoutes from './premiumRoutes';
 import configRoutes from './config.routes';
 import fintechRoutes from './fintechRoutes';
 
+import resellerRoutes from './reseller.routes';
+
 const router = Router();
 
 router.use('/auth', authRoutes);
@@ -56,6 +58,7 @@ router.use('/forecast', forecastRoutes);
 router.use('/simulator', simulatorRoutes);
 router.use('/tontines', tontineRoutes);
 router.use('/subscriptions', subscriptionRoutes);
+router.use('/reseller', resellerRoutes);
 router.use('/premium', premiumRoutes);
 
 // Webhooks

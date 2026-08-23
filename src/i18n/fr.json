@@ -64,5 +64,13 @@
     "PREMIUM_EXPIRED_TITLE": "Abonnement Expiré 🚨",
     "PREMIUM_EXPIRED_BODY": "Votre accès Premium a expiré. Renouvelez-le pour continuer à profiter de toutes les fonctionnalités.",
     "KYC_SUBMITTED_TITLE": "Vérification en cours ⏳",
-    "KYC_SUBMITTED_BODY": "Vos documents KYC ont été reçus et sont en cours d'analyse par notre équipe."
+    "KYC_SUBMITTED_BODY": "Vos documents KYC ont été reçus et sont en cours d'analyse par notre équipe.",
+    "RESELLER_SLOT_DUE_SOON_TITLE": "Échéance Proche (J-3) ⏳",
+    "RESELLER_SLOT_DUE_SOON_BODY": "Le profil {{profileName}} sur {{serviceName}} (Client: {{clientName}}) expire dans 3 jours.",
+    "RESELLER_SLOT_OVERDUE_TITLE": "Impayé / Échéance Dépassée ⚠️",
+    "RESELLER_SLOT_OVERDUE_BODY": "Le profil {{profileName}} sur {{serviceName}} (Client: {{clientName}}) est arrivé à échéance sans renouvellement.",
+    "RESELLER_SLOT_BLOCKED_TITLE": "Profil Suspendu 🚫",
+    "RESELLER_SLOT_BLOCKED_BODY": "Le délai de grâce est dépassé pour {{clientName}} sur {{serviceName}}. Le slot a été suspendu.",
+    "RESELLER_PAYMENT_RECEIVED_TITLE": "Paiement Enregistré 💰",
+    "RESELLER_PAYMENT_RECEIVED_BODY": "Paiement de {{amount}} {{currency}} enregistré pour {{clientName}} sur {{serviceName}}."
 }

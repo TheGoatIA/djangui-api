@@ -84,7 +84,8 @@ const userSchema = new Schema<IUserDocument>(
     subscription: {
       plan: {
         type: String,
-        enum: ['free', 'premium'],
+        // 'business' = Super Premium (Reseller Hub tier)
+        enum: ['free', 'premium', 'business'],
         default: 'free',
       },
       status: {
@@ -254,14 +255,25 @@ const userSchema = new Schema<IUserDocument>(
   },
 );
 
-// Virtual for isPremium
+// Virtual for isPremium — true for both 'premium' and 'business' plans
 userSchema.virtual('isPremium').get(function (this: IUserDocument) {
-  const isPlanPremium = this.subscription?.plan === 'premium';
+  const plan = this.subscription?.plan;
+  const isPaidTier = plan === 'premium' || plan === 'business';
   const isActive = this.subscription?.status === 'active';
   const isNotExpired =
     !this.subscription?.endDate || new Date(this.subscription.endDate) >= new Date();
 
-  return isPlanPremium && isActive && isNotExpired;
+  return isPaidTier && isActive && isNotExpired;
+});
+
+// Virtual for isBusiness — true only for the 'business' (Super Premium) plan
+userSchema.virtual('isBusiness').get(function (this: IUserDocument) {
+  const isBusinessPlan = this.subscription?.plan === 'business';
+  const isActive = this.subscription?.status === 'active';
+  const isNotExpired =
+    !this.subscription?.endDate || new Date(this.subscription.endDate) >= new Date();
+
+  return isBusinessPlan && isActive && isNotExpired;
 });
 
 // Pre-save hook for password hashing

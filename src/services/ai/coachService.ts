@@ -6,6 +6,8 @@ import SavingGoal from '../../models/SavingGoal';
 import UserChallenge from '../../models/UserChallenge';
 import TontineMember from '../../models/TontineMember';
 import Subscription from '../../models/Subscription';
+import SharedMasterAccount from '../../models/SharedMasterAccount';
+import SharedSlot from '../../models/SharedSlot';
 import UserActivity from '../../models/UserActivity';
 import { GeminiService } from './geminiService';
 import { PromptBuilder } from './promptBuilder';
@@ -28,21 +30,31 @@ export class CoachService {
 
     const conversation = await this.getOrCreateConversation(userId);
 
-    // Get context (recent transactions, current budget, goals, challenges, tontines)
+    // Get context (recent transactions, current budget, goals, challenges, tontines, personal subscriptions, reseller business)
     const now = new Date();
-    const [transactions, budget, goals, userChallenges, tontineMembers, subscriptions] =
-      await Promise.all([
-        Transaction.find({ userId }).sort({ date: -1 }).limit(10).lean(),
-        Budget.findOne({
-          userId,
-          'period.month': now.getMonth() + 1,
-          'period.year': now.getFullYear(),
-        }).lean(),
-        SavingGoal.find({ userId, status: 'active' }).lean(),
-        UserChallenge.find({ userId, status: 'active' }).populate('challengeId').lean(),
-        TontineMember.find({ userId, invitationStatus: 'accepted' }).populate('tontineId').lean(),
-        Subscription.find({ userId, status: 'active' }).lean(),
-      ]);
+    const [
+      transactions,
+      budget,
+      goals,
+      userChallenges,
+      tontineMembers,
+      subscriptions,
+      resellerAccounts,
+      resellerSlots,
+    ] = await Promise.all([
+      Transaction.find({ userId }).sort({ date: -1 }).limit(10).lean(),
+      Budget.findOne({
+        userId,
+        'period.month': now.getMonth() + 1,
+        'period.year': now.getFullYear(),
+      }).lean(),
+      SavingGoal.find({ userId, status: 'active' }).lean(),
+      UserChallenge.find({ userId, status: 'active' }).populate('challengeId').lean(),
+      TontineMember.find({ userId, invitationStatus: 'accepted' }).populate('tontineId').lean(),
+      Subscription.find({ userId, status: 'active' }).lean(),
+      SharedMasterAccount.find({ resellerId: userId, status: 'active' }).lean(),
+      SharedSlot.find({ resellerId: userId }).lean(),
+    ]);
 
     const context = {
       transactions,
@@ -50,13 +62,30 @@ export class CoachService {
       goals,
       challenges: userChallenges,
       tontines: tontineMembers.map((m: any) => ({
-        name: m.tontineId.name,
-        role: m.tontineId.creatorId.toString() === userId ? 'Créateur' : 'Membre',
-        nextAmount: m.tontineId.contributionAmount * m.parts,
+        name: m.tontineId?.name || 'Tontine',
+        role: m.tontineId?.creatorId?.toString() === userId ? 'Créateur' : 'Membre',
+        nextAmount: (m.tontineId?.contributionAmount || 0) * (m.parts || 1),
         trustScore: m.trustScore,
-        currentTurn: m.tontineId.currentTurn,
+        currentTurn: m.tontineId?.currentTurn,
       })),
       subscriptions,
+      resellerBusiness: {
+        totalAccounts: resellerAccounts.length,
+        totalMasterCost: resellerAccounts.reduce((sum, acc) => sum + (acc.billingCost || 0), 0),
+        occupiedSlots: resellerSlots.filter((s) => s.status !== 'vacant').length,
+        mrrRevenue: resellerSlots.reduce(
+          (sum, s) => sum + (s.status !== 'vacant' ? s.price : 0),
+          0,
+        ),
+        overdueClientsCount: resellerSlots.filter((s) => s.status === 'overdue' || s.status === 'blocked').length,
+        dueSoonClientsCount: resellerSlots.filter((s) => s.status === 'due_soon').length,
+        accounts: resellerAccounts.map((a) => ({
+          service: a.serviceName,
+          cost: a.billingCost,
+          currency: a.billingCurrency,
+          slots: a.maxSlots,
+        })),
+      },
     };
     const systemPrompt = PromptBuilder.buildCoachSystemPrompt(user, context);
 

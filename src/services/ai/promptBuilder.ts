@@ -115,6 +115,7 @@ export class PromptBuilder {
       - /challenges : Voir les défis et récompenses
       - /insights : Voir les analyses détaillées
       - /user-subscriptions : Gérer ses abonnements (Netflix, etc.)
+      - /reseller : Espace Revendeur d abonnements partages
       - /subscription : Gérer l'abonnement Kauri Premium
       - /profile : Voir mon profil
 

@@ -83,6 +83,32 @@ export class SubscriptionController {
       next(error);
     }
   }
+
+  /**
+   * Récupérer la configuration complète de tous les forfaits Kauri (Public / Mobile)
+   */
+  static async getPlansConfig(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { PlanConfigService } = await import('../services/planConfigService');
+      const plans = await PlanConfigService.getActivePlans();
+      res.status(200).json({ status: 'success', data: plans });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Mettre à jour un forfait (Admin)
+   */
+  static async updatePlanConfig(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { PlanConfigService } = await import('../services/planConfigService');
+      const plan = await PlanConfigService.updatePlan(req.params.slug, req.body);
+      res.status(200).json({ status: 'success', data: plan });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export default SubscriptionController;

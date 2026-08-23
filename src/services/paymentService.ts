@@ -57,6 +57,24 @@ export class PaymentService {
    * otherwise a client can request an arbitrary (e.g. near-zero) checkout amount and
    * still be granted Premium once the payment completes.
    */
+    private static getBusinessSubscriptionPrice(countryCode?: string | null): { amount: number; currency: string } {
+    switch (countryCode) {
+      case 'FR':
+      case 'BE':
+      case 'DE':
+      case 'IT':
+      case 'ES':
+        return { amount: 12.0, currency: 'EUR' };
+      case 'US':
+      case 'CA':
+      case 'GB':
+        return { amount: 15.0, currency: 'USD' };
+      case 'CM':
+      default:
+        return { amount: 5000.0, currency: 'XAF' };
+    }
+  }
+
   private static getSubscriptionPrice(countryCode?: string | null): { amount: number; currency: string } {
     switch (countryCode) {
       case 'FR':
@@ -82,6 +100,7 @@ export class PaymentService {
     userId: any,
     clientAmount: number,
     type: 'deposit' | 'subscription',
+    plan: 'premium' | 'business' = 'premium',
   ) {
     const userIdStr = userId.toString();
     const user = await User.findById(userIdStr);
@@ -124,7 +143,7 @@ export class PaymentService {
     // client-supplied amount is what's actually charged and credited, which is safe.
     const { amount, currency } =
       type === 'subscription'
-        ? this.getSubscriptionPrice(user.country)
+        ? (plan === 'business' ? this.getBusinessSubscriptionPrice(user.country) : this.getSubscriptionPrice(user.country))
         : { amount: clientAmount, currency: user.currency || 'USD' };
 
     let session; // Declare session outside try block for wider scope
@@ -137,7 +156,7 @@ export class PaymentService {
             price_data: {
               currency: currency.toLowerCase(),
               product_data: {
-                name: type === 'subscription' ? 'Kauri Premium' : 'Wallet Deposit',
+                name: type === 'subscription' ? `Kauri ${plan === 'business' ? 'Super Premium (Business)' : 'Premium'}` : 'Wallet Deposit',
               },
               unit_amount: this.formatAmount(amount, currency),
             },
@@ -153,6 +172,7 @@ export class PaymentService {
           userId: userIdStr,
           type,
           reference,
+          plan,
         },
       });
       MonitoringService.recordPaymentGateway('stripe', 'create_session', 'success');
@@ -166,6 +186,7 @@ export class PaymentService {
         reference,
         status: 'pending',
         externalReference: session.id,
+        metadata: { plan },
       });
 
       // Audit Log for payment initiation
@@ -199,6 +220,7 @@ export class PaymentService {
     clientAmount: number,
     type: 'deposit' | 'subscription',
     phone?: string,
+    plan: 'premium' | 'business' = 'premium',
   ) {
     const userIdStr = userId.toString();
     const user = await User.findById(userIdStr);
@@ -254,7 +276,7 @@ export class PaymentService {
     // Same rule as Stripe: subscription price is fixed server-side, never client-supplied.
     const { amount, currency } =
       type === 'subscription'
-        ? this.getSubscriptionPrice(user.country)
+        ? (plan === 'business' ? this.getBusinessSubscriptionPrice(user.country) : this.getSubscriptionPrice(user.country))
         : { amount: clientAmount, currency: user.currency || 'XAF' };
 
     const start = Date.now();
@@ -267,7 +289,7 @@ export class PaymentService {
           email: user.email,
           phone: finalPhone,
         },
-        description: type === 'subscription' ? 'Abonnement Kauri Premium' : 'Recharge Portefeuille',
+        description: type === 'subscription' ? `Abonnement Kauri ${plan === 'business' ? 'Super Premium (Business)' : 'Premium'}` : 'Recharge Portefeuille',
         reference,
         callback: `${process.env.SERVER_URL || `http://localhost:${process.env.PORT || 5000}`}/payment/success?ref=${reference}`,
       });
@@ -283,6 +305,7 @@ export class PaymentService {
         reference,
         status: 'pending',
         externalReference: response.data.transaction.reference,
+        metadata: { plan },
       });
 
       // Audit Log for payment initiation
@@ -364,12 +387,13 @@ export class PaymentService {
           { session },
         );
       } else if (payment.type === 'subscription') {
-        logger.info(`Upgrading user ${payment.userId} to Premium...`);
+        const targetPlan = (payment.metadata && payment.metadata.plan) || (payment.amount >= 4000 ? 'business' : 'premium');
+          logger.info(`Upgrading user ${payment.userId} to ${targetPlan}...`);
 
-        await User.findByIdAndUpdate(
-          payment.userId,
-          {
-            'subscription.plan': 'premium',
+          await User.findByIdAndUpdate(
+            payment.userId,
+            {
+              'subscription.plan': targetPlan,
             'subscription.status': 'active',
             'subscription.startDate': new Date(),
             'subscription.endDate': new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
@@ -495,12 +519,12 @@ export class PaymentService {
   /**
    * Pay Premium subscription using Kauri Wallet balance
    */
-  static async paySubscriptionWithWallet(userId: any) {
+  static async paySubscriptionWithWallet(userId: any, plan: 'premium' | 'business' = 'premium') {
     const userIdStr = userId.toString();
     const user = await User.findById(userIdStr);
     if (!user) throw new AppError('User not found', 404);
 
-    const priceInfo = this.getSubscriptionPrice(user.country);
+    const priceInfo = plan === 'business' ? this.getBusinessSubscriptionPrice(user.country) : this.getSubscriptionPrice(user.country);
     const amount = priceInfo.amount;
     const currency = priceInfo.currency;
 
@@ -519,7 +543,7 @@ export class PaymentService {
           userId: userIdStr,
           amount,
           type: 'withdrawal',
-          description: 'Abonnement Kauri Premium (Portefeuille)',
+          description: `Abonnement Kauri ${plan === 'business' ? 'Super Premium (Business)' : 'Premium'} (Portefeuille)`,
           paymentMethod: 'wallet',
           reference,
         },
@@ -545,7 +569,7 @@ export class PaymentService {
       const updatedUser = await User.findByIdAndUpdate(
         userIdStr,
         {
-          'subscription.plan': 'premium',
+          'subscription.plan': plan,
           'subscription.status': 'active',
           'subscription.startDate': new Date(),
           'subscription.endDate': new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),

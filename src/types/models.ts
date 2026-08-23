@@ -25,7 +25,7 @@ export interface IUser {
     budgetAlertThreshold: number;
   };
   subscription: {
-    plan: 'free' | 'premium';
+    plan: 'free' | 'premium' | 'business';
     status: 'active' | 'cancelled' | 'expired';
     startDate?: Date;
     endDate?: Date;
@@ -345,6 +345,7 @@ export interface ISubscription {
   createdAt: Date;
   updatedAt: Date;
 }
+
 export interface INotification {
   userId: mongoose.Types.ObjectId;
   title: string;
@@ -353,4 +354,104 @@ export interface INotification {
   data?: Record<string, any>;
   isRead: boolean;
   createdAt: Date;
+}
+
+// ─── Reseller Hub ─────────────────────────────────────────────────────────────
+
+export type ResellerServiceCategory =
+  | 'video'
+  | 'music'
+  | 'productivity'
+  | 'ai'
+  | 'gaming'
+  | 'vpn'
+  | 'design'
+  | 'education'
+  | 'other';
+
+export type SlotStatus = 'active' | 'due_soon' | 'overdue' | 'blocked' | 'vacant';
+
+export type ReminderChannel = 'whatsapp' | 'push' | 'email';
+
+export interface IVaultData {
+  encryptedEmail?: string;
+  encryptedPassword?: string;
+  encryptedPin?: string;
+  recoveryContact?: string;
+  encryptedNotes?: string;
+  iv: string;
+  authTag: string;
+}
+
+export interface ISharedMasterAccount {
+  resellerId: mongoose.Types.ObjectId;
+  // Service identity
+  serviceName: string;
+  servicePreset?: string;        // Catalogue slug (e.g. 'netflix', 'spotify')
+  category: ResellerServiceCategory;
+  iconUrl?: string;
+  brandColor?: string;           // Hex color for UI theming (e.g. '#E50914')
+  // Billing (revendeur → fournisseur)
+  billingCost: number;
+  billingCurrency: string;
+  billingFrequency: 'monthly' | 'quarterly' | 'yearly';
+  nextRenewalDate: Date;
+  // Slot capacity
+  maxSlots: number;
+  // Encrypted credential vault
+  vault?: IVaultData;
+  status: 'active' | 'expired' | 'suspended';
+  notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ISharedSlot {
+  masterAccountId: mongoose.Types.ObjectId;
+  resellerId: mongoose.Types.ObjectId;
+  profileName: string;            // E.g. 'Profil 1 - Paul'
+  // Encrypted PIN (optional profile PIN)
+  encryptedPin?: string;
+  pinIv?: string;
+  pinAuthTag?: string;
+  // Client info
+  client: {
+    fullName: string;
+    phone: string;                // E.164 format (+237699...)
+    email?: string;
+    whatsappNumber?: string;      // If different from phone
+    preferredReminderChannel: ReminderChannel;
+    notes?: string;
+  };
+  // Pricing (revendeur → client)
+  price: number;
+  currency: string;
+  billingCycle: 'monthly' | 'quarterly' | 'yearly';
+  // Period management
+  startDate: Date;
+  currentPeriodStart: Date;
+  currentPeriodEnd: Date;         // Client's expiry date
+  gracePeriodDays: number;        // Default: 2
+  // Reminder automation
+  autoSendReminders: boolean;     // Enabled for premium/business
+  lastReminderSentAt?: Date;
+  lastReminderType?: 'J-3' | 'J-0' | 'OVERDUE';
+  status: SlotStatus;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ISlotPaymentHistory {
+  slotId: mongoose.Types.ObjectId;
+  masterAccountId: mongoose.Types.ObjectId;
+  resellerId: mongoose.Types.ObjectId;
+  amount: number;
+  currency: string;
+  periodCoveredStart: Date;
+  periodCoveredEnd: Date;
+  paidAt: Date;
+  paymentMethod: 'cash' | 'momo' | 'om' | 'bank_transfer' | 'card' | 'other';
+  notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
