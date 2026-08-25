@@ -65,6 +65,7 @@ export class GoalService {
           userId,
           amount,
           type: 'saving_transfer',
+          category: 'goal_contribution',
           description: `Contribution objectif : ${goal.name}`,
           paymentMethod: 'wallet',
           metadata: { goalId: id, note },

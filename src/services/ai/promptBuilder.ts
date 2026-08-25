@@ -162,14 +162,16 @@ export class PromptBuilder {
       5. Tontines : résume sa participation aux tontines du mois (cotisations versées vs cagnottes reçues). Mentionne son sérieux (Trust Score).
       6. Investissements : un mot sur la performance du portefeuille.
       7. Trois conseils stratégiques et personnalisés pour le mois prochain.
-      
+      8. Un score de santé financière sur 100 (health_score), calculé en pondérant : le taux d'épargne du mois (le facteur le plus important), le respect du budget par catégorie, la régularité des cotisations tontines et le Trust Score associé, la progression des objectifs d'épargne actifs, et l'assiduité sur les challenges d'épargne en cours. 100 = excellente santé financière, 0 = situation très préoccupante. Sois cohérent avec le ton du texte : un résumé qui parle de dépassements de budget répétés ne doit pas avoir un score élevé.
+
       Réponds en format JSON:
       {
         "title": "Titre du rapport",
         "summary": "Texte narratif du résumé",
         "topInsights": ["insight 1", "insight 2"],
         "recommendations": ["conseil 1", "conseil 2", "conseil 3"],
-        "tone": "Le ton utilisé"
+        "tone": "Le ton utilisé",
+        "health_score": Nombre entier entre 0 et 100
       }
 
       ${this.getSecurityGuardrails()}

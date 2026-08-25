@@ -61,7 +61,7 @@ export class TontineController {
    */
   static async join(req: Request, res: Response, next: NextFunction) {
     try {
-      const { inviteCode, displayName, parts, payoutDetails } = req.body;
+      const { inviteCode, displayName, parts } = req.body;
 
       // On vérifie les limites du créateur avant de laisser quelqu'un rejoindre
       const tontine = await Tontine.findOne({ inviteCode });
@@ -75,7 +75,6 @@ export class TontineController {
       const member = await TontineService.joinTontine((req as any).user.id, inviteCode, {
         displayName,
         parts,
-        payoutDetails,
       });
 
       // Metrique business
@@ -163,11 +162,11 @@ export class TontineController {
         fs.unlinkSync(file.path);
       } catch (e) {}
 
-      // 5. Création de la contribution. En mode "ia_plus_manual", la cotisation
-      // reste en attente de validation par le créateur (voir validateContribution
-      // ci-dessous) — elle ne compte pas encore dans le pot collecté du tour
-      // (getTurnSummary ne compte que 'ai_validated'/'completed').
-      const requiresManualReview = tontine.validationMode === 'ia_plus_manual';
+      // 5. Création de la contribution — TOUJOURS en attente de validation
+      // manuelle par le créateur (V-01) : l'IA reste une aide à la décision
+      // (aiAnalysis, affiché au créateur) mais n'est plus jamais autoritaire
+      // sur un mouvement d'argent réel. Ne compte dans le pot du tour
+      // (getTurnSummary) qu'une fois explicitement approuvée.
       const isLate = memberInfo.lateFee > 0;
       const contribution = await TontineContribution.create({
         tontineId,
@@ -186,33 +185,29 @@ export class TontineController {
           confidence: analysis.confidence,
         },
         lateFeesApplied: memberInfo.lateFee,
-        validationStatus: requiresManualReview ? 'manual_pending' : 'ai_validated',
+        validationStatus: 'manual_pending',
       });
 
       // 5. Mise à jour du Trust Score
       await TontineService.updateTrustScore(member._id.toString(), isLate);
 
-      // 6. Notification au membre
-      if (!requiresManualReview) {
-        await NotificationService.sendToUser((req as any).user.id, {
-          title: '',
-          body: '',
-          translationKey: 'TONTINE_CONTRIBUTION_VALIDATED',
-          translationData: { turn: tontine.currentTurn, tontineName: tontine.name },
-          data: { tontineId: tontineId, type: 'TONTINE_CONTRIBUTION_VALIDATED' },
-        });
-      }
+      // 6. Notifie le créateur qu'une cotisation attend sa validation — essentiel
+      // maintenant que la revue manuelle est obligatoire pour tout le monde (V-01) :
+      // sans ce signal, une cotisation pourrait rester "en attente" indéfiniment.
+      await NotificationService.sendToUser(tontine.creatorId.toString(), {
+        title: '',
+        body: '',
+        translationKey: 'TONTINE_CONTRIBUTION_PENDING_REVIEW',
+        translationData: { turn: tontine.currentTurn, tontineName: tontine.name },
+        data: { tontineId: tontineId, type: 'TONTINE_CONTRIBUTION_PENDING_REVIEW' },
+      }).catch((err: any) => logger.error(`Notification error: ${err.message}`));
 
       // Metrique business
       MonitoringService.recordTontineAction('contribution', isLate ? 'late' : 'success');
 
       res.status(201).json({
         status: 'success',
-        message: requiresManualReview
-          ? 'Cotisation reçue, en attente de validation manuelle par le créateur de la tontine.'
-          : isLate
-            ? 'Cotisation reçue avec retard (Sanction appliquée)'
-            : 'Cotisation validée avec succès !',
+        message: 'Cotisation reçue, en attente de validation manuelle par le créateur de la tontine.',
         data: contribution,
       });
     } catch (error) {
@@ -240,6 +235,44 @@ export class TontineController {
       );
 
       res.json({ status: 'success', data: contribution });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Force la rotation du tour courant immédiatement, sans attendre le cron
+   * quotidien (03h00). Réutilise `TontineService.rotateTurn`, déjà idempotent
+   * et transactionnel — un déclenchement manuel n'introduit donc aucun risque
+   * de double versement, même si le cron tourne au même moment.
+   */
+  static async rotateTurnNow(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const tontine = await Tontine.findById(id);
+      if (!tontine) throw new AppError('Tontine non trouvée', 404);
+      if (tontine.creatorId.toString() !== (req as any).user.id) {
+        throw new AppError('Seul le créateur de la tontine peut lancer la rotation', 403);
+      }
+      if (tontine.status !== 'active') {
+        throw new AppError('La tontine doit être active pour lancer une rotation', 400);
+      }
+
+      const updated = await TontineService.rotateTurn(id);
+      res.json({ status: 'success', data: updated });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Paiement (obligatoire, une seule fois) du fonds social par un membre.
+   */
+  static async paySocialFund(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const member = await TontineService.payMandatorySocialFund(id, (req as any).user.id);
+      res.json({ status: 'success', data: member });
     } catch (error) {
       next(error);
     }
@@ -318,12 +351,31 @@ export class TontineController {
    */
   static async postMessage(req: Request, res: Response, next: NextFunction) {
     try {
-      const { content, type } = req.body;
+      const tontineId = req.params.id;
+      const file = req.file;
+      let { content, type } = req.body;
+      let audioUrl: string | undefined;
+      let audioDuration: number | undefined;
+
+      if (file) {
+        const bucket = 'kauri-uploads';
+        const destinationKey = `tontines/${tontineId}/voice/${file.filename}`;
+        audioUrl = await StorageService.uploadFile(file.path, bucket, destinationKey);
+        try {
+          fs.unlinkSync(file.path);
+        } catch (e) {}
+        type = 'audio';
+        audioDuration = req.body.duration ? Number(req.body.duration) : undefined;
+        content = content || '🎤 Note vocale';
+      }
+
       const message = await TontineService.sendMessage(
-        req.params.id,
+        tontineId,
         (req as any).user.id,
         content,
         type,
+        audioUrl,
+        audioDuration,
       );
       res.status(201).json({ status: 'success', data: message });
     } catch (error) {

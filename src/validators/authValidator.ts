@@ -31,7 +31,12 @@ export const loginSchema = Joi.object({
     'any.required': 'Password is required',
   }),
   deviceId: Joi.string().optional(),
-  deviceInfo: Joi.string().optional(),
+  deviceInfo: Joi.object({
+    model: Joi.string().allow('').optional(),
+    os: Joi.string().allow('').optional(),
+    osVersion: Joi.string().allow('').optional(),
+    platform: Joi.string().valid('android', 'ios', 'web').optional(),
+  }).optional(),
   appVersion: Joi.string().optional(),
 });
 

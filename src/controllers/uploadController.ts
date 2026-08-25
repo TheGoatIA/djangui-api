@@ -1,6 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { OCRService } from '../services/ai/ocrService';
+import { AvatarGenerationService } from '../services/ai/avatarGenerationService';
 import { StorageService } from '../services/storageService';
 import User from '../models/User';
 import fs from 'node:fs';
@@ -78,6 +79,34 @@ export class UploadController {
           avatarUrl,
         },
       });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * Generate a profile avatar preview via AI (Premium). Does NOT change the
+   * user's actual avatar yet — the client shows this as a preview the user
+   * can regenerate or discard before committing via `applyGeneratedAvatar`.
+   */
+  static async generateAvatar(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const { style, refinement } = req.body;
+      const avatarUrl = await AvatarGenerationService.generate(req.user._id, style, refinement);
+      res.status(200).json({ success: true, data: { avatarUrl } });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * Commits a previously generated AI avatar preview as the user's real avatar.
+   */
+  static async applyGeneratedAvatar(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const { avatarUrl } = req.body;
+      const applied = await AvatarGenerationService.applyAvatar(req.user._id, avatarUrl);
+      res.status(200).json({ success: true, data: { avatarUrl: applied } });
     } catch (err) {
       next(err);
     }

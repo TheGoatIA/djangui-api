@@ -39,6 +39,7 @@ export class InvestmentService {
           userId,
           amount: initialAmount as number,
           type: 'saving_transfer',
+          category: 'investment_purchase',
           description: `Investissement : ${title}`,
           paymentMethod: 'wallet',
           metadata: { action: 'investment_create' },

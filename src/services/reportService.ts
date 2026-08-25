@@ -1,6 +1,7 @@
 import Transaction from '../models/Transaction';
 import Budget from '../models/Budget';
 import User from '../models/User';
+import HealthScoreHistory from '../models/HealthScoreHistory';
 import mongoose from 'mongoose';
 import logger from '../utils/logger';
 import { GeminiService } from './ai/geminiService';
@@ -14,6 +15,31 @@ import TontineContribution from '../models/TontineContribution';
 import { AppError } from '../middleware/errorHandler';
 
 export type ReportPeriod = 'weekly' | 'monthly' | 'yearly';
+
+// Transactions issued by shared money-movement flows (wallet, tontines, goals,
+// challenges, investments) are stored with an internal, English/snake_case
+// `category` — fine for AML aggregation, unreadable if shown as-is in the
+// spending breakdown or read aloud by the AI narrative. Manually-entered/OCR
+// categories (e.g. "Alimentation") are already human-readable and pass
+// through untouched (no entry below = returned as stored).
+const CATEGORY_LABELS: Record<string, string> = {
+  tontine_contribution: 'Cotisations tontines',
+  tontine_social_fund: 'Fonds social tontines',
+  tontine_absence_fee: 'Pénalités absence tontines',
+  tontine_payout: 'Cagnottes tontines reçues',
+  withdrawal: 'Retraits',
+  deposit: 'Dépôts',
+  challenge_reward: 'Récompenses défis',
+  goal_contribution: "Objectifs d'épargne",
+  challenge_stake: 'Mises défis',
+  investment_purchase: 'Investissements',
+  investment_close: "Clôtures d'investissement",
+  saving_transfer: 'Épargne', // legacy fallback for transactions created before per-purpose categories existed
+};
+
+export function friendlyCategoryLabel(rawCategory: string): string {
+  return CATEGORY_LABELS[rawCategory] || rawCategory;
+}
 
 export class ReportService {
   /**
@@ -141,7 +167,7 @@ export class ReportService {
     ]);
 
     return categoryAnalysis.map((cat) => ({
-      category: cat._id,
+      category: friendlyCategoryLabel(cat._id),
       amount: cat.amount,
       count: cat.count,
     }));
@@ -279,9 +305,39 @@ export class ReportService {
 
     if (aiReport) {
       await RedisService.set(cacheKey, aiReport, 3600 * 6); // 6 hours
+
+      // Persiste le score au-delà du cache Redis (6h) pour permettre une
+      // courbe d'évolution mois par mois — voir getHealthScoreHistory.
+      const rawScore = (aiReport as any).health_score;
+      if (typeof rawScore === 'number' && Number.isFinite(rawScore)) {
+        const score = Math.max(0, Math.min(100, Math.round(rawScore)));
+        await HealthScoreHistory.findOneAndUpdate(
+          { userId, month, year },
+          { score, computedAt: new Date() },
+          { upsert: true },
+        ).catch((err) => {
+          logger.error(`Failed to persist health score history: ${err.message}`);
+        });
+      }
     }
 
     return aiReport;
+  }
+
+  /**
+   * Historique du score de santé financière, du plus ancien au plus récent —
+   * ordre attendu par un graphique en courbe côté mobile.
+   */
+  static async getHealthScoreHistory(userId: string, months = 6) {
+    const history = await HealthScoreHistory.find({ userId })
+      .sort({ year: -1, month: -1 })
+      .limit(months)
+      .lean();
+
+    return history.reverse().map((h) => ({
+      period: `${h.month}/${h.year}`,
+      score: h.score,
+    }));
   }
 
   /**

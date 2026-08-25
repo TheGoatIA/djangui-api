@@ -1,5 +1,4 @@
 import mongoose, { Schema, Document } from 'mongoose';
-import { VaultCrypto } from '../utils/vaultCrypto';
 
 export interface ITontineMember extends Document {
   tontineId: mongoose.Types.ObjectId;
@@ -10,12 +9,6 @@ export interface ITontineMember extends Document {
   hasPaidSocialFund: boolean;
   invitationStatus: 'pending' | 'accepted' | 'declined' | 'removed';
   rotationOrder: number; // Order in 'fixed' mode
-  payoutDetails?: {
-    type: 'mobile_money' | 'bank';
-    provider: string;
-    accountNumber: string;
-    accountName: string;
-  };
   isActive: boolean;
   isAutoDebitEnabled: boolean;
   joinedAt: Date;
@@ -35,16 +28,6 @@ const tontineMemberSchema = new Schema<ITontineMember>(
       default: 'pending',
     },
     rotationOrder: { type: Number },
-    payoutDetails: {
-      type: { type: String, enum: ['mobile_money', 'bank'] },
-      provider: { type: String },
-      accountNumber: {
-        type: String,
-        set: (val: string) => (val ? VaultCrypto.encryptSimple(val, 'tontine_payout') : val),
-        get: (val: string) => (val ? VaultCrypto.decryptSimple(val, 'tontine_payout') : val),
-      },
-      accountName: { type: String },
-    },
     isActive: { type: Boolean, default: true },
     isAutoDebitEnabled: { type: Boolean, default: true },
     joinedAt: { type: Date, default: Date.now },

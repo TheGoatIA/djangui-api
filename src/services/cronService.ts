@@ -786,6 +786,9 @@ export class CronService {
 
         if (new Date() > graceDeadline) {
           try {
+            // Pénalise les absents avant de figer le pot du tour, sinon un
+            // membre qui n'a jamais payé échapperait à toute sanction (V-04).
+            await TontineService.applyAbsenceFees(tontine._id.toString());
             await TontineService.rotateTurn(tontine._id.toString());
             rotatedCount++;
           } catch (err: any) {

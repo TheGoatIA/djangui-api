@@ -2,7 +2,6 @@ import mongoose from 'mongoose';
 import crypto from 'crypto';
 import Tontine, { ITontine } from '../models/Tontine';
 import TontineMember from '../models/TontineMember';
-import TontineAuction from '../models/TontineAuction';
 import TontineContribution from '../models/TontineContribution';
 import TontineMessage from '../models/TontineMessage';
 import TontineVote from '../models/TontineVote';
@@ -96,7 +95,7 @@ export class TontineService {
   static async joinTontine(
     userId: string,
     inviteCode: string,
-    data: { displayName: string; parts: number; payoutDetails?: any },
+    data: { displayName: string; parts: number },
   ): Promise<any> {
     // Wrapped in a transaction: the free-tier count check, the member-already-in-tontine
     // check, and the remaining-slots check must all be consistent with the actual insert,
@@ -153,7 +152,6 @@ export class TontineService {
               userId: userId,
               displayName: data.displayName,
               parts: requestedParts,
-              payoutDetails: data.payoutDetails,
               invitationStatus: 'accepted',
               joinedAt: new Date(),
             },
@@ -210,7 +208,6 @@ export class TontineService {
       'rules',
       'sanctions',
       'socialFund',
-      'escrowDetails',
       'autoRenew',
       'rulesAcceptedByAll',
       'contributionAmount',
@@ -325,6 +322,156 @@ export class TontineService {
     };
   }
 
+  /**
+   * Paiement du fonds social par un membre (V-04) — obligatoire une seule fois
+   * avant le démarrage de la tontine si `socialFund.enabled` (voir garde dans
+   * `startTontine`). Idempotent : un membre qui a déjà payé ne peut pas payer
+   * une seconde fois. La somme collectée est uniquement suivie
+   * (`socialFund.totalCollected`) ; sa redistribution reste une décision
+   * manuelle du créateur en cas de coup dur, comme annoncé dans le guide.
+   */
+  static async payMandatorySocialFund(tontineId: string, userId: string) {
+    const result = await WalletService.runInTransaction(async (session) => {
+      const tontine = await Tontine.findById(tontineId).session(session);
+      if (!tontine) throw new AppError('Tontine non trouvée', 404);
+      if (!tontine.socialFund?.enabled) {
+        throw new AppError("Le fonds social n'est pas activé pour cette tontine", 400);
+      }
+
+      const member = await TontineMember.findOne({ tontineId, userId }).session(session);
+      if (!member) throw new AppError("Vous n'êtes pas membre de cette tontine", 403);
+      if (member.hasPaidSocialFund) {
+        throw new AppError('Vous avez déjà payé le fonds social', 400);
+      }
+
+      const user = await User.findById(userId).session(session);
+      if (!user) throw new AppError('Utilisateur non trouvé', 404);
+      const rate = CurrencyService.getRate(tontine.currency, user.currency || 'XAF');
+      const convertedAmount = Math.ceil(tontine.socialFund.amount * rate);
+
+      const tx = await WalletService.executeTransaction(
+        {
+          userId,
+          amount: convertedAmount,
+          type: 'tontine_social_fund',
+          description: `Fonds social : ${tontine.name}`,
+          paymentMethod: 'wallet',
+        },
+        { session },
+      );
+
+      member.hasPaidSocialFund = true;
+      await member.save({ session });
+
+      tontine.socialFund.totalCollected = (tontine.socialFund.totalCollected || 0) + convertedAmount;
+      await tontine.save({ session });
+
+      return { tx, member };
+    });
+
+    (result.tx as any)._postCommit?.().catch((err: any) =>
+      logger.error(`Post-commit hook error: ${err.message}`),
+    );
+
+    return result.member;
+  }
+
+  /**
+   * Applique les frais d'absence (V-04) : pénalise les membres SANS auto-débit
+   * qui n'ont soumis aucune cotisation validée pour le tour courant, une fois
+   * le délai de grâce dépassé. Les membres en auto-débit ne sont jamais
+   * "absents" — `processAutoDebits` les prélève déjà systématiquement. C'est
+   * une pénalité distincte du `lateFee` (qui, lui, majore et compte comme
+   * cotisation) : elle ne crée pas de `TontineContribution` et ne compte donc
+   * pas dans le pot du tour — le membre reste compté comme n'ayant pas
+   * contribué, en plus d'être sanctionné financièrement.
+   *
+   * Appelée par le cron juste avant `rotateTurn`, pour que la pénalité soit
+   * appliquée avant que le pot du tour ne soit figé.
+   */
+  static async applyAbsenceFees(tontineId: string): Promise<void> {
+    const tontine = await Tontine.findById(tontineId);
+    if (!tontine || tontine.status !== 'active') return;
+    if (!tontine.sanctions?.absenceFee) return;
+
+    const deadline = this.getTurnDeadline(
+      tontine.startDate,
+      tontine.frequency,
+      tontine.currentTurn,
+    );
+    const graceDeadline = new Date(
+      deadline.getTime() + tontine.sanctions.gracePeriodHours * 3600000,
+    );
+    if (new Date() <= graceDeadline) return;
+
+    const members = await TontineMember.find({
+      tontineId,
+      invitationStatus: 'accepted',
+      isAutoDebitEnabled: false,
+    });
+
+    for (const member of members) {
+      const existing = await TontineContribution.findOne({
+        tontineId,
+        memberId: member._id,
+        turnIndex: tontine.currentTurn,
+        validationStatus: { $in: ['completed', 'ai_validated'] },
+      });
+      if (existing) continue;
+
+      try {
+        const user = await User.findById(member.userId);
+        if (!user) continue;
+        const rate = CurrencyService.getRate(tontine.currency, user.currency || 'XAF');
+        const feeAmount = Math.ceil(tontine.sanctions.absenceFee * member.parts * rate);
+        if (feeAmount <= 0) continue;
+
+        const tx = await WalletService.runInTransaction(async (session) => {
+          // Re-vérifié dans la transaction : évite une double pénalité si ce
+          // job est rejoué (ex: cron relancé après un crash partiel).
+          const alreadyContributed = await TontineContribution.findOne({
+            tontineId,
+            memberId: member._id,
+            turnIndex: tontine.currentTurn,
+            validationStatus: { $in: ['completed', 'ai_validated'] },
+          }).session(session);
+          if (alreadyContributed) return null;
+
+          const t = await WalletService.executeTransaction(
+            {
+              userId: member.userId.toString(),
+              amount: feeAmount,
+              type: 'tontine_absence_fee',
+              description: `Frais d'absence : ${tontine.name} (Tour ${tontine.currentTurn})`,
+              paymentMethod: 'wallet',
+            },
+            { session },
+          );
+
+          // Pénalité de confiance plus sévère qu'un simple retard (-5) : une
+          // absence complète est un signal plus fort qu'un paiement tardif.
+          const freshMember = await TontineMember.findById(member._id).session(session);
+          if (freshMember) {
+            freshMember.trustScore = Math.max(0, freshMember.trustScore - 10);
+            await freshMember.save({ session });
+          }
+
+          return t;
+        });
+
+        if (tx) {
+          (tx as any)._postCommit?.().catch((err: any) =>
+            logger.error(`Post-commit hook error: ${err.message}`),
+          );
+        }
+      } catch (err: any) {
+        // Solde insuffisant ou autre échec ponctuel : on logue et on continue
+        // avec les autres membres, comme processAutoDebits.
+        logger.warn(`Absence fee failed for member ${member._id}: ${err.message}`);
+      }
+    }
+  }
+
   static async updateTrustScore(memberId: string, isLate: boolean) {
     const member = await TontineMember.findById(memberId);
     if (member) {
@@ -344,11 +491,20 @@ export class TontineService {
       validationStatus: { $in: ['ai_validated', 'completed'] },
     });
 
+    // Same lookup rotateTurn uses to pick who gets paid this turn — surfaced
+    // here so the app can show "who receives this turn's pot" instead of
+    // leaving members to guess or check off-app.
+    const beneficiary = members.find(
+      (m) => (m as any).rotationOrder === tontine?.currentTurn,
+    );
+
     return {
       collectedAmount: contributions.reduce((s, c) => s + c.amountPaid, 0),
       expectedAmount: (tontine?.contributionAmount || 0) * members.reduce((s, m) => s + m.parts, 0),
       contributorsCount: contributions.length,
       totalMembers: members.length,
+      currentBeneficiaryId: beneficiary?._id?.toString(),
+      currentBeneficiaryName: beneficiary?.displayName,
     };
   }
 
@@ -358,6 +514,19 @@ export class TontineService {
       throw new AppError('Non autorisé', 403);
     const members = await TontineMember.find({ tontineId, invitationStatus: 'accepted' });
     if (members.length < 2) throw new AppError('Mini 2 membres', 400);
+
+    // Le fonds social n'a de sens que si tout le monde y a contribué avant que
+    // le cycle ne commence — sinon un membre pourrait profiter de la caisse
+    // d'entraide sans jamais y avoir mis d'argent (V-04).
+    if (tontine.socialFund?.enabled) {
+      const unpaidCount = members.filter((m) => !m.hasPaidSocialFund).length;
+      if (unpaidCount > 0) {
+        throw new AppError(
+          `${unpaidCount} membre(s) n'ont pas encore payé le fonds social. Tous les membres doivent y contribuer avant le démarrage.`,
+          400,
+        );
+      }
+    }
 
     // Attribution rotation avec Fisher-Yates cryptographique
     if (tontine.rotationMode === 'random') {
@@ -572,9 +741,47 @@ export class TontineService {
     senderId: string,
     content: string,
     type: any = 'text',
+    audioUrl?: string,
+    audioDuration?: number,
   ) {
-    await this.assertIsMember(tontineId, senderId);
-    return await TontineMessage.create({ tontineId, senderId, content, type });
+    const tontine = await this.assertIsMember(tontineId, senderId);
+    const message = await TontineMessage.create({
+      tontineId,
+      senderId,
+      content,
+      type,
+      audioUrl,
+      audioDuration,
+    });
+
+    // Notify every other member — fire-and-forget, mirrors the
+    // TONTINE_CONTRIBUTION_PENDING_REVIEW pattern in tontineController.contribute().
+    // category 'informational' respects the user's notification frequency preference
+    // (no forced push for low/medium frequency) while still recording the in-app
+    // notification history unconditionally.
+    const sender = await User.findById(senderId).select('firstName lastName');
+    const senderName = sender ? `${sender.firstName} ${sender.lastName}`.trim() : 'Un membre';
+    const preview =
+      type === 'audio' ? '🎤 Note vocale' : content.length > 60 ? `${content.slice(0, 57)}...` : content;
+
+    TontineMember.find({ tontineId, invitationStatus: 'accepted' })
+      .then((members) => {
+        members
+          .filter((m) => m.userId.toString() !== senderId)
+          .forEach((m) => {
+            NotificationService.sendToUser(m.userId.toString(), {
+              title: '',
+              body: '',
+              category: 'informational',
+              translationKey: 'TONTINE_NEW_MESSAGE',
+              translationData: { senderName, tontineName: tontine.name, preview },
+              data: { tontineId, type: 'TONTINE_NEW_MESSAGE' },
+            }).catch((err: any) => logger.error(`New message notification error: ${err.message}`));
+          });
+      })
+      .catch((err: any) => logger.error(`Failed to list tontine members for notification: ${err.message}`));
+
+    return message;
   }
 
   static async getMessages(tontineId: string, userId: string) {
@@ -708,15 +915,22 @@ export class TontineService {
 
   static async createVote(
     tontineId: string,
-    creatorId: string,
+    userId: string,
     question: string,
     options: string[],
     durationHours: number,
   ) {
-    await this.assertIsMember(tontineId, creatorId);
+    // Any accepted member could open a governance vote — casting a vote is
+    // rightly open to every member, but *proposing* one (e.g. to remove a
+    // member, or decide on a rule change) should be an admin action, same as
+    // startTontine/exportTontineReport, not something any member can trigger.
+    const tontine = await this.assertIsMember(tontineId, userId);
+    if (tontine.creatorId.toString() !== userId) {
+      throw new AppError('Seul le créateur de la tontine peut lancer un vote', 403);
+    }
     return TontineVote.create({
       tontineId,
-      creatorId,
+      creatorId: userId,
       question,
       options: options.map((o) => ({ text: o, count: 0 })),
       expiresAt: new Date(Date.now() + durationHours * 3600000),

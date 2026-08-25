@@ -97,4 +97,17 @@ export class ReportController {
       next(err);
     }
   }
+
+  static async getHealthScoreHistory(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const months = parseInt(req.query.months as string) || 6;
+      const history = await ReportService.getHealthScoreHistory(req.user._id, months);
+      res.status(200).json({
+        success: true,
+        data: history,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
 }

@@ -102,8 +102,18 @@ export class WalletService {
         | 'withdrawal'
         | 'tontine_contribution'
         | 'tontine_payout'
+        | 'tontine_social_fund'
+        | 'tontine_absence_fee'
         | 'saving_transfer'
         | 'challenge_reward';
+      // Reporting-only label, decoupled from `type` (which drives the AML/
+      // isDebit/isCredit business logic below and must stay a closed enum).
+      // Lets callers that all share `type: 'saving_transfer'` — goal
+      // contributions, challenge stakes, investment purchases — still show up
+      // as distinct, human-readable categories in spending analysis instead
+      // of being merged into one opaque "saving_transfer" bucket. Defaults to
+      // `type` when omitted, preserving prior behavior for every other caller.
+      category?: string;
       description: string;
       paymentMethod: 'stripe' | 'notchpay' | 'wallet';
       reference?: string;
@@ -120,6 +130,7 @@ export class WalletService {
       userId,
       amount,
       type,
+      category,
       description,
       paymentMethod,
       reference,
@@ -153,7 +164,11 @@ export class WalletService {
 
       // AML: daily cumulative limit for debits
       const isDebit =
-        type === 'withdrawal' || type === 'tontine_contribution' || type === 'saving_transfer';
+        type === 'withdrawal' ||
+        type === 'tontine_contribution' ||
+        type === 'tontine_social_fund' ||
+        type === 'tontine_absence_fee' ||
+        type === 'saving_transfer';
       const isCredit =
         type === 'deposit' || type === 'tontine_payout' || type === 'challenge_reward';
 
@@ -168,7 +183,16 @@ export class WalletService {
                 ? new mongoose.Types.ObjectId(userId)
                 : userId,
               // AML: tous les débits du jour, quel que soit leur type
-              type: { $in: ['expense', 'withdrawal', 'tontine_contribution', 'saving_transfer'] },
+              type: {
+                $in: [
+                  'expense',
+                  'withdrawal',
+                  'tontine_contribution',
+                  'tontine_social_fund',
+                  'tontine_absence_fee',
+                  'saving_transfer',
+                ],
+              },
               status: 'completed',
               date: { $gte: startOfDay },
             },
@@ -219,7 +243,7 @@ export class WalletService {
               type === 'deposit' || type === 'tontine_payout' || type === 'challenge_reward'
                 ? 'income'
                 : 'expense',
-            category: type,
+            category: category || type,
             description,
             status: 'completed',
             reference: transactionRef,

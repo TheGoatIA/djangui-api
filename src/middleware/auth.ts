@@ -51,7 +51,9 @@ const protect = async (req: AuthRequest, res: Response, next: NextFunction) => {
 
     // 4) Check if user is active
     if (!currentUser.isActive) {
-      return next(new AppError('This user account is deactivated.', 403));
+      return next(
+        new AppError('This user account is deactivated.', 403, 'ACCOUNT_DEACTIVATED'),
+      );
     }
 
     // GRANT ACCESS TO PROTECTED ROUTE
@@ -68,11 +70,12 @@ const premiumOnly = async (req: AuthRequest, res: Response, next: NextFunction) 
     return next(new AppError('Authentication required.', 401));
   }
 
-  if (
-    req.user.subscription?.plan !== 'premium' ||
-    req.user.subscription?.status !== 'active' ||
-    (req.user.subscription?.endDate && new Date(req.user.subscription.endDate) < new Date())
-  ) {
+  // Delegate to the `isPremium` virtual (User.ts) instead of re-checking
+  // plan/status/expiry here: this duplicated condition drifted out of sync
+  // when the 'business' (Super Premium / Reseller Hub) tier was added — the
+  // virtual was updated to treat it as premium, this check wasn't, so
+  // business-tier users were wrongly rejected from every premiumOnly route.
+  if (!req.user.isPremium) {
     return next(
       new AppError('This is a premium feature. Please upgrade your plan to access it.', 403),
     );

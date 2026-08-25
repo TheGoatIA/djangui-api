@@ -868,7 +868,20 @@ export class AuthService {
   static async getSessions(userId: string) {
     const user = await User.findById(userId).select('sessions');
     if (!user) throw new AppError('User not found', 404);
-    return user.sessions || [];
+    // The client's SessionModel reads flat `deviceName`/`os` fields — the
+    // stored shape is nested under `deviceInfo` (see the `sessions` schema),
+    // so it must be flattened here rather than returned as-is, which
+    // previously left every session showing as "Unknown Device"/"Unknown OS"
+    // even when deviceInfo was actually populated.
+    return (user.sessions || []).map((s: any) => ({
+      _id: s._id,
+      deviceName: s.deviceInfo?.model || null,
+      os: s.deviceInfo?.os
+        ? `${s.deviceInfo.os}${s.deviceInfo.osVersion ? ' ' + s.deviceInfo.osVersion : ''}`
+        : null,
+      ipAddress: s.ipAddress || null,
+      lastActive: s.lastActive,
+    }));
   }
 
   static async revokeSession(userId: string, sessionId: string) {
@@ -909,10 +922,17 @@ export class AuthService {
     return true;
   }
 
-  static async updateDeviceInfo(userId: string, data: { deviceInfo: any; appVersion: string }) {
+  static async updateDeviceInfo(
+    userId: string,
+    data: { deviceInfo: any; appVersion: string; deviceId?: string },
+  ) {
     const user = await User.findByIdAndUpdate(
       userId,
       {
+        // Legacy top-level fields — kept for compatibility with anything
+        // still reading them, but GET /auth/sessions never did: it reads the
+        // `sessions[]` subdocuments below, which this call previously never
+        // touched, leaving every session's deviceInfo permanently empty.
         deviceInfo: data.deviceInfo,
         appVersion: data.appVersion,
       },
@@ -920,6 +940,29 @@ export class AuthService {
     );
 
     if (!user) throw new AppError('User not found', 404);
+
+    if (user.sessions && user.sessions.length > 0) {
+      // Prefer an exact deviceId match (set at login for the password flow);
+      // social/phone/biometric-refresh logins don't send one yet, so fall
+      // back to the most recently created session — this call always fires
+      // right after a fresh login (see AuthBloc), so at that moment the
+      // newest session is reliably this device's.
+      let target = data.deviceId
+        ? user.sessions.find((s: any) => s.deviceId === data.deviceId)
+        : undefined;
+      if (!target) {
+        target = [...user.sessions].sort(
+          (a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        )[0];
+      }
+      if (target) {
+        (target as any).deviceInfo = data.deviceInfo;
+        (target as any).appVersion = data.appVersion;
+        if (data.deviceId) (target as any).deviceId = data.deviceId;
+        await (user as any).save({ validateBeforeSave: false });
+      }
+    }
+
     return user;
   }
 }

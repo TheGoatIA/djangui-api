@@ -32,6 +32,18 @@ router.post(
   UploadController.uploadAvatar,
 );
 router.post(
+  '/avatar/generate',
+  uploadLimiter,
+  premiumOnly,
+  UploadController.generateAvatar,
+);
+router.post(
+  '/avatar/apply',
+  uploadLimiter,
+  premiumOnly,
+  UploadController.applyGeneratedAvatar,
+);
+router.post(
   '/document',
   uploadLimiter,
   upload.single('document'),

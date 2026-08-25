@@ -4,11 +4,17 @@ import logger from '../utils/logger';
 export class AppError extends Error {
   public statusCode: number;
   public isOperational: boolean;
+  /** Machine-readable discriminator for clients that need to react to a
+   * SPECIFIC error condition (e.g. a genuinely deactivated account) without
+   * fragile string-matching on `message`, which is human-readable and can
+   * change. Optional — most call sites don't need one. */
+  public code?: string;
 
-  constructor(message: string, statusCode: number) {
+  constructor(message: string, statusCode: number, code?: string) {
     super(message);
     this.statusCode = statusCode;
     this.isOperational = true;
+    this.code = code;
 
     Error.captureStackTrace(this, this.constructor);
   }
@@ -52,6 +58,7 @@ const errorHandler = (err: any, req: Request, res: Response, next: NextFunction)
       status: err.status,
       error: err,
       message: err.message,
+      code: err.code,
       stack: err.stack,
     });
   } else {
@@ -65,6 +72,7 @@ const errorHandler = (err: any, req: Request, res: Response, next: NextFunction)
       res.status(err.statusCode).json({
         status: err.status,
         message: err.message,
+        code: err.code,
       });
     } else {
       // Critical error

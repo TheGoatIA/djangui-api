@@ -164,7 +164,8 @@ export class GeminiService {
       this.saveUsage(modelName, context, {}, duration, 'failure', error.message);
 
       logger.error(`Gemini generateContent error: ${error.message}`);
-      throw new AppError('AI Service currently unavailable', 503);
+      const detail = process.env.NODE_ENV !== 'production' ? ` (${error.message})` : '';
+      throw new AppError(`AI Service currently unavailable${detail}`, 503);
     }
   }
 
@@ -205,7 +206,13 @@ export class GeminiService {
       this.saveUsage(modelName, context, {}, duration, 'failure', error.message);
 
       logger.error(`Gemini generateJSON error [Model: ${modelName}]: ${error.message}`);
-      throw new AppError('AI Analysis failed', 503);
+      // Surfaced outside production: this catch swallows everything (quota,
+      // safety block, malformed JSON from the model, network...) behind one
+      // generic message, which made a real first-run failure (e.g. the
+      // forecast prompt) indistinguishable from any other cause without
+      // digging through server logs.
+      const detail = process.env.NODE_ENV !== 'production' ? ` (${error.message})` : '';
+      throw new AppError(`AI Analysis failed${detail}`, 503);
     }
   }
 

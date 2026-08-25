@@ -2,7 +2,7 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { TontineController } from '../controllers/tontineController';
 import { protect, restrictTo } from '../middleware/auth';
-import { upload } from '../config/multer';
+import { upload, validateFileMagicBytes, uploadVoice, validateVoiceMagicBytes } from '../config/multer';
 import { idempotency } from '../middleware/idempotency';
 
 const router = Router();
@@ -26,11 +26,24 @@ router.get('/:id', TontineController.getDetails);
 router.patch('/:id', TontineController.update);
 router.delete('/:id', TontineController.delete);
 router.post('/:id/start', TontineController.start);
+router.post('/:id/rotation/next', TontineController.rotateTurnNow);
+router.post('/:id/social-fund/pay', TontineController.paySocialFund);
 router.post('/join', joinLimiter, TontineController.join);
-router.post('/contribute', upload.single('receipt'), idempotency, TontineController.contribute);
+router.post(
+  '/contribute',
+  upload.single('receipt'),
+  validateFileMagicBytes,
+  idempotency,
+  TontineController.contribute,
+);
 
 // Messagerie
-router.post('/:id/messages', TontineController.postMessage);
+router.post(
+  '/:id/messages',
+  uploadVoice.single('audio'),
+  validateVoiceMagicBytes,
+  TontineController.postMessage,
+);
 router.get('/:id/messages', TontineController.getMessages);
 router.get('/:id/export', TontineController.exportReport);
 router.get('/:id/members', TontineController.getMembers);

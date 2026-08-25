@@ -424,8 +424,12 @@ export class AuthController {
 
   static async updateDeviceInfo(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const { deviceInfo, appVersion } = req.body;
-      const user = await AuthService.updateDeviceInfo(req.user._id, { deviceInfo, appVersion });
+      const { deviceInfo, appVersion, deviceId } = req.body;
+      const user = await AuthService.updateDeviceInfo(req.user._id, {
+        deviceInfo,
+        appVersion,
+        deviceId,
+      });
 
       res.status(200).json({
         success: true,
