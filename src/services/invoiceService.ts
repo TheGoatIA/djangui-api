@@ -22,7 +22,7 @@ export class InvoiceService {
       if (!transaction) throw new AppError('Transaction non trouvée', 404);
 
       const user = transaction.userId as any;
-      const invoiceNumber = `INV-${new Date().getFullYear()}-${uuidv4().split('-')[0].toUpperCase()}`;
+      const invoiceNumber = `INV-${new Date().getFullYear()}-${uuidv4().toUpperCase()}`;
 
       // Upsert atomique (backé par l'index unique sur transactionId) : deux
       // déclencheurs concurrents (génération auto post-paiement + polling client)
@@ -93,7 +93,7 @@ export class InvoiceService {
       if (!payment) throw new AppError('Paiement non trouvé', 404);
 
       const user = payment.userId as any;
-      const invoiceNumber = `INV-${new Date().getFullYear()}-${uuidv4().split('-')[0].toUpperCase()}`;
+      const invoiceNumber = `INV-${new Date().getFullYear()}-${uuidv4().toUpperCase()}`;
 
       // Upsert atomique — voir le commentaire équivalent dans generateForTransaction.
       try {
@@ -327,12 +327,12 @@ export class InvoiceService {
         stream.on('error', reject);
       });
 
-      // 3. Upload vers MinIO (non bloquant si MinIO indisponible en dev local)
+      // 3. Upload vers MinIO (visibilité privée par défaut pour protéger les PII financières)
       const bucket = 'kauri-invoices';
       const destinationKey = `invoices/${fileName}`;
       let publicUrl: string;
       try {
-        publicUrl = await StorageService.uploadFile(filePath, bucket, destinationKey);
+        publicUrl = await StorageService.uploadFile(filePath, bucket, destinationKey, 'private');
         // Cleanup local temp file only if successfully uploaded to MinIO
         try {
           fs.unlinkSync(filePath);

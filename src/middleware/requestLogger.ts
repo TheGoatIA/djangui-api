@@ -72,8 +72,10 @@ export const requestLogger = (req: AuthenticatedRequest, res: Response, next: Ne
         }
       }
 
-      if (statusCode >= 400) {
-        logger.error({ ...logData, message: `FAILED ${logData.message}` });
+      if (statusCode >= 500) {
+        logger.error({ ...logData, message: `SERVER_ERROR ${logData.message}` });
+      } else if (statusCode >= 400) {
+        logger.warn({ ...logData, message: `CLIENT_ERROR ${logData.message}` });
       } else {
         logger.http(logData);
       }

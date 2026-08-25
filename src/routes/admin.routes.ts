@@ -44,7 +44,7 @@ router.get('/support/tickets', restrictTo('admin', 'support'), SupportController
 router.get('/kyc/pending', restrictTo('admin', 'support'), AdminController.getKycPendingUsers);
 router.patch('/kyc/:userId/validate', restrictTo('admin'), AdminController.validateKyc);
 router.patch('/kyc/:userId/edit', restrictTo('admin'), AdminController.updateKycData);
-router.patch('/kyc/:userId/revalidate', AdminController.revalidateKyc);
+router.patch('/kyc/:userId/revalidate', restrictTo('admin'), AdminController.revalidateKyc);
 router.patch('/kyc/:userId/reject', restrictTo('admin'), AdminController.rejectKyc);
 
 // Wallet Ledger - lecture seule support + admin

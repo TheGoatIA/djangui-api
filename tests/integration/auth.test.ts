@@ -7,7 +7,7 @@ import redis from '../../src/config/redis';
 describe('Authentication Integration Tests', () => {
     const testUser = {
         email: 'test@example.com',
-        password: 'password123',
+        password: 'Password123!',
         firstName: 'Test',
         lastName: 'User',
     };

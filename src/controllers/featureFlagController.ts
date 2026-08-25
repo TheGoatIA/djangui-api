@@ -123,7 +123,23 @@ export class FeatureFlagController {
         return res.status(200).json({ status: 'success', data: flag });
       }
 
-      const flag = await FeatureFlag.findByIdAndUpdate(id, updates, {
+      const ALLOWED_FLAG_FIELDS = [
+        'name',
+        'description',
+        'isEnabled',
+        'targetRoles',
+        'targetCountries',
+        'minAppVersion',
+        'metadata',
+      ];
+      const safeUpdates: any = {};
+      for (const key of ALLOWED_FLAG_FIELDS) {
+        if (key in updates) {
+          safeUpdates[key] = updates[key];
+        }
+      }
+
+      const flag = await FeatureFlag.findByIdAndUpdate(id, safeUpdates, {
         new: true,
         runValidators: true,
       });

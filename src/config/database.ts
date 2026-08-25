@@ -6,6 +6,11 @@ const connectDB = async (): Promise<void> => {
   try {
     const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/kauri';
 
+    // In production, ensure TLS is enabled (F23)
+    if (process.env.NODE_ENV === 'production' && !mongoURI.includes('tls=true') && !mongoURI.includes('ssl=true') && !mongoURI.includes('mongodb+srv://')) {
+      logger.warn('⚠️ [SECURITY] MongoDB connection in production is not using explicit TLS/SSL parameters (tls=true)');
+    }
+
     // Log masked URI for debugging (mask password)
     const maskedURI = mongoURI.replace(/:([^:@]+)@/, ':****@');
     logger.info(`Attempting to connect to MongoDB: ${maskedURI}`);

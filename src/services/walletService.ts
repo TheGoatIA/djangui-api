@@ -264,7 +264,7 @@ export class WalletService {
       // "transaction successful" notification for a change that might still
       // roll back.
       const postCommit = async () => {
-        await AuditService.record({
+        await AuditService.recordSync({
           userId: userId as any,
           action: type.toUpperCase(),
           resource: 'WALLET',

@@ -7,6 +7,7 @@
 const REQUIRED_VARS: string[] = [
   'JWT_ACCESS_SECRET',
   'JWT_REFRESH_SECRET',
+  'VAULT_ENCRYPTION_KEY',
   'MONGODB_URI',
   'REDIS_URL',
   'STRIPE_SECRET_KEY',
@@ -45,6 +46,7 @@ export function validateEnv(): void {
   // Additional strength checks for secrets
   const jwtAccess = process.env.JWT_ACCESS_SECRET!;
   const jwtRefresh = process.env.JWT_REFRESH_SECRET!;
+  const vaultKey = process.env.VAULT_ENCRYPTION_KEY!;
   const swaggerPwd = process.env.SWAGGER_PASSWORD!;
 
   if (jwtAccess.length < 32) {
@@ -54,6 +56,11 @@ export function validateEnv(): void {
 
   if (jwtRefresh.length < 32) {
     console.error('🚨 [ENV] JWT_REFRESH_SECRET must be at least 32 characters. Generate with: openssl rand -hex 32');
+    process.exit(1);
+  }
+
+  if (vaultKey.length < 32) {
+    console.error('🚨 [ENV] VAULT_ENCRYPTION_KEY must be at least 32 characters. Generate with: openssl rand -hex 32');
     process.exit(1);
   }
 

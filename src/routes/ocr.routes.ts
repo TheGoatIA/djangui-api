@@ -1,26 +1,28 @@
 import { Router } from 'express';
 import { OCRController } from '../controllers/ocrController';
 import { protect, premiumOnly } from '../middleware/auth';
-import multer from 'multer';
-import { AppError } from '../middleware/errorHandler';
+import { upload, validateFileMagicBytes } from '../config/multer';
+import rateLimit from 'express-rate-limit';
+
+const ocrLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20, // Max 20 OCR scans per 15 minutes to control Gemini API costs & abuse
+  message: 'Trop de requêtes OCR/Scan, veuillez réessayer plus tard',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 const router = Router();
-const upload = multer({
-  dest: 'uploads/receipts/',
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') {
-      cb(null, true);
-    } else {
-      cb(new AppError('Seuls les images et les PDFs sont acceptés', 400));
-    }
-  },
-  limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB
-  },
-});
 
 router.use(protect);
 
-router.post('/scan', premiumOnly, upload.single('receipt'), OCRController.scanReceipt);
+router.post(
+  '/scan',
+  ocrLimiter,
+  premiumOnly,
+  upload.single('receipt'),
+  validateFileMagicBytes,
+  OCRController.scanReceipt,
+);
 
 export default router;

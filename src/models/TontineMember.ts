@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
+import { VaultCrypto } from '../utils/vaultCrypto';
 
 export interface ITontineMember extends Document {
   tontineId: mongoose.Types.ObjectId;
@@ -37,14 +38,22 @@ const tontineMemberSchema = new Schema<ITontineMember>(
     payoutDetails: {
       type: { type: String, enum: ['mobile_money', 'bank'] },
       provider: { type: String },
-      accountNumber: { type: String },
+      accountNumber: {
+        type: String,
+        set: (val: string) => (val ? VaultCrypto.encryptSimple(val, 'tontine_payout') : val),
+        get: (val: string) => (val ? VaultCrypto.decryptSimple(val, 'tontine_payout') : val),
+      },
       accountName: { type: String },
     },
     isActive: { type: Boolean, default: true },
     isAutoDebitEnabled: { type: Boolean, default: true },
     joinedAt: { type: Date, default: Date.now },
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+    toJSON: { getters: true },
+    toObject: { getters: true },
+  },
 );
 
 // Unique member per tontine

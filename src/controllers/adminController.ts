@@ -1811,8 +1811,28 @@ export class AdminController {
 
   static async updateTontine(req: Request, res: Response, next: NextFunction) {
     try {
-      // Admin can force update any field including status
-      const tontine = await Tontine.findByIdAndUpdate(req.params.id, req.body, {
+      const ALLOWED_ADMIN_TONTINE = [
+        'name',
+        'description',
+        'category',
+        'status',
+        'rules',
+        'sanctions',
+        'socialFund',
+        'contributionAmount',
+        'currency',
+        'totalParts',
+        'frequency',
+        'rulesAcceptedByAll',
+        'autoRenew',
+        'startDate',
+      ];
+      const safeData: any = {};
+      for (const key of ALLOWED_ADMIN_TONTINE) {
+        if (key in req.body) safeData[key] = req.body[key];
+      }
+
+      const tontine = await Tontine.findByIdAndUpdate(req.params.id, safeData, {
         new: true,
         runValidators: true,
       });
@@ -1884,7 +1904,22 @@ export class AdminController {
 
   static async updateSubscription(req: Request, res: Response, next: NextFunction) {
     try {
-      const subscription = await Subscription.findByIdAndUpdate(req.params.id, req.body, {
+      const ALLOWED_ADMIN_SUB = [
+        'status',
+        'plan',
+        'tier',
+        'startDate',
+        'endDate',
+        'autoRenew',
+        'billingCycle',
+        'features',
+      ];
+      const safeData: any = {};
+      for (const key of ALLOWED_ADMIN_SUB) {
+        if (key in req.body) safeData[key] = req.body[key];
+      }
+
+      const subscription = await Subscription.findByIdAndUpdate(req.params.id, safeData, {
         new: true,
         runValidators: true,
       });
@@ -2051,9 +2086,10 @@ export class AdminController {
         ];
       }
 
-      // Add search filter
+      // Add search filter (escaped against ReDoS)
       if (search) {
-        const regex = new RegExp(search, 'i');
+        const safeSearch = String(search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(safeSearch, 'i');
         query.$and = query.$and || [];
         query.$and.push({
           $or: [

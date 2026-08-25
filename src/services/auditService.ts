@@ -4,7 +4,7 @@ import { Request } from 'express';
 
 export class AuditService {
   /**
-   * Record an audit log entry
+   * Record an audit log entry (async non-blocking with error logging)
    */
   static async record(data: Partial<IAuditLog>, req?: Request) {
     try {
@@ -14,12 +14,29 @@ export class AuditService {
         userAgent: data.userAgent || (req ? req.get('user-agent') : undefined),
       };
 
-      // We don't await this to avoid blocking the main thread
       AuditLog.create(logEntry).catch((err) => {
-        logger.error(`Failed to create audit log: ${err.message}`);
+        logger.error(`Failed to create audit log: ${err.message}`, { logEntry });
       });
     } catch (error: any) {
       logger.error(`Error in AuditService.record: ${error.message}`);
+    }
+  }
+
+  /**
+   * Record an audit log entry synchronously (awaited for critical financial/KYC/security events)
+   */
+  static async recordSync(data: Partial<IAuditLog>, req?: Request): Promise<IAuditLog | null> {
+    try {
+      const logEntry = {
+        ...data,
+        ip: data.ip || (req ? req.ip : undefined),
+        userAgent: data.userAgent || (req ? req.get('user-agent') : undefined),
+      };
+
+      return await AuditLog.create(logEntry);
+    } catch (error: any) {
+      logger.error(`Error in AuditService.recordSync: ${error.message}`, { data });
+      return null;
     }
   }
 

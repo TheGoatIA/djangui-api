@@ -412,6 +412,28 @@ export class PlanConfigService {
    * Mettre à jour un plan depuis l'Admin
    */
   static async updatePlan(slug: string, updateData: any): Promise<any> {
-    return PlanConfig.findOneAndUpdate({ slug }, { $set: updateData }, { new: true });
+    const ALLOWED = [
+      'name',
+      'badge',
+      'description',
+      'popular',
+      'order',
+      'pricing',
+      'limits',
+      'features',
+      'isActive',
+    ];
+    const safeUpdates: any = {};
+    for (const key of ALLOWED) {
+      if (key in updateData) {
+        safeUpdates[key] = updateData[key];
+      }
+    }
+    return PlanConfig.findOneAndUpdate(
+      { slug },
+      { $set: safeUpdates },
+      { new: true, runValidators: true },
+    );
   }
 }
+

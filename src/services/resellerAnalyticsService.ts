@@ -5,15 +5,16 @@ import SlotPaymentHistory from '../models/SlotPaymentHistory';
 
 export class ResellerAnalyticsService {
   /**
-   * Get reseller executive dashboard statistics
+   * Get reseller executive dashboard statistics. `resellerId: null` = platform-wide
+   * figures across every reseller (admin dashboard supervision mode).
    */
-  static async getResellerDashboardStats(resellerId: string) {
-    const resellerObjectId = new mongoose.Types.ObjectId(resellerId);
+  static async getResellerDashboardStats(resellerId: string | null) {
+    const scope = resellerId ? { resellerId: new mongoose.Types.ObjectId(resellerId) } : {};
 
     const [accounts, slots, payments] = await Promise.all([
-      SharedMasterAccount.find({ resellerId: resellerObjectId }),
-      SharedSlot.find({ resellerId: resellerObjectId }),
-      SlotPaymentHistory.find({ resellerId: resellerObjectId }).sort({ paidAt: -1 }).limit(10),
+      SharedMasterAccount.find(scope),
+      SharedSlot.find(scope),
+      SlotPaymentHistory.find(scope).sort({ paidAt: -1 }).limit(10),
     ]);
 
     const totalAccounts = accounts.length;
@@ -59,15 +60,19 @@ export class ResellerAnalyticsService {
   }
 
   /**
-   * Export accounting report as CSV string
+   * Export accounting report as CSV string. `resellerId: null` = every
+   * reseller's payment history (admin accounting export).
    */
-  static async exportAccountingCsv(resellerId: string): Promise<string> {
-    const payments = await SlotPaymentHistory.find({ resellerId })
+  static async exportAccountingCsv(resellerId: string | null): Promise<string> {
+    const scope = resellerId ? { resellerId } : {};
+    const payments = await SlotPaymentHistory.find(scope)
       .populate('masterAccountId', 'serviceName')
       .populate('slotId', 'profileName client.fullName client.phone')
+      .populate(resellerId ? [] : [{ path: 'resellerId', select: 'firstName lastName email' }])
       .sort({ paidAt: -1 });
 
     const headers = [
+      ...(resellerId ? [] : ['Revendeur']),
       'Date de Paiement',
       'Service',
       'Profil/Slot',
@@ -81,19 +86,28 @@ export class ResellerAnalyticsService {
       'Notes',
     ];
 
-    const rows = payments.map((p: any) => [
-      new Date(p.paidAt).toISOString().split('T')[0],
-      `"${p.masterAccountId?.serviceName || 'N/A'}"`,
-      `"${p.slotId?.profileName || 'N/A'}"`,
-      `"${p.slotId?.client?.fullName || 'N/A'}"`,
-      `"${p.slotId?.client?.phone || 'N/A'}"`,
-      p.amount,
-      p.currency,
-      new Date(p.periodCoveredStart).toISOString().split('T')[0],
-      new Date(p.periodCoveredEnd).toISOString().split('T')[0],
-      p.paymentMethod,
-      `"${p.notes || ''}"`,
-    ]);
+    const rows = payments.map((p: any) => {
+      const resellerLabel = resellerId
+        ? null
+        : `${p.resellerId?.firstName || ''} ${p.resellerId?.lastName || ''}`.trim() ||
+          p.resellerId?.email ||
+          'N/A';
+
+      return [
+        ...(resellerLabel === null ? [] : [`"${resellerLabel}"`]),
+        new Date(p.paidAt).toISOString().split('T')[0],
+        `"${p.masterAccountId?.serviceName || 'N/A'}"`,
+        `"${p.slotId?.profileName || 'N/A'}"`,
+        `"${p.slotId?.client?.fullName || 'N/A'}"`,
+        `"${p.slotId?.client?.phone || 'N/A'}"`,
+        p.amount,
+        p.currency,
+        new Date(p.periodCoveredStart).toISOString().split('T')[0],
+        new Date(p.periodCoveredEnd).toISOString().split('T')[0],
+        p.paymentMethod,
+        `"${p.notes || ''}"`,
+      ];
+    });
 
     return [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
   }

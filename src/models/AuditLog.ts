@@ -63,6 +63,26 @@ auditLogSchema.index(
   { expireAfterSeconds: AUDIT_LOG_RETENTION_DAYS * 24 * 60 * 60 },
 );
 
+// Immutabilité stricte au niveau du schéma (F11) : interdiction absolue de mise à jour ou suppression.
+// La liste couvre explicitement findOneAndDelete/findOneAndRemove — des hooks Mongoose
+// distincts de deleteOne/deleteMany qui, omis, laisseraient un contournement trivial de
+// cette garde (AuditLog.findOneAndDelete() passerait sans erreur).
+auditLogSchema.pre(
+  [
+    'updateOne',
+    'findOneAndUpdate',
+    'updateMany',
+    'replaceOne',
+    'deleteOne',
+    'deleteMany',
+    'findOneAndDelete',
+    'findOneAndRemove',
+  ] as any,
+  function (this: any, next: any) {
+    next(new Error('AuditLog entries are immutable and cannot be updated or deleted.'));
+  },
+);
+
 const AuditLog = mongoose.model<IAuditLog>('AuditLog', auditLogSchema);
 
 export default AuditLog;

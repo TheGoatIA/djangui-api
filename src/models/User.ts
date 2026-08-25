@@ -1,6 +1,7 @@
 import mongoose, { Schema, Document } from 'mongoose';
 import bcrypt from 'bcrypt';
 import { IUser } from '../types/models';
+import { VaultCrypto } from '../utils/vaultCrypto';
 
 export interface IUserDocument extends IUser, Document {
   firebaseUid?: string;
@@ -129,7 +130,11 @@ const userSchema = new Schema<IUserDocument>(
     },
     kycData: {
       documentType: { type: String },
-      documentNumber: String,
+      documentNumber: {
+        type: String,
+        set: (val: string) => (val ? VaultCrypto.encryptSimple(val, 'kyc_doc') : val),
+        get: (val: string) => (val ? VaultCrypto.decryptSimple(val, 'kyc_doc') : val),
+      },
       fullName: String,
       documentImageUrl: String,
       documentBackImageUrl: String,
@@ -221,6 +226,7 @@ const userSchema = new Schema<IUserDocument>(
     timestamps: true,
     toJSON: {
       virtuals: true,
+      getters: true,
       transform: function (doc, ret) {
         const userRet = ret as any;
         delete userRet.password;

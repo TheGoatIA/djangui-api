@@ -4,7 +4,7 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
-import { RedisStore } from 'rate-limit-redis';
+import { createRateLimitStore } from './utils/rateLimitStore';
 import redis from './config/redis';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -65,12 +65,7 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   // Use memory store in tests, otherwise use Redis
-  store:
-    process.env.NODE_ENV === 'test'
-      ? undefined
-      : new RedisStore({
-          sendCommand: (...args: string[]) => redis.call(...args),
-        }),
+  store: createRateLimitStore('global'),
 });
 
 // Middlewares

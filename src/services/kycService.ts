@@ -61,7 +61,7 @@ export class KYCService {
 
     await user.save();
 
-    await AuditService.record({
+    await AuditService.recordSync({
       userId: userId as any,
       action: 'KYC_SUBMITTED',
       resource: 'USER',
@@ -225,7 +225,7 @@ export class KYCService {
 
     await user.save();
 
-    await AuditService.record({
+    await AuditService.recordSync({
       userId: userId as any,
       action: status === 'verified' ? 'KYC_VERIFIED' : 'KYC_REJECTED',
       resource: 'USER',

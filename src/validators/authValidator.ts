@@ -1,12 +1,15 @@
 import Joi from 'joi';
 
+const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{8,}$/;
+const PASSWORD_ERROR_MSG = 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character';
+
 export const registerSchema = Joi.object({
   email: Joi.string().email().required().messages({
     'string.email': 'Please provide a valid email address',
     'any.required': 'Email is required',
   }),
-  password: Joi.string().min(8).required().messages({
-    'string.min': 'Password must be at least 8 characters long',
+  password: Joi.string().pattern(PASSWORD_REGEX).required().messages({
+    'string.pattern.base': PASSWORD_ERROR_MSG,
     'any.required': 'Password is required',
   }),
   firstName: Joi.string().required().messages({
@@ -27,11 +30,6 @@ export const loginSchema = Joi.object({
   password: Joi.string().required().messages({
     'any.required': 'Password is required',
   }),
-  // validate() strips any field not declared here (allowUnknown+stripUnknown) — without
-  // these, deviceId/deviceInfo/appVersion were always undefined by the time they reached
-  // AuthService.completeLogin, so every login pushed a brand-new session entry instead of
-  // updating the existing one for that device: sessions[] grew unbounded and the
-  // "revoke a device" feature had nothing meaningful to show.
   deviceId: Joi.string().optional(),
   deviceInfo: Joi.string().optional(),
   appVersion: Joi.string().optional(),
@@ -40,5 +38,22 @@ export const loginSchema = Joi.object({
 export const refreshTokenSchema = Joi.object({
   refreshToken: Joi.string().required().messages({
     'any.required': 'Refresh token is required',
+  }),
+});
+
+export const resetPasswordSchema = Joi.object({
+  password: Joi.string().pattern(PASSWORD_REGEX).required().messages({
+    'string.pattern.base': PASSWORD_ERROR_MSG,
+    'any.required': 'Password is required',
+  }),
+});
+
+export const changePasswordSchema = Joi.object({
+  currentPassword: Joi.string().required().messages({
+    'any.required': 'Current password is required',
+  }),
+  newPassword: Joi.string().pattern(PASSWORD_REGEX).required().messages({
+    'string.pattern.base': PASSWORD_ERROR_MSG,
+    'any.required': 'New password is required',
   }),
 });

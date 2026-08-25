@@ -12,7 +12,10 @@ const IDEMPOTENCY_KEY_TTL_SECONDS = 24 * 60 * 60; // 24h — long enough to cove
  * client retrying a timed-out request, or a double-tap on a submit button.
  *
  * The client sends an `Idempotency-Key` header (a client-generated UUID,
- * stable across retries of the *same* logical operation). The key is claimed
+ * stable across retries of the *same* logical operation) — or, for requests
+ * replayed from an offline queue where attaching a custom header isn't
+ * practical client-side, an `idempotencyKey` field in the JSON body as a
+ * fallback. The key is claimed
  * atomically with Redis `SET NX` — this is the part that matters: a
  * read-then-write ("GET, check, SET") would leave a race window where two
  * near-simultaneous requests both pass the check before either persists its
@@ -24,7 +27,10 @@ const IDEMPOTENCY_KEY_TTL_SECONDS = 24 * 60 * 60; // 24h — long enough to cove
  * hasn't opted in.
  */
 export async function idempotency(req: AuthRequest, res: Response, next: NextFunction) {
-  const key = req.headers['idempotency-key'] as string | undefined;
+  const headerKey = req.headers['idempotency-key'] as string | undefined;
+  const bodyKey =
+    req.body && typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined;
+  const key = headerKey || bodyKey;
   if (!key) return next();
 
   const userId = req.user?._id?.toString() || 'anonymous';

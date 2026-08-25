@@ -30,6 +30,11 @@ export const RESELLER_LIMITS = {
 
 /**
  * Middleware: Verify account creation quota for reseller's plan tier
+ *
+ * This is a fast, non-authoritative pre-check — it rejects obviously-over-quota
+ * requests early without taking a lock. The actual enforcement (immune to the
+ * TOCTOU race a check-then-create like this one has under concurrency) happens
+ * again, under a Redis lock, in ResellerService.createMasterAccount/createSlot.
  */
 export const checkAccountQuota = async (
   req: AuthRequest,
@@ -112,6 +117,10 @@ export const requireBusinessPlan = async (
 ) => {
   const user = req.user;
   if (!user) return next(new AppError('Authentification requise', 401));
+
+  // Staff accounts supervise every reseller's accounting from the admin dashboard —
+  // that isn't gated by the caller's own consumer subscription tier, only by role.
+  if (user.role === 'admin' || user.role === 'support') return next();
 
   const isBusiness =
     user.subscription?.plan === 'business' &&

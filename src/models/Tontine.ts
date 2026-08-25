@@ -1,5 +1,6 @@
 import mongoose, { Schema, Document } from 'mongoose';
 import crypto from 'crypto';
+import { VaultCrypto } from '../utils/vaultCrypto';
 
 export interface ITontine extends Document {
   name: string;
@@ -66,7 +67,12 @@ const tontineSchema = new Schema<ITontine>(
       {
         type: { type: String, enum: ['mobile_money', 'bank'], required: true },
         provider: { type: String, required: true },
-        accountNumber: { type: String, required: true },
+        accountNumber: {
+          type: String,
+          required: true,
+          set: (val: string) => (val ? VaultCrypto.encryptSimple(val, 'tontine_escrow') : val),
+          get: (val: string) => (val ? VaultCrypto.decryptSimple(val, 'tontine_escrow') : val),
+        },
         accountName: { type: String, required: true },
       },
     ],
@@ -75,7 +81,11 @@ const tontineSchema = new Schema<ITontine>(
     currentTurn: { type: Number, default: 1 },
     rulesAcceptedByAll: { type: Boolean, default: false },
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+    toJSON: { getters: true },
+    toObject: { getters: true },
+  },
 );
 
 // Pre-save to generate invite code if missing. Uses a CSPRNG (not Math.random, which is

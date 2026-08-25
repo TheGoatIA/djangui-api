@@ -1,17 +1,42 @@
 import { Router } from 'express';
 import { UploadController } from '../controllers/uploadController';
-import { upload } from '../config/multer';
+import { upload, validateFileMagicBytes } from '../config/multer';
 import { protect, premiumOnly } from '../middleware/auth';
+import rateLimit from 'express-rate-limit';
+
+const uploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30, // Max 30 file uploads per 15 minutes
+  message: 'Trop de téléversements, veuillez réessayer plus tard',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 const router = Router();
 
 router.use(protect);
 
-// Same OCRService.scanReceipt Gemini call as the premium-gated POST /ocr/scan —
-// without premiumOnly here, any free-tier user could use the paid OCR feature for
-// free through this second entry point.
-router.post('/receipt', premiumOnly, upload.single('receipt'), UploadController.scanReceipt);
-router.post('/avatar', upload.single('avatar'), UploadController.uploadAvatar);
-router.post('/document', upload.single('document'), UploadController.uploadDocument);
+router.post(
+  '/receipt',
+  uploadLimiter,
+  premiumOnly,
+  upload.single('receipt'),
+  validateFileMagicBytes,
+  UploadController.scanReceipt,
+);
+router.post(
+  '/avatar',
+  uploadLimiter,
+  upload.single('avatar'),
+  validateFileMagicBytes,
+  UploadController.uploadAvatar,
+);
+router.post(
+  '/document',
+  uploadLimiter,
+  upload.single('document'),
+  validateFileMagicBytes,
+  UploadController.uploadDocument,
+);
 
 export default router;

@@ -296,9 +296,12 @@ export class AuthService {
       logger.error(`Login lockout check Redis error: ${err.message}`);
     }
 
-    // 2) Check if user exists && password is correct
+    // 2) Check if user exists && password is correct with constant-time comparison (F17)
+    const DUMMY_HASH = '$2b$12$CwTycUXWue0Thq9StjUM0uJ8kTeC3W7Kd9tf59WsdG6b/H2fBb0lu';
     const user = await User.findOne({ email }).select('+password +security.totpEnabled');
-    if (!user || !(await user.comparePassword(password))) {
+    const passwordOk = await bcrypt.compare(password, user?.password || DUMMY_HASH);
+
+    if (!user || !passwordOk) {
       if (user) {
         // Alert by user ID, not email/PII — this alert may flow into Slack, which
         // isn't scoped as a store for user PII.
@@ -477,6 +480,11 @@ export class AuthService {
       ipAddress: sessionData?.ipAddress,
     };
 
+    const MAX_ACTIVE_SESSIONS = 3;
+    if (!user.sessions) {
+      user.sessions = [];
+    }
+
     if (sessionData?.deviceId) {
       // Update existing session for this device or add new
       const sessionIndex = user.sessions.findIndex((s) => s.deviceId === sessionData.deviceId);
@@ -487,6 +495,16 @@ export class AuthService {
       }
     } else {
       user.sessions.push(session);
+    }
+
+    // Sécurité Fintech : Limitation stricte à 3 sessions simultanées maximum
+    if (user.sessions.length > MAX_ACTIVE_SESSIONS) {
+      user.sessions.sort(
+        (a, b) => new Date(a.lastActive || a.createdAt).getTime() - new Date(b.lastActive || b.createdAt).getTime(),
+      );
+      while (user.sessions.length > MAX_ACTIVE_SESSIONS) {
+        user.sessions.shift();
+      }
     }
 
     // Update legacy fields
@@ -817,15 +835,29 @@ export class AuthService {
       );
     }
 
-    // Cascade delete all user data (RGPD right to erasure)
+    // Cascade delete user data (RGPD right to erasure) while preserving AML financial records (F10, F20)
     const { default: Transaction } = await import('../models/Transaction');
     const { default: Payment } = await import('../models/Payment');
-    const { default: AuditLog } = await import('../models/AuditLog');
+    const { default: TontineMember } = await import('../models/TontineMember');
+    const { default: SharedSlot } = await import('../models/SharedSlot');
+    const { default: SharedMasterAccount } = await import('../models/SharedMasterAccount');
+    const { default: Subscription } = await import('../models/Subscription');
+    const { default: Invoice } = await import('../models/Invoice');
+    const { default: SupportTicket } = await import('../models/SupportTicket');
 
     await Promise.all([
-      Transaction.deleteMany({ userId }),
-      Payment.deleteMany({ userId }),
-      AuditLog.deleteMany({ userId }),
+      // Transactions manuelles supprimées, transactions financières réelles anonymisées
+      Transaction.deleteMany({ userId, paymentMethod: 'cash' }),
+      Transaction.updateMany({ userId }, { $set: { userId: null, description: 'Anonymized User Transaction' } }),
+      // Rétention AML légale de 5 ans : Payment anonymisé (détachement de userId et PII)
+      Payment.updateMany({ userId }, { $set: { userId: null, 'metadata.anonymized': true } }),
+      // Nettoyage des collections associées (droit à l'oubli complet)
+      TontineMember.deleteMany({ userId }),
+      SharedSlot.deleteMany({ resellerId: userId }),
+      SharedMasterAccount.deleteMany({ resellerId: userId }),
+      Subscription.deleteMany({ userId }),
+      Invoice.deleteMany({ userId }),
+      SupportTicket.deleteMany({ userId }),
       User.findByIdAndDelete(userId),
     ]);
 

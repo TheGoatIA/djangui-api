@@ -8,8 +8,8 @@ services:
     environment:
       - PORT=5000
       - NODE_ENV=${NODE_ENV:-production}
-      - MONGODB_URI=${MONGODB_URI:-mongodb://${MONGODB_USER:-admin}:${MONGODB_PASSWORD:-password}@mongodb:27017/kauri?authSource=admin&replicaSet=rs0}
-      - REDIS_URL=${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis:6379}
+      - MONGODB_URI=${MONGODB_URI:-mongodb://${MONGODB_USER:-admin}:${MONGODB_PASSWORD:?MONGODB_PASSWORD is required}@mongodb:27017/kauri?authSource=admin&replicaSet=rs0}
+      - REDIS_URL=${REDIS_URL:-redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379}
       - METRICS_TOKEN=${METRICS_TOKEN}
       - NODE_OPTIONS=--max-old-space-size=1843 # Allocate ~90% of RAM to V8 heap
     ulimits:
@@ -41,7 +41,7 @@ services:
       /bin/sh -c "cp /data/db/mongodb.key /tmp/mongodb.key && chmod 600 /tmp/mongodb.key && chown 999:999 /tmp/mongodb.key && exec /usr/local/bin/docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all --auth --keyFile /tmp/mongodb.key"
     environment:
       - MONGO_INITDB_ROOT_USERNAME=${MONGODB_USER:-admin}
-      - MONGO_INITDB_ROOT_PASSWORD=${MONGODB_PASSWORD:-password}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGODB_PASSWORD:?MONGODB_PASSWORD is required}
     # MongoDB is NOT exposed on the host — accessible only within the Docker network
     expose:
       - "27017"
@@ -51,7 +51,7 @@ services:
     networks:
       - kauri-network
     healthcheck:
-      test: [ "CMD-SHELL", "mongosh --port 27017 -u $${MONGO_INITDB_ROOT_USERNAME:-admin} -p $${MONGO_INITDB_ROOT_PASSWORD:-password} --authenticationDatabase admin --quiet --eval \"db.adminCommand('ping').ok\" || (mongosh --port 27017 -u $${MONGO_INITDB_ROOT_USERNAME:-admin} -p $${MONGO_INITDB_ROOT_PASSWORD:-password} --authenticationDatabase admin --quiet --eval \"rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]})\" || mongosh --port 27017 --quiet --eval \"rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]})\" && sleep 2)" ]
+      test: [ "CMD-SHELL", "mongosh --port 27017 -u $${MONGO_INITDB_ROOT_USERNAME:-admin} -p $${MONGO_INITDB_ROOT_PASSWORD:?MONGODB_PASSWORD is required} --authenticationDatabase admin --quiet --eval \"db.adminCommand('ping').ok\" || (mongosh --port 27017 -u $${MONGO_INITDB_ROOT_USERNAME:-admin} -p $${MONGO_INITDB_ROOT_PASSWORD:?MONGODB_PASSWORD is required} --authenticationDatabase admin --quiet --eval \"rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]})\" || mongosh --port 27017 --quiet --eval \"rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]})\" && sleep 2)" ]
       interval: 10s
       timeout: 10s
       retries: 15
@@ -212,7 +212,7 @@ services:
       - ./grafana/dashboards:/etc/grafana/dashboards
     environment:
       # Admin credentials
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
       # SMTP for Grafana Unified Alerting
       - GF_SMTP_ENABLED=true
@@ -285,7 +285,7 @@ services:
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
     environment:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-kauriadmin}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-kaurisecret}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
     volumes:
       - minio_data:/data
     networks:
@@ -310,7 +310,7 @@ services:
       minio:
         condition: service_healthy
     entrypoint: >
-      /bin/sh -c " /usr/bin/mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-kauriadmin} ${MINIO_ROOT_PASSWORD:-kaurisecret}; /usr/bin/mc mb --ignore-existing local/kauri-uploads; /usr/bin/mc mb --ignore-existing local/kauri-invoices; /usr/bin/mc mb --ignore-existing local/kauri-backups; /usr/bin/mc anonymous set public local/kauri-uploads; /usr/bin/mc anonymous set public local/kauri-invoices; exit 0; "
+      /bin/sh -c " /usr/bin/mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-kauriadmin} ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}; /usr/bin/mc mb --ignore-existing local/kauri-uploads; /usr/bin/mc mb --ignore-existing local/kauri-invoices; /usr/bin/mc mb --ignore-existing local/kauri-backups; /usr/bin/mc mb --ignore-existing local/kauri-avatars; /usr/bin/mc anonymous set public local/kauri-avatars; exit 0; "
     networks:
       - kauri-network
 

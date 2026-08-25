@@ -239,78 +239,47 @@ export class TransactionService {
   }
 
   static async updateTransaction(id: string, userId: string, data: any) {
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
-    try {
-      const oldTransaction = await Transaction.findOne({ _id: id, userId }).session(session);
-      if (!oldTransaction) {
-        throw new AppError('Transaction not found', 404);
-      }
-
-      // Revert old balance impact
-      const wasDigitalIncome =
-        oldTransaction.type === 'income' &&
-        ['stripe', 'notchpay', 'wallet'].includes(oldTransaction.paymentMethod as any);
-      const wasWalletExpense =
-        oldTransaction.type === 'expense' && oldTransaction.paymentMethod === 'wallet';
-
-      if (wasDigitalIncome) {
-        await User.findByIdAndUpdate(
-          userId,
-          { $inc: { walletBalance: -oldTransaction.amount } },
-          { session },
-        );
-      } else if (wasWalletExpense) {
-        await User.findByIdAndUpdate(
-          userId,
-          { $inc: { walletBalance: oldTransaction.amount } },
-          { session },
-        );
-      }
-
-      // Apply changes
-      const updatedTransaction = await Transaction.findByIdAndUpdate(
-        id,
-        { $set: data },
-        { new: true, runValidators: true, session },
-      );
-
-      // Apply new balance impact
-      if (updatedTransaction) {
-        const isDigitalIncome =
-          updatedTransaction.type === 'income' &&
-          ['stripe', 'notchpay', 'wallet'].includes(updatedTransaction.paymentMethod as any);
-        const isWalletExpense =
-          updatedTransaction.type === 'expense' && updatedTransaction.paymentMethod === 'wallet';
-
-        if (isDigitalIncome) {
-          await User.findByIdAndUpdate(
-            userId,
-            { $inc: { walletBalance: updatedTransaction.amount } },
-            { session },
-          );
-        } else if (isWalletExpense) {
-          // Atomic conditional decrement — see the equivalent guard in createTransaction.
-          const debited = await User.findOneAndUpdate(
-            { _id: userId, walletBalance: { $gte: updatedTransaction.amount } },
-            { $inc: { walletBalance: -updatedTransaction.amount } },
-            { session },
-          );
-          if (!debited) {
-            throw new AppError('Solde insuffisant dans le portefeuille', 400);
-          }
-        }
-      }
-
-      await session.commitTransaction();
-      return updatedTransaction;
-    } catch (error) {
-      await session.abortTransaction();
-      throw error;
-    } finally {
-      session.endSession();
+    const oldTransaction = await Transaction.findOne({ _id: id, userId });
+    if (!oldTransaction) {
+      throw new AppError('Transaction not found', 404);
     }
+
+    // Sécurité Fintech (F01) : une transaction adossée à un mouvement réel de fonds
+    // (Stripe, NotchPay, Wallet, Payout) est immuable.
+    // Seules les transactions 'cash' saisies manuellement (qui n'impactent jamais walletBalance)
+    // sont éditables.
+    if (oldTransaction.paymentMethod && oldTransaction.paymentMethod !== 'cash') {
+      throw new AppError(
+        "Les transactions financières réelles ne peuvent pas être modifiées pour des raisons d'audit et d'intégrité.",
+        403,
+      );
+    }
+
+    // Whitelist des champs modifiables pour les transactions manuelles
+    const ALLOWED_FIELDS = [
+      'amount',
+      'type',
+      'category',
+      'description',
+      'date',
+      'tags',
+      'isRecurring',
+      'metadata',
+    ];
+    const updateData: any = {};
+    for (const key of ALLOWED_FIELDS) {
+      if (key in data) {
+        updateData[key] = data[key];
+      }
+    }
+    // Forcer le maintien du paymentMethod à 'cash'
+    updateData.paymentMethod = 'cash';
+
+    return Transaction.findOneAndUpdate(
+      { _id: id, userId },
+      { $set: updateData },
+      { new: true, runValidators: true },
+    );
   }
 
   static async deleteTransaction(id: string, userId: string) {

@@ -49,8 +49,9 @@ export class StorageService {
       }
     }
 
-    // Auto-set public read policy on public buckets (invoices, receipts, avatars)
-    if (bucket !== 'kauri-kyc-documents' && bucket !== 'kauri-backups') {
+    // Only explicitly public static asset buckets (avatars, icons) receive public-read policy (F16)
+    const PUBLIC_BUCKETS = ['kauri-avatars', 'kauri-public-assets'];
+    if (PUBLIC_BUCKETS.includes(bucket)) {
       try {
         const policy = {
           Version: '2012-10-17',

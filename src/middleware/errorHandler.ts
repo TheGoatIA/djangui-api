@@ -32,10 +32,17 @@ const errorHandler = (err: any, req: Request, res: Response, next: NextFunction)
     err = new AppError(messages, 400);
   }
 
-  // Duplicate key error (unique constraint)
+  // Duplicate key error (unique constraint) — sanitize to prevent schema/PII leakage (F30)
   if (err.code === 11000) {
-    const field = Object.keys(err.keyValue || {})[0] || 'field';
-    err = new AppError(`Cette valeur de '${field}' est déjà utilisée.`, 409);
+    const rawField = Object.keys(err.keyValue || {})[0] || 'valeur';
+    const fieldMapping: Record<string, string> = {
+      email: 'Cette adresse email est déjà enregistrée.',
+      phone: 'Ce numéro de téléphone est déjà associé à un compte.',
+      inviteCode: "Ce code d'invitation est déjà utilisé.",
+      slug: 'Cet identifiant est déjà utilisé.',
+    };
+    const message = fieldMapping[rawField] || 'Cette ressource ou valeur existe déjà.';
+    err = new AppError(message, 409);
   }
   // --------------------------------------------
 

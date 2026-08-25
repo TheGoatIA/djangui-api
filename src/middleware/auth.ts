@@ -106,6 +106,10 @@ const identify = async (req: AuthRequest, res: Response, next: NextFunction) => 
 
     if (!token) return next();
 
+    // Check if token has been revoked (F29)
+    const isBlacklisted = await redis.exists(`blacklist:${token}`);
+    if (isBlacklisted) return next();
+
     // Pin the expected algorithm explicitly: tokens are always signed HS256 (see
     // authService.signToken), and without this option a future code path using an
     // asymmetric key (RS256) alongside the same secret would be vulnerable to an

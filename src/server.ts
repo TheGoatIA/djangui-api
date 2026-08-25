@@ -11,6 +11,7 @@ const validateEnvironment = () => {
   const required: { key: string; minLength?: number }[] = [
     { key: 'JWT_ACCESS_SECRET', minLength: 32 },
     { key: 'JWT_REFRESH_SECRET', minLength: 32 },
+    { key: 'VAULT_ENCRYPTION_KEY', minLength: 32 },
     { key: 'MONGODB_URI' },
   ];
 
@@ -78,6 +79,32 @@ const validateEnvironment = () => {
     // Firebase (push notifications)
     if (!process.env.FIREBASE_SERVICE_ACCOUNT && !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
       warnings.push('FIREBASE_SERVICE_ACCOUNT non défini — les notifications push seront désactivées');
+    }
+
+    // TLS en transit vers MongoDB/Redis (F23) — fail-closed par défaut : ces deux
+    // clients transportent des données financières/PII (soldes, JWT, mots de passe
+    // hashés). ALLOW_INSECURE_DB_TLS=true permet un opt-out explicite et documenté
+    // pour un déploiement où le TLS est terminé hors bande (VPC privé, stunnel).
+    if (process.env.ALLOW_INSECURE_DB_TLS !== 'true') {
+      const mongoURI = process.env.MONGODB_URI || '';
+      const mongoTlsOk =
+        mongoURI.includes('tls=true') ||
+        mongoURI.includes('ssl=true') ||
+        mongoURI.startsWith('mongodb+srv://');
+      if (!mongoTlsOk) {
+        errors.push(
+          'MONGODB_URI doit utiliser TLS en production (tls=true, ssl=true, ou mongodb+srv://). ' +
+            'Définir ALLOW_INSECURE_DB_TLS=true pour un déploiement sur réseau privé de confiance.',
+        );
+      }
+
+      const redisURL = process.env.REDIS_URL || '';
+      if (!redisURL.startsWith('rediss://')) {
+        errors.push(
+          'REDIS_URL doit utiliser TLS en production (rediss://). ' +
+            'Définir ALLOW_INSECURE_DB_TLS=true pour un déploiement sur réseau privé de confiance.',
+        );
+      }
     }
   }
 

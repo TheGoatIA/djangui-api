@@ -423,8 +423,10 @@ export class PaymentService {
       await InvoiceService.generateForPayment(payment._id.toString());
     }
 
-    // Audit Log for payment completion
-    AuditService.record({
+    // Audit Log for payment completion — awaited (F21): this event backs the
+    // AML/financial audit trail and must not be lost silently on a transient
+    // DB error the caller never learns about.
+    await AuditService.recordSync({
       userId: payment.userId as any,
       action: 'COMPLETE_PAYMENT',
       resource: 'PAYMENT',
@@ -584,7 +586,8 @@ export class PaymentService {
       logger.error(`Error generating invoice for wallet subscription: ${err.message}`),
     );
 
-    AuditService.record({
+    // Awaited (F21) — this is a real wallet debit, same reasoning as COMPLETE_PAYMENT above.
+    await AuditService.recordSync({
       userId,
       action: 'SUBSCRIBE_WALLET',
       resource: 'PAYMENT',

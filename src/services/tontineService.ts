@@ -190,13 +190,42 @@ export class TontineService {
     if (!tontine) throw new AppError('Tontine non trouvée', 404);
     if (tontine.creatorId.toString() !== userId) throw new AppError('Action non autorisée', 403);
 
-    if (tontine.status === 'active') {
-      const forbidden = ['contributionAmount', 'currency', 'totalParts', 'frequency'];
-      if (Object.keys(data).some((f) => forbidden.includes(f)))
-        throw new AppError('Modification interdite une fois lancée', 400);
+    // Sécurité Fintech (F03) : currentTurn, status, creatorId, etc. sont immuables via update client
+    const ALWAYS_FORBIDDEN = ['currentTurn', 'status', 'creatorId', 'inviteCode', 'rotationMode'];
+    if (Object.keys(data).some((f) => ALWAYS_FORBIDDEN.includes(f))) {
+      throw new AppError('Ce champ ne peut pas être modifié directement', 400);
     }
 
-    Object.assign(tontine, data);
+    if (tontine.status === 'active') {
+      const forbiddenWhenActive = ['contributionAmount', 'currency', 'totalParts', 'frequency'];
+      if (Object.keys(data).some((f) => forbiddenWhenActive.includes(f))) {
+        throw new AppError('Modification interdite une fois lancée', 400);
+      }
+    }
+
+    const ALLOWED = [
+      'name',
+      'description',
+      'category',
+      'rules',
+      'sanctions',
+      'socialFund',
+      'escrowDetails',
+      'autoRenew',
+      'rulesAcceptedByAll',
+      'contributionAmount',
+      'currency',
+      'totalParts',
+      'frequency',
+      'startDate',
+    ];
+
+    for (const key of Object.keys(data)) {
+      if (ALLOWED.includes(key)) {
+        (tontine as any)[key] = (data as any)[key];
+      }
+    }
+
     await tontine.save();
     return tontine;
   }
@@ -330,8 +359,13 @@ export class TontineService {
     const members = await TontineMember.find({ tontineId, invitationStatus: 'accepted' });
     if (members.length < 2) throw new AppError('Mini 2 membres', 400);
 
-    // Attribution rotation
-    if (tontine.rotationMode === 'random') members.sort(() => Math.random() - 0.5);
+    // Attribution rotation avec Fisher-Yates cryptographique
+    if (tontine.rotationMode === 'random') {
+      for (let i = members.length - 1; i > 0; i--) {
+        const j = crypto.randomInt(0, i + 1);
+        [members[i], members[j]] = [members[j], members[i]];
+      }
+    }
     for (let i = 0; i < members.length; i++) {
       const m = members[i];
       (m as any).rotationOrder = i + 1;

@@ -55,17 +55,16 @@ if (process.env.NODE_ENV === 'test') {
     call: jest.fn().mockResolvedValue(null),
   };
 } else {
-  // Use lazyConnect to ensure we can attach error listeners before connection attempts
+  if (process.env.NODE_ENV === 'production' && !finalRedisURL.startsWith('rediss://')) {
+    logger.warn('⚠️ [SECURITY] Redis connection in production is not using TLS (rediss://)');
+  }
+
   redis = new Redis(finalRedisURL, {
-    lazyConnect: true,
-    // This same client backs hot-path checks on every request (the global rate
-    // limiter, the JWT blacklist check, the idempotency lock) — `maxRetriesPerRequest:
-    // null` is the right setting for a background/queue-style client, but on a
-    // request-path client it means a Redis outage makes commands queue and retry
-    // indefinitely instead of failing fast, effectively hanging the whole API
-    // instead of degrading. A bounded commandTimeout ensures a stuck command
-    // always surfaces as an error (which the callers here already handle: auth.ts
-    // fails closed, idempotency.ts fails open) within a few seconds.
+    // This client backs hot-path checks on every request (the global rate
+    // limiter, the JWT blacklist check, the idempotency lock) — a bounded
+    // commandTimeout + maxRetriesPerRequest ensures a stuck command always
+    // surfaces as an error within a few seconds instead of queuing/retrying
+    // indefinitely and hanging the whole API during a Redis outage.
     commandTimeout: 5000,
     maxRetriesPerRequest: 2,
     retryStrategy(times: number) {
@@ -82,22 +81,17 @@ if (process.env.NODE_ENV === 'test') {
 
   // Attach error listener immediately
   redis.on('error', (err: any) => {
-    if (err.message.includes('NOAUTH')) {
+    if (err.message && err.message.includes('NOAUTH')) {
       logger.error(
         'CRITICAL: Redis authentication failed. Please check REDIS_PASSWORD and REDIS_URL.',
       );
     } else {
-      logger.error(`Redis connection error: ${err.message}`);
+      logger.error(`Redis connection error: ${err.message || err}`);
     }
   });
 
   redis.on('connect', () => {
     logger.info('Connected to Redis');
-  });
-
-  // Manually trigger connection and catch initial failure to prevent unhandled rejection
-  redis.connect().catch((err: any) => {
-    logger.error(`Initial Redis connection failed: ${err.message}`);
   });
 }
 
