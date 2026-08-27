@@ -5,7 +5,9 @@ import logger from '../utils/logger';
 import User from '../models/User';
 import Transaction from '../models/Transaction';
 import Budget from '../models/Budget';
+import BudgetParticipant from '../models/BudgetParticipant';
 import Challenge from '../models/Challenge';
+import UserChallenge from '../models/UserChallenge';
 import SystemSetting from '../models/SystemSetting';
 import AIUsage from '../models/AIUsage';
 import Tontine from '../models/Tontine';
@@ -1245,10 +1247,109 @@ export class AdminController {
     }
   }
 
+  // --- BUDGETS (lecture seule — pas d'édition admin des budgets utilisateurs) ---
+  static async getAllBudgets(req: Request, res: Response, next: NextFunction) {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const skip = (page - 1) * limit;
+
+      const queryObj: any = {};
+      if (req.query.year) queryObj['period.year'] = parseInt(req.query.year as string);
+      if (req.query.month) queryObj['period.month'] = parseInt(req.query.month as string);
+      if (req.query.status) queryObj.status = req.query.status;
+      if (req.query.isShared !== undefined) queryObj.isShared = req.query.isShared === 'true';
+
+      const budgets = await Budget.find(queryObj)
+        .populate('userId', 'firstName lastName email')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
+
+      const total = await Budget.countDocuments(queryObj);
+
+      res.status(200).json({
+        status: 'success',
+        results: budgets.length,
+        total,
+        page,
+        totalPages: Math.ceil(total / limit),
+        data: budgets,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getBudgetDetails(req: Request, res: Response, next: NextFunction) {
+    try {
+      const budget = await Budget.findById(req.params.id)
+        .populate('userId', 'firstName lastName email')
+        .populate('linkedGoalId', 'name targetAmount currentAmount')
+        .lean();
+      if (!budget) return next(new AppError('No budget found with that ID', 404));
+
+      const participants = budget.isShared
+        ? await BudgetParticipant.find({ budgetId: budget._id, invitationStatus: 'accepted' })
+            .populate('userId', 'firstName lastName email')
+            .lean()
+        : [];
+
+      res.status(200).json({ status: 'success', data: { budget, participants } });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getBudgetCategoryHistory(req: Request, res: Response, next: NextFunction) {
+    try {
+      const budget = await Budget.findById(req.params.id).select('userId').lean();
+      if (!budget) return next(new AppError('No budget found with that ID', 404));
+
+      const category = req.query.category as string;
+      if (!category) {
+        return res.status(400).json({ status: 'error', message: 'category est requis' });
+      }
+      const months = Math.min(24, Math.max(1, parseInt(req.query.months as string, 10) || 6));
+
+      const { BudgetService } = await import('../services/budgetService');
+      const history = await BudgetService.getCategoryHistory(
+        budget.userId.toString(),
+        category,
+        months,
+      );
+      res.status(200).json({ status: 'success', data: history });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // --- CHALLENGES MANAGEMENT ---
+  private static readonly ALLOWED_CHALLENGE_FIELDS = [
+    'title',
+    'description',
+    'type',
+    'difficulty',
+    'targetAmount',
+    'durationDays',
+    'category',
+    'icon',
+    'rewardPoints',
+    'isCustom',
+  ];
+
+  private static pickChallengeFields(body: any): any {
+    const safe: any = {};
+    for (const key of AdminController.ALLOWED_CHALLENGE_FIELDS) {
+      if (key in body) safe[key] = body[key];
+    }
+    return safe;
+  }
+
   static async createChallenge(req: Request, res: Response, next: NextFunction) {
     try {
-      const challenge = await Challenge.create(req.body);
+      const challenge = await Challenge.create(AdminController.pickChallengeFields(req.body));
       res.status(201).json({ status: 'success', data: challenge });
     } catch (error) {
       next(error);
@@ -1257,10 +1358,11 @@ export class AdminController {
 
   static async updateChallenge(req: Request, res: Response, next: NextFunction) {
     try {
-      const challenge = await Challenge.findByIdAndUpdate(req.params.id, req.body, {
-        new: true,
-        runValidators: true,
-      });
+      const challenge = await Challenge.findByIdAndUpdate(
+        req.params.id,
+        AdminController.pickChallengeFields(req.body),
+        { new: true, runValidators: true },
+      );
       if (!challenge) return next(new AppError('No challenge found with that ID', 404));
       res.status(200).json({ status: 'success', data: challenge });
     } catch (error) {
@@ -1270,6 +1372,23 @@ export class AdminController {
 
   static async deleteChallenge(req: Request, res: Response, next: NextFunction) {
     try {
+      // Un défi encore rejoint par des participants actifs ne doit pas être
+      // supprimé : UserChallenge.challengeId deviendrait une référence morte,
+      // et le prochain appel à validateWeek/addChallengeDeposit pour ces
+      // participants échouerait (le populate('challengeId') renvoie null).
+      const activeParticipants = await UserChallenge.countDocuments({
+        challengeId: req.params.id,
+        status: 'active',
+      });
+      if (activeParticipants > 0) {
+        return next(
+          new AppError(
+            `Impossible de supprimer ce défi : ${activeParticipants} participant(s) y sont encore activement engagés. Désactivez-le plutôt, ou attendez qu'ils le terminent/quittent.`,
+            409,
+          ),
+        );
+      }
+
       const challenge = await Challenge.findByIdAndDelete(req.params.id);
       if (!challenge) return next(new AppError('No challenge found with that ID', 404));
       res.status(204).json({ status: 'success', data: null });

@@ -131,7 +131,18 @@ app.use(
 
 app.get('/favicon.ico', (req, res) => res.status(204).end());
 
-app.use(compression());
+app.use(
+  compression({
+    // La compression bufferise les chunks avant de les envoyer — exactement
+    // ce que le streaming NDJSON du coach (/coach/ask/stream) doit éviter,
+    // sinon le client ne recevrait rien avant la fin (ou un remplissage
+    // tardif du buffer gzip), annulant l'intérêt du streaming.
+    filter: (req, res) => {
+      if (req.path.endsWith('/ask/stream')) return false;
+      return compression.filter(req, res);
+    },
+  }),
+);
 
 app.use(
   express.json({

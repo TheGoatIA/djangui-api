@@ -1,5 +1,6 @@
 import Transaction, { ITransactionDocument } from '../models/Transaction';
 import Budget from '../models/Budget';
+import BudgetParticipant from '../models/BudgetParticipant';
 import SavingGoal from '../models/SavingGoal';
 import UserChallenge from '../models/UserChallenge';
 import { CategorizationService } from './ai/categorizationService';
@@ -37,7 +38,9 @@ export class TransactionService {
       // never a client-supplied value, so currencyMiddleware can tell `amount`
       // is already native to that currency instead of assuming XAF (which
       // otherwise silently corrupts every manual transaction for a non-XAF user).
-      const user = await User.findById(userId).select('currency').session(session);
+      const user = await User.findById(userId)
+        .select('currency preferences.budgetAlertThreshold')
+        .session(session);
 
       const transaction = new Transaction({
         ...data,
@@ -89,52 +92,61 @@ export class TransactionService {
         await TransactionService.applyAutomatedStrategies(userId, transaction, session);
       }
 
-      // If expense, update budget
+      // If expense, update budget(s) — le budget propre, et tout budget
+      // partagé où l'utilisateur est participant actif (voir BudgetParticipant).
       if (transaction.type === 'expense') {
         const date = new Date(transaction.date);
         const month = date.getMonth() + 1;
         const year = date.getFullYear();
+        // Seuil d'alerte personnalisable (User.preferences.budgetAlertThreshold,
+        // 80 par défaut) — utilisé pour le budget propre ET chaque budget partagé.
+        const alertThreshold = user?.preferences?.budgetAlertThreshold ?? 80;
 
-        const budget = await Budget.findOne({
+        const ownBudget = await Budget.findOne({
           userId,
           'period.month': month,
           'period.year': year,
         }).session(session);
 
-        if (budget) {
-          const categoryIndex = budget.categories.findIndex(
-            (c) => c.name.toLowerCase() === transaction.category.toLowerCase(),
+        if (ownBudget) {
+          await TransactionService.applyExpenseToBudget(
+            ownBudget,
+            transaction.category,
+            transaction.amount,
+            alertThreshold,
+            [userId],
+            session,
           );
+        }
 
-          if (categoryIndex !== -1) {
-            budget.categories[categoryIndex].spent += transaction.amount;
-            budget.totalSpent += transaction.amount;
+        const participations = await BudgetParticipant.find({
+          userId,
+          invitationStatus: 'accepted',
+        })
+          .select('budgetId')
+          .session(session);
 
-            const usagePercentage =
-              (budget.categories[categoryIndex].spent /
-                budget.categories[categoryIndex].allocated) *
-              100;
+        if (participations.length > 0) {
+          const sharedBudgets = await Budget.find({
+            _id: { $in: participations.map((p) => p.budgetId) },
+            'period.month': month,
+            'period.year': year,
+          }).session(session);
 
-            if (usagePercentage >= 100 && budget.status !== 'exceeded') {
-              budget.status = 'exceeded';
-              NotificationService.sendToUser(userId, {
-                title: '',
-                body: '',
-                translationKey: 'BUDGET_EXCEEDED',
-                translationData: { category: budget.categories[categoryIndex].name },
-                data: { type: 'budget_exceeded', category: budget.categories[categoryIndex].name },
-              }).catch((err) => logger.error(`Notification error: ${err.message}`));
-            } else if (usagePercentage >= 80 && usagePercentage < 100) {
-              // Alert at 80%
-              NotificationService.sendToUser(userId, {
-                title: '',
-                body: '',
-                translationKey: 'BUDGET_WARNING',
-                translationData: { category: budget.categories[categoryIndex].name },
-                data: { type: 'budget_warning', category: budget.categories[categoryIndex].name },
-              }).catch((err) => logger.error(`Notification error: ${err.message}`));
-            }
-            await (budget as any).save({ session });
+          for (const sharedBudget of sharedBudgets) {
+            // Le propriétaire du budget partagé ET la personne qui vient de
+            // dépenser sont notifiés (dédupliqués si c'est la même personne).
+            const notifyIds = Array.from(
+              new Set([sharedBudget.userId.toString(), userId.toString()]),
+            );
+            await TransactionService.applyExpenseToBudget(
+              sharedBudget,
+              transaction.category,
+              transaction.amount,
+              alertThreshold,
+              notifyIds,
+              session,
+            );
           }
         }
       }
@@ -321,6 +333,54 @@ export class TransactionService {
     }
 
     return results;
+  }
+
+  /**
+   * Incrémente la catégorie correspondante d'un budget (propre ou partagé) et
+   * notifie au(x) seuil(s) — factorisé pour être appliqué identiquement au
+   * budget de l'utilisateur et à chacun des budgets partagés dont il est
+   * participant (voir la boucle dans createTransaction ci-dessus).
+   */
+  private static async applyExpenseToBudget(
+    budget: any,
+    category: string,
+    amount: number,
+    alertThreshold: number,
+    notifyUserIds: string[],
+    session: mongoose.ClientSession,
+  ) {
+    const categoryIndex = budget.categories.findIndex(
+      (c: any) => c.name.toLowerCase() === category.toLowerCase(),
+    );
+    if (categoryIndex === -1) return;
+
+    budget.categories[categoryIndex].spent += amount;
+    budget.totalSpent += amount;
+
+    const usagePercentage =
+      (budget.categories[categoryIndex].spent / budget.categories[categoryIndex].allocated) * 100;
+    const categoryName = budget.categories[categoryIndex].name;
+
+    const notify = (translationKey: string, type: string) => {
+      for (const uid of notifyUserIds) {
+        NotificationService.sendToUser(uid, {
+          title: '',
+          body: '',
+          translationKey,
+          translationData: { category: categoryName },
+          data: { type, category: categoryName },
+        }).catch((err: any) => logger.error(`Notification error: ${err.message}`));
+      }
+    };
+
+    if (usagePercentage >= 100 && budget.status !== 'exceeded') {
+      budget.status = 'exceeded';
+      notify('BUDGET_EXCEEDED', 'budget_exceeded');
+    } else if (usagePercentage >= alertThreshold && usagePercentage < 100) {
+      notify('BUDGET_WARNING', 'budget_warning');
+    }
+
+    await budget.save({ session });
   }
 
   /**

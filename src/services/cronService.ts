@@ -26,6 +26,7 @@ import { CurrencyService } from './currencyService';
 import UserActivity from '../models/UserActivity';
 import SharedSlot from '../models/SharedSlot';
 import { ResellerNotificationDispatcher } from './resellerNotificationService';
+import { ChallengeService } from './challengeService';
 
 export class CronService {
   /**
@@ -204,6 +205,13 @@ export class CronService {
     cron.schedule(
       '*/5 * * * *',
       this.runMonitored('metrics_gauge_update', () => this.updateProductionMetricsGauges()),
+    );
+
+    cron.schedule(
+      '0 5 * * *',
+      this.runMonitored('challenge_expiration', async () => {
+        await ChallengeService.resolveExpiredChallenges();
+      }),
     );
 
     // Run once on startup
@@ -400,6 +408,34 @@ export class CronService {
           });
 
           if (lastBudget) {
+            // Suggestion d'objectif (Feature 4) : jamais de débit automatique du
+            // wallet — juste une notification proposant à l'utilisateur de
+            // contribuer lui-même le surplus non dépensé à l'objectif lié.
+            // La contribution réelle ne se produit que si l'utilisateur confirme
+            // via le flux GoalService.addContribution déjà existant.
+            const surplus = lastBudget.totalAllocated - lastBudget.totalSpent;
+            if (lastBudget.linkedGoalId && lastBudget.status !== 'exceeded' && surplus > 0) {
+              const goal = await SavingGoal.findOne({
+                _id: lastBudget.linkedGoalId,
+                userId: user._id,
+              }).select('name');
+              if (goal) {
+                NotificationService.sendToUser(user._id.toString(), {
+                  title: '',
+                  body: '',
+                  translationKey: 'BUDGET_SURPLUS_GOAL_SUGGESTION',
+                  translationData: { amount: surplus, goalName: goal.name },
+                  data: {
+                    type: 'budget_surplus_goal_suggestion',
+                    goalId: goal._id.toString(),
+                    amount: String(surplus),
+                  },
+                }).catch((err: any) =>
+                  logger.error(`Budget surplus suggestion notification error: ${err.message}`),
+                );
+              }
+            }
+
             // Clone previous budget categories but reset spent
             const newCategories = lastBudget.categories.map((cat) => ({
               name: cat.name,
@@ -415,6 +451,7 @@ export class CronService {
               totalAllocated: lastBudget.totalAllocated,
               totalSpent: 0,
               status: 'active',
+              linkedGoalId: lastBudget.linkedGoalId,
               // Cloned amounts are already in the previous budget's currency —
               // never assume XAF, that mislabels a non-XAF user's rollover budget.
               currency: lastBudget.currency || user.currency || 'XAF',

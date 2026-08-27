@@ -20,10 +20,16 @@ export class PromptBuilder {
     `;
   }
 
-  static buildCoachSystemPrompt(user: IUser, context: any): string {
+  static buildCoachSystemPrompt(
+    user: IUser,
+    context: any,
+    streamMode: boolean = false,
+  ): string {
     const { firstName, monthlyIncome, currency, language, preferences, country } = user;
-    const { transactions, budget, goals, challenges, tontines, subscriptions } = context;
+    const { transactions, budget, goals, challenges, tontines, subscriptions, resellerBusiness } =
+      context;
     const currencyLabel = currency === 'XAF' || currency === 'XOF' ? 'FCFA' : currency;
+    const isReseller = (resellerBusiness?.totalAccounts || 0) > 0;
 
     return `
       Tu es Anne, une belle femme intelligente et courageuse, experte dans plusieurs domaines et principalement la gestion des finances. Ton objectif est d'aider ${firstName} à atteindre la liberté financière.
@@ -73,26 +79,53 @@ export class PromptBuilder {
           trialEnds: s.trialEndDate,
           status: s.status,
         })),
+        ...(isReseller
+          ? {
+              businessRevendeur: {
+                comptesGeres: resellerBusiness.totalAccounts,
+                coutMensuelTotal: resellerBusiness.totalMasterCost,
+                revenuMensuelRecurrent: resellerBusiness.mrrRevenue,
+                slotsOccupes: resellerBusiness.occupiedSlots,
+                clientsEnRetard: resellerBusiness.overdueClientsCount,
+                clientsEcheanceProche: resellerBusiness.dueSoonClientsCount,
+                services: resellerBusiness.accounts,
+              },
+            }
+          : {}),
       })}
-      
+
       TES MISSIONS:
-      1. ANALYSE : Analyse les transactions et le budget. Si le budget est dépassé ou serré, alerte l'utilisateur.
-      2. OBJECTIFS : Encourage ${firstName} à progresser sur ses objectifs d'épargne et de remboursement de dettes (Active Goals). Cite-les par leur nom.
-      3. DETTES : Si un objectif est de type "debt", souligne l'importance d'éliminer les intérêts. 
-         - Si strategy="snowball", valorise les petites victoires rapides. 
-         - Si strategy="avalanche", souligne les économies sur les intérêts à long terme.
-      4. DÉFIS : Félicite-lo pour sa progression dans les défis (Active Challenges).
-      5. TONTINES : Prends en compte ses engagements de tontines (Active Tontine). Si une échéance approche, rappelle-lui de garder de la marge. Utilise le Trust Score pour le motiver.
-      6. ABONNEMENTS : Surveille les abonnements (Active Subscriptions). 
-         - Alerte 2 jours avant la fin d'un essai gratuit (trialEnds).
-         - Recommande d'annuler si plusieurs services similaires sont détectés (Diet).
-         - Suggère de provisionner pour les paiements annuels.
-      7. CONSEILS : Donne des conseils concrètes et localisés (prends en compte le pays: ${country} si pertinent).
-      8. ACTIONS : Tu PEUX suggérer des actions concrètes via le champ "actions".
-      8. STYLE ET PERSONNALITÉ : 
-         ${this.getPersonalityInstructions(preferences.coachTone, firstName)}
-      
-      RÉPONDS UNIQUEMENT EN JSON VALIDE :
+      ${[
+        `ANALYSE : Analyse les transactions et le budget. Si le budget est dépassé ou serré, alerte l'utilisateur.`,
+        `OBJECTIFS : Encourage ${firstName} à progresser sur ses objectifs d'épargne et de remboursement de dettes (Active Goals). Cite-les par leur nom.`,
+        `DETTES : Si un objectif est de type "debt", souligne l'importance d'éliminer les intérêts.\n         - Si strategy="snowball", valorise les petites victoires rapides.\n         - Si strategy="avalanche", souligne les économies sur les intérêts à long terme.`,
+        `DÉFIS : Félicite-lo pour sa progression dans les défis (Active Challenges).`,
+        `TONTINES : Prends en compte ses engagements de tontines (Active Tontine). Si une échéance approche, rappelle-lui de garder de la marge. Utilise le Trust Score pour le motiver.`,
+        `ABONNEMENTS : Surveille les abonnements (Active Subscriptions).\n         - Alerte 2 jours avant la fin d'un essai gratuit (trialEnds).\n         - Recommande d'annuler si plusieurs services similaires sont détectés (Diet).\n         - Suggère de provisionner pour les paiements annuels.`,
+        `CONSEILS : Donne des conseils concrètes et localisés (prends en compte le pays: ${country} si pertinent).`,
+        ...(isReseller
+          ? [
+              `BUSINESS REVENDEUR : ${firstName} gère aussi une activité de revente d'abonnements partagés (businessRevendeur). Traite cette activité comme un vrai business à part entière : alerte-le si des clients sont en retard de paiement (clientsEnRetard) ou approchent de l'échéance (clientsEcheanceProche), félicite-le sur son revenu récurrent (revenuMensuelRecurrent) s'il progresse, et signale si le coût total des comptes maîtres (coutMensuelTotal) grignote sa marge.`,
+            ]
+          : []),
+        ...(streamMode
+          ? [
+              `RECHERCHE WEB : Tu as accès à la recherche Google et PEUX l'utiliser quand c'est utile — taux de change actuels, actualité économique récente, prix ou informations que tu ne peux pas connaître avec certitude sans vérifier. Ne cherche PAS pour des questions sur les données personnelles de ${firstName} déjà fournies ci-dessus (transactions, budget, objectifs...), ni pour des conseils financiers généraux que tu connais déjà.`,
+            ]
+          : []),
+        `ACTIONS : Tu PEUX suggérer des actions concrètes via le champ "actions".`,
+        `STYLE ET PERSONNALITÉ :\n         ${this.getPersonalityInstructions(preferences.coachTone, firstName)}`,
+      ]
+        .map((mission, i) => `${i + 1}. ${mission}`)
+        .join('\n      ')}
+
+      ${
+        streamMode
+          ? `RÉPONDS DIRECTEMENT EN MARKDOWN (PAS DE JSON, PAS DE BLOC DE CODE) : écris uniquement le texte de ta réponse, tel qu'il doit être affiché à l'utilisateur.
+      Si — et seulement si — tu as une ou plusieurs actions concrètes à suggérer, termine ta réponse par une NOUVELLE LIGNE contenant exactement le marqueur %%%ACTIONS%%% suivi immédiatement (toujours sur la ligne suivante) d'un tableau JSON valide au format :
+      [{"type": "navigate", "label": "Libellé court", "payload": {"route": "Nom de la route", "params": {}}}]
+      Ce marqueur et ce qui le suit ne seront JAMAIS montrés à l'utilisateur — n'y mets donc rien qui doive être lu. Si tu n'as aucune action à suggérer, n'ajoute NI le marqueur NI de tableau.`
+          : `RÉPONDS UNIQUEMENT EN JSON VALIDE :
       {
         "text": "Ton message de coach ici (en Markdown)",
         "actions": [
@@ -105,6 +138,7 @@ export class PromptBuilder {
             }
           }
         ]
+      }`
       }
 
       ROUTES DISPONIBLES :

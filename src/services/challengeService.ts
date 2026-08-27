@@ -114,6 +114,11 @@ export class ChallengeService {
       if (!userChallenge)
         throw new AppError('Challenge utilisateur non trouvé ou non autorisé', 404);
 
+      if (userChallenge.status !== 'active')
+        throw new AppError('Ce challenge n\'est plus actif', 400);
+      if (userChallenge.endDate < new Date())
+        throw new AppError('Ce challenge est expiré', 400);
+
       const week = userChallenge.weeks.find((w) => w.weekNumber === weekNumber);
       if (!week) throw new AppError('Semaine non trouvée', 404);
 
@@ -166,11 +171,21 @@ export class ChallengeService {
         .populate('challengeId')
         .session(session);
       if (!uc) throw new AppError('Challenge non trouvé ou non autorisé', 404);
+      if (uc.status !== 'active') throw new AppError('Ce challenge n\'est plus actif', 400);
+      if (uc.endDate < new Date()) throw new AppError('Ce challenge est expiré', 400);
 
       const week = uc.weeks.find((w) => w.weekNumber === weekNumber);
       if (!week) throw new AppError('Semaine non trouvée', 404);
 
       const challenge = uc.challengeId as any;
+      if (!challenge) {
+        // Le modèle Challenge référencé a été supprimé (admin) entre-temps —
+        // sans ce garde-fou, `challenge.type` ci-dessous lève un TypeError brut.
+        throw new AppError(
+          "Ce défi n'existe plus et ne peut plus être validé. Contactez le support.",
+          410,
+        );
+      }
       let transaction: any = null;
 
       // Si c'est un challenge d'épargne, on effectue le transfert réel
@@ -199,6 +214,20 @@ export class ChallengeService {
           week.savedAmount += amountToWithdraw;
           week.transactionId = transaction.reference;
           uc.currentValue += amountToWithdraw;
+        }
+
+        // Fintech : une semaine d'épargne n'est "complétée" que si le montant
+        // cible est effectivement atteint — sinon un appel avec amount:0 (ou un
+        // dépôt partiel) validait la semaine sans que l'argent soit réellement
+        // épargné, contournant tout l'objectif du défi. Cohérent avec la même
+        // condition déjà appliquée dans addChallengeDeposit ci-dessus.
+        if (week.savedAmount < week.targetAmount) {
+          throw new AppError(
+            `Montant insuffisant pour valider cette semaine : il manque ${(
+              week.targetAmount - week.savedAmount
+            ).toLocaleString()} pour atteindre l'objectif.`,
+            400,
+          );
         }
       }
 
@@ -359,6 +388,34 @@ export class ChallengeService {
     }
 
     await userChallenge.save();
+  }
+
+  /**
+   * Marque comme "failed" tout challenge encore `active` dont la date de fin
+   * est dépassée. Sans ce job (appelé par un cron quotidien), un challenge
+   * expiré restait indéfiniment `active` — l'argent déjà déposé n'était ni
+   * rendu ni formellement perdu, et rien n'empêchait de continuer à valider
+   * des semaines après la deadline (désormais bloqué séparément dans
+   * addChallengeDeposit/validateWeek).
+   */
+  static async resolveExpiredChallenges(): Promise<number> {
+    const expired = await UserChallenge.find({
+      status: 'active',
+      endDate: { $lt: new Date() },
+    }).select('_id');
+
+    for (const uc of expired) {
+      try {
+        await this.resolveChallenge(uc._id.toString(), 'failure');
+      } catch (err: any) {
+        logger.error(`Failed to resolve expired challenge ${uc._id}: ${err.message}`);
+      }
+    }
+
+    if (expired.length > 0) {
+      logger.info(`[Challenges] ${expired.length} challenge(s) expiré(s) marqué(s) "failed".`);
+    }
+    return expired.length;
   }
 
   /**

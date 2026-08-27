@@ -20,6 +20,13 @@ router.get('/transactions', restrictTo('admin', 'support'), AdminController.getA
 router.get('/goals', restrictTo('admin', 'support'), AdminController.getAllGoals);
 router.get('/tontines', restrictTo('admin', 'support'), AdminController.getAllTontines);
 router.get('/tontines/:id', restrictTo('admin', 'support'), AdminController.getTontineDetails);
+router.get('/budgets', restrictTo('admin', 'support'), AdminController.getAllBudgets);
+router.get('/budgets/:id', restrictTo('admin', 'support'), AdminController.getBudgetDetails);
+router.get(
+  '/budgets/:id/history',
+  restrictTo('admin', 'support'),
+  AdminController.getBudgetCategoryHistory,
+);
 router.get('/subscriptions', restrictTo('admin', 'support'), AdminController.getAllSubscriptions);
 router.get('/subscriptions/:id', restrictTo('admin', 'support'), AdminController.getSubscriptionDetails);
 router.get('/settings', restrictTo('admin', 'support'), AdminController.getSystemSettings);

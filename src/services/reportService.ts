@@ -1,5 +1,6 @@
 import Transaction from '../models/Transaction';
 import Budget from '../models/Budget';
+import { BudgetService } from './budgetService';
 import User from '../models/User';
 import HealthScoreHistory from '../models/HealthScoreHistory';
 import mongoose from 'mongoose';
@@ -85,7 +86,7 @@ export class ReportService {
     const startOfMonth = new Date(year, month - 1, 1);
     const endOfMonth = new Date(year, month, 0, 23, 59, 59);
 
-    const [user, budget, spendingStats] = await Promise.all([
+    const [user, budget, spendingStats, remaining] = await Promise.all([
       User.findById(userId).select('walletBalance monthlyIncome currency subscription'),
       Budget.findOne({ userId, 'period.month': month, 'period.year': year }),
       Transaction.aggregate([
@@ -104,6 +105,9 @@ export class ReportService {
           },
         },
       ]),
+      // Reste à vivre : budget propre + tous les budgets partagés où l'utilisateur
+      // est participant actif (voir BudgetService.getAccessibleBudgetFilter).
+      BudgetService.getRemainingAcrossBudgets(userId, month, year),
     ]);
 
     const totalSpent = spendingStats.length > 0 ? spendingStats[0].totalSpent : 0;
@@ -125,6 +129,7 @@ export class ReportService {
             percentageUsed: (budget.totalSpent / budget.totalAllocated) * 100,
           }
         : null,
+      resteAVivre: remaining,
       currency: user?.currency || 'XAF',
     };
   }

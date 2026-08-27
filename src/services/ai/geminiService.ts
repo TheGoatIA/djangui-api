@@ -29,7 +29,11 @@ const PRICING: Record<string, { input: number; output: number }> = {
 };
 
 export class GeminiService {
-  private static async getModel(systemInstruction?: string) {
+  private static async getModel(
+    systemInstruction?: string,
+    jsonMode: boolean = true,
+    tools?: any[],
+  ) {
     try {
       // Fetch model ID from system settings, default to gemini-2.5-flash
       const setting = await SystemSetting.findOne({ key: 'gemini_model' });
@@ -38,10 +42,25 @@ export class GeminiService {
       return genAI.getGenerativeModel({
         model: modelId,
         systemInstruction,
+        // `tools` n'est PAS typé pour accepter `googleSearch` dans la version
+        // installée du SDK (@google/generative-ai ne connaît que l'ancien
+        // outil `googleSearchRetrieval`, pensé pour Gemini 1.5) — mais le SDK
+        // transmet ce tableau tel quel dans le corps de la requête REST sans
+        // la moindre validation de structure (voir dist/index.js), et l'API
+        // Gemini elle-même accepte bien le champ `google_search` pour les
+        // modèles 2.x (docs officielles). Pas besoin de mettre à jour le SDK
+        // pour en bénéficier — juste de contourner son typage obsolète ici.
+        ...(tools ? { tools: tools as any } : {}),
         generationConfig: {
           temperature: 0.7,
           maxOutputTokens: 4096,
-          responseMimeType: 'application/json',
+          // Le streaming (startChatStream) a besoin de texte brut affichable
+          // au fil de l'eau — un flux de fragments de JSON n'est pas
+          // exploitable tel quel côté client sans parseur JSON partiel.
+          // C'est aussi pour ça que la recherche Google (tools, ci-dessus)
+          // n'est activée QUE sur ce chemin : Gemini ne supporte pas de
+          // combiner outils et sortie JSON contrainte de façon fiable.
+          ...(jsonMode ? { responseMimeType: 'application/json' } : {}),
         },
         safetySettings: [
           {
@@ -95,7 +114,7 @@ export class GeminiService {
     return attackPatterns.some((pattern) => pattern.test(input));
   }
 
-  private static async saveUsage(
+  static async saveUsage(
     modelName: string,
     context: string,
     usageMetadata: any,
@@ -340,6 +359,37 @@ export class GeminiService {
       return chat;
     } catch (error: any) {
       logger.error(`Gemini startChat error: ${error.message}`);
+      throw new AppError('AI Chat Service currently unavailable', 503);
+    }
+  }
+
+  /**
+   * Variante streaming de `startChat`, en texte brut (pas de mode JSON) —
+   * le caller consomme `chat.sendMessageStream(message)` directement (chaque
+   * chunk expose `.text()`) et est responsable d'appeler `saveUsage` une fois
+   * `result.response` résolu, puisque les métadonnées d'usage ne sont
+   * disponibles qu'à la fin du flux.
+   *
+   * [enableSearch] active la recherche Google native de Gemini : le modèle
+   * décide lui-même, par requête, s'il a besoin de chercher sur le web pour
+   * répondre (taux de change du jour, actualité économique, faits vérifiables
+   * récents...) — jamais forcé, jamais utilisé pour du contenu qu'il connaît
+   * déjà. Voir buildCoachSystemPrompt pour la consigne qui le guide.
+   */
+  static async startChatStream(
+    history: { role: string; parts: { text: string }[] }[],
+    systemInstruction?: string,
+    enableSearch: boolean = false,
+  ) {
+    try {
+      const model = await this.getModel(
+        systemInstruction,
+        false,
+        enableSearch ? [{ googleSearch: {} }] : undefined,
+      );
+      return { chat: model.startChat({ history }), modelName: model.model };
+    } catch (error: any) {
+      logger.error(`Gemini startChatStream error: ${error.message}`);
       throw new AppError('AI Chat Service currently unavailable', 503);
     }
   }

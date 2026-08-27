@@ -263,6 +263,9 @@ export interface IBudget {
   totalSpent: number;
   currency: string;
   status: 'active' | 'completed' | 'exceeded';
+  inviteCode?: string;
+  isShared: boolean;
+  linkedGoalId?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
