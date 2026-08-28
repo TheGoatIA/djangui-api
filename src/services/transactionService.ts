@@ -7,12 +7,15 @@ import { CategorizationService } from './ai/categorizationService';
 import { ChallengeService } from './challengeService';
 import { GoalService } from './goalService';
 import { NotificationService } from './notificationService';
+import { WalletService } from './walletService';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import mongoose from 'mongoose';
 import User from '../models/User';
 import { SlackService } from './slackService';
 import { MonitoringService } from './monitoringService';
+
+const roundAmount = (n: number): number => Math.round(n * 100) / 100;
 
 export class TransactionService {
   static async createTransaction(userId: string, data: any) {
@@ -87,11 +90,6 @@ export class TransactionService {
         }
       }
 
-      // Apply automated saving strategies (e.g., Roundup)
-      if (transaction.type === 'expense') {
-        await TransactionService.applyAutomatedStrategies(userId, transaction, session);
-      }
-
       // If expense, update budget(s) — le budget propre, et tout budget
       // partagé où l'utilisateur est participant actif (voir BudgetParticipant).
       if (transaction.type === 'expense') {
@@ -155,22 +153,29 @@ export class TransactionService {
       if (transaction.linkedGoalId) {
         const goal = await SavingGoal.findById(transaction.linkedGoalId).session(session);
         if (goal) {
+          const before = GoalService.milestoneFlags(goal.currentAmount, goal.targetAmount);
           if (transaction.type === 'income') {
             goal.currentAmount += transaction.amount;
           } else {
             goal.currentAmount -= transaction.amount;
           }
-          const wasAlreadyHalfway =
-            ((goal.currentAmount - transaction.amount) / goal.targetAmount) * 100 >= 50;
-          const wasAlreadyCompleted =
-            ((goal.currentAmount - transaction.amount) / goal.targetAmount) * 100 >= 100;
 
           await (goal as any).save({ session });
 
           // Check for milestones
-          await GoalService.checkMilestones(userId, goal, wasAlreadyHalfway, wasAlreadyCompleted);
+          await GoalService.checkMilestones(
+            userId,
+            goal,
+            before.was25,
+            before.was50,
+            before.was75,
+            before.was100,
+          );
         }
       }
+
+      // Apply automated saving strategies (roundup on expenses, % on income)
+      await TransactionService.applyAutomatedStrategies(userId, transaction, session);
 
       await session.commitTransaction();
 
@@ -384,45 +389,147 @@ export class TransactionService {
   }
 
   /**
-   * Apply automated saving strategies like Roundup
+   * Apply automated saving strategies: roundup on expenses, % of income on
+   * income transactions (autoSaveRules on SavingGoal).
    */
-  private static async applyAutomatedStrategies(userId: string, transaction: any, session?: any) {
-    if (transaction.type !== 'expense') return;
+  private static async applyAutomatedStrategies(
+    userId: string,
+    transaction: any,
+    session: mongoose.ClientSession,
+  ) {
+    if (transaction.type === 'expense') {
+      await TransactionService.applyRoundupStrategy(userId, transaction, session);
+    } else if (transaction.type === 'income') {
+      await TransactionService.applyIncomePercentageStrategy(userId, transaction, session);
+    }
+  }
 
-    // Find goals with Roundup enabled
+  /**
+   * Arrondi automatique : sur chaque dépense, arrondit au 100 (ou 1000 si la
+   * dépense dépasse 1000) supérieur et transfère la différence vers
+   * l'objectif — un vrai débit du wallet comme une contribution manuelle,
+   * jamais une simple augmentation gratuite de `currentAmount`.
+   */
+  private static async applyRoundupStrategy(
+    userId: string,
+    transaction: any,
+    session: mongoose.ClientSession,
+  ) {
     const roundupGoal = await SavingGoal.findOne({
       userId,
       status: 'active',
       'autoSaveRules.enableRoundup': true,
     }).session(session);
+    if (!roundupGoal) return;
 
-    if (roundupGoal) {
-      // Logic: Round up to the next 100 or 1000?
-      // XAF context: next 100 is most common for small/medium expenses.
-      const amount = transaction.amount;
-      const threshold = amount > 1000 ? 1000 : 100;
-      const remainder = threshold - (amount % threshold);
-      const roundupAmount = remainder === threshold ? 0 : remainder;
+    // XAF context: next 100 is most common for small/medium expenses.
+    const amount = transaction.amount;
+    const threshold = amount > 1000 ? 1000 : 100;
+    const remainder = threshold - (amount % threshold);
+    const roundupAmount = remainder === threshold ? 0 : roundAmount(remainder);
+    if (roundupAmount <= 0) return;
 
-      const wasAlreadyHalfway =
-        ((roundupGoal.currentAmount - roundupAmount) / roundupGoal.targetAmount) * 100 >= 50;
-      const wasAlreadyCompleted =
-        ((roundupGoal.currentAmount - roundupAmount) / roundupGoal.targetAmount) * 100 >= 100;
+    await TransactionService.contributeAutomatically(
+      userId,
+      roundupGoal,
+      roundupAmount,
+      'Arrondi automatique',
+      'roundup',
+      session,
+    );
+  }
 
-      await (roundupGoal as any).save({ session });
+  /**
+   * Épargne automatique en % du revenu : sur chaque transaction de type
+   * 'income', verse `autoSaveRules.percentageIncome`% de son montant dans
+   * chaque objectif actif de l'utilisateur ayant activé cette règle.
+   */
+  private static async applyIncomePercentageStrategy(
+    userId: string,
+    transaction: any,
+    session: mongoose.ClientSession,
+  ) {
+    const goals = await SavingGoal.find({
+      userId,
+      status: 'active',
+      'autoSaveRules.percentageIncome': { $gt: 0 },
+    }).session(session);
 
-      // Check for milestones
+    for (const goal of goals) {
+      const pct = (goal as any).autoSaveRules?.percentageIncome || 0;
+      const saveAmount = roundAmount((transaction.amount * pct) / 100);
+      if (saveAmount <= 0) continue;
+
+      await TransactionService.contributeAutomatically(
+        userId,
+        goal,
+        saveAmount,
+        `Épargne automatique (${pct}% du revenu)`,
+        'income_percentage',
+        session,
+      );
+    }
+  }
+
+  /**
+   * Débite le wallet et crédite un objectif pour une contribution
+   * déclenchée automatiquement (arrondi, % de revenu) — même mécanique que
+   * GoalService.addContribution, mais silencieuse en cas d'échec (solde
+   * insuffisant, limite AML) : ces stratégies sont un bonus best-effort et
+   * ne doivent jamais faire échouer l'enregistrement de la transaction qui
+   * les déclenche.
+   */
+  private static async contributeAutomatically(
+    userId: string,
+    goal: any,
+    amount: number,
+    description: string,
+    strategyLabel: string,
+    session: mongoose.ClientSession,
+  ) {
+    try {
+      const before = GoalService.milestoneFlags(goal.currentAmount, goal.targetAmount);
+
+      await WalletService.executeTransaction(
+        {
+          userId,
+          amount,
+          type: 'saving_transfer',
+          category: 'goal_auto_save',
+          description: `${description} : ${goal.name}`,
+          paymentMethod: 'wallet',
+          metadata: { goalId: goal._id.toString(), strategy: strategyLabel },
+          silent: true,
+        },
+        { session },
+      );
+
+      goal.contributions.push({
+        amount,
+        date: new Date(),
+        note: description,
+        type: 'contribution',
+      });
+      goal.currentAmount += amount;
+      await goal.save({ session });
+
       await GoalService.checkMilestones(
         userId,
-        roundupGoal,
-        wasAlreadyHalfway,
-        wasAlreadyCompleted,
+        goal,
+        before.was25,
+        before.was50,
+        before.was75,
+        before.was100,
       );
 
       logger.info(
-        `Roundup strategy applied for user ${userId}: ${roundupAmount} added to goal ${roundupGoal.name}`,
+        `${strategyLabel} strategy applied for user ${userId}: ${amount} added to goal ${goal.name}`,
       );
-      MonitoringService.recordSavingsImpact(roundupAmount, 'roundup', 'XAF');
+      MonitoringService.recordSavingsImpact(amount, strategyLabel, goal.currency || 'XAF');
+    } catch (err: any) {
+      logger.warn(
+        `Automated ${strategyLabel} contribution skipped for goal ${goal._id}: ${err.message}`,
+      );
     }
   }
 

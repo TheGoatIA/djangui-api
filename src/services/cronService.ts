@@ -11,6 +11,7 @@ import { ArchiveService } from './archiveService';
 import { ForecastService } from './ai/forecastService';
 import { CoachService } from './ai/coachService';
 import SavingGoal from '../models/SavingGoal';
+import { GoalService } from './goalService';
 import Tontine from '../models/Tontine';
 import TontineMember from '../models/TontineMember';
 import TontineContribution from '../models/TontineContribution';
@@ -106,6 +107,19 @@ export class CronService {
     cron.schedule(
       '0 8 * * *',
       this.runMonitored('goal_progress_reminder', () => this.sendDailyGoalProgress()),
+    );
+
+    // Daily at 08:30 AM: Goal Deadline Reminders (J-7 / J-1)
+    cron.schedule(
+      '30 8 * * *',
+      this.runMonitored('goal_deadline_reminder', () => this.sendGoalDeadlineReminders()),
+    );
+
+    // Daily at 07:00 AM: Goal Surplus Sweep Suggestions (autoSaveRules.enableSurplus,
+    // déclenché au autoSaveRules.dayOfMonth de chaque objectif)
+    cron.schedule(
+      '0 7 * * *',
+      this.runMonitored('goal_surplus_suggestion', () => this.sendGoalSurplusSuggestions()),
     );
 
     // Daily at 11:00 AM: Personal AI Financial Advice
@@ -639,17 +653,132 @@ export class CronService {
       const activeGoals = await SavingGoal.find({ status: 'active', progress: { $lt: 100 } });
 
       for (const goal of activeGoals) {
-        await NotificationService.sendToUser(goal.userId.toString(), {
-          title: '',
-          body: '',
-          translationKey: 'GOAL_DAILY_PROGRESS',
-          translationData: { goalName: goal.name, progress: goal.progress.toFixed(1) },
-          data: { type: 'GOAL_DAILY_PROGRESS', goalId: goal._id.toString() },
-        });
+        const recipients = await GoalService.getNotifyRecipients(goal);
+        for (const uid of recipients) {
+          await NotificationService.sendToUser(uid, {
+            title: '',
+            body: '',
+            translationKey: 'GOAL_DAILY_PROGRESS',
+            translationData: { goalName: goal.name, progress: goal.progress.toFixed(1) },
+            data: { type: 'GOAL_DAILY_PROGRESS', goalId: goal._id.toString() },
+          });
+        }
       }
       logger.info(`Daily goal progress sent for ${activeGoals.length} goals`);
     } catch (error: any) {
       logger.error(`Error in sendDailyGoalProgress job: ${error.message}`);
+    }
+  }
+
+  /**
+   * Remind users when an active goal's deadline is approaching (J-7 and J-1).
+   * An exact day-count match (rather than "less than N days") makes each
+   * reminder fire exactly once per goal, with no need to track "already
+   * notified" state.
+   */
+  private static async sendGoalDeadlineReminders() {
+    try {
+      const REMINDER_DAYS = [7, 1];
+      let totalSent = 0;
+
+      for (const daysBefore of REMINDER_DAYS) {
+        const targetDate = new Date();
+        targetDate.setDate(targetDate.getDate() + daysBefore);
+        const startOfDay = new Date(targetDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(targetDate);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        const goals = await SavingGoal.find({
+          status: 'active',
+          progress: { $lt: 100 },
+          deadline: { $gte: startOfDay, $lte: endOfDay },
+        });
+
+        for (const goal of goals) {
+          const recipients = await GoalService.getNotifyRecipients(goal);
+          for (const uid of recipients) {
+            await NotificationService.sendToUser(uid, {
+              title: '',
+              body: '',
+              translationKey: 'GOAL_DEADLINE_APPROACHING',
+              translationData: { goalName: goal.name, days: String(daysBefore) },
+              data: { type: 'GOAL_DEADLINE_APPROACHING', goalId: goal._id.toString() },
+            });
+            totalSent++;
+          }
+        }
+      }
+      logger.info(`Goal deadline reminders sent: ${totalSent}`);
+    } catch (error: any) {
+      logger.error(`Error in sendGoalDeadlineReminders job: ${error.message}`);
+    }
+  }
+
+  /**
+   * Suggère de verser le surplus (revenus - dépenses) du mois précédent
+   * dans chaque objectif ayant activé `autoSaveRules.enableSurplus`, le jour
+   * choisi par l'utilisateur (`autoSaveRules.dayOfMonth`). Comme pour
+   * BUDGET_SURPLUS_GOAL_SUGGESTION, jamais de débit automatique du wallet —
+   * seulement une notification ; la contribution réelle passe toujours par
+   * GoalService.addContribution, à l'initiative de l'utilisateur.
+   */
+  private static async sendGoalSurplusSuggestions() {
+    try {
+      const today = new Date().getDate();
+      const goals = await SavingGoal.find({
+        status: 'active',
+        'autoSaveRules.enableSurplus': true,
+        'autoSaveRules.dayOfMonth': today,
+      });
+      if (goals.length === 0) return;
+
+      const now = new Date();
+      const month = now.getMonth() + 1;
+      const year = now.getFullYear();
+      const prevMonth = month === 1 ? 12 : month - 1;
+      const prevYear = month === 1 ? year - 1 : year;
+      const periodStart = new Date(prevYear, prevMonth - 1, 1);
+      const periodEnd = new Date(prevYear, prevMonth, 1); // exclusive
+
+      let sent = 0;
+      for (const goal of goals) {
+        const totals = await Transaction.aggregate([
+          {
+            $match: {
+              userId: goal.userId,
+              type: { $in: ['income', 'expense'] },
+              status: 'completed',
+              date: { $gte: periodStart, $lt: periodEnd },
+            },
+          },
+          { $group: { _id: '$type', total: { $sum: '$amount' } } },
+        ]);
+        const income = totals.find((t: any) => t._id === 'income')?.total || 0;
+        const expense = totals.find((t: any) => t._id === 'expense')?.total || 0;
+        const surplus = income - expense;
+
+        if (surplus > 0) {
+          const recipients = await GoalService.getNotifyRecipients(goal);
+          for (const uid of recipients) {
+            await NotificationService.sendToUser(uid, {
+              title: '',
+              body: '',
+              translationKey: 'GOAL_SURPLUS_SUGGESTION',
+              translationData: { amount: surplus, currency: goal.currency, goalName: goal.name },
+              data: {
+                type: 'goal_surplus_suggestion',
+                goalId: goal._id.toString(),
+                amount: String(surplus),
+              },
+            });
+          }
+          sent++;
+        }
+      }
+      logger.info(`Goal surplus suggestions sent: ${sent}`);
+    } catch (error: any) {
+      logger.error(`Error in sendGoalSurplusSuggestions job: ${error.message}`);
     }
   }
 

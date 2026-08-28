@@ -302,10 +302,14 @@ export interface ISavingGoal {
   };
   progress: number;
   status: 'active' | 'completed' | 'cancelled' | 'paused';
+  inviteCode?: string;
+  isShared: boolean;
   contributions: {
+    userId?: mongoose.Types.ObjectId;
     amount: number;
     date: Date;
     note?: string;
+    type: 'contribution' | 'redemption';
   }[];
   createdAt: Date;
   updatedAt: Date;
