@@ -5,6 +5,7 @@ import { AvatarGenerationService } from '../services/ai/avatarGenerationService'
 import { StorageService } from '../services/storageService';
 import User from '../models/User';
 import fs from 'node:fs';
+import logger from '../utils/logger';
 
 export class UploadController {
   /**
@@ -40,7 +41,7 @@ export class UploadController {
         try {
           fs.unlinkSync(req.file.path);
         } catch (e: any) {
-          console.warn(`Failed to cleanup physical file at ${req.file.path}: ${e.message}`);
+          logger.warn(`Failed to cleanup physical file at ${req.file.path}`, { error: e.message });
         }
       }
     } catch (err) {
@@ -68,7 +69,7 @@ export class UploadController {
       try {
         fs.unlinkSync(req.file.path);
       } catch (e: any) {
-        console.warn(`Failed to cleanup physical file at ${req.file.path}: ${e.message}`);
+        logger.warn(`Failed to cleanup physical file at ${req.file.path}`, { error: e.message });
       }
 
       await User.findByIdAndUpdate(req.user._id, { avatar: avatarUrl });
@@ -136,7 +137,7 @@ export class UploadController {
       try {
         fs.unlinkSync(req.file.path);
       } catch (e: any) {
-        console.warn(`Failed to cleanup physical file at ${req.file.path}: ${e.message}`);
+        logger.warn(`Failed to cleanup physical file at ${req.file.path}`, { error: e.message });
       }
 
       res.status(200).json({

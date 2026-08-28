@@ -2,6 +2,7 @@ import Transaction from '../models/Transaction';
 import Payment from '../models/Payment';
 import logger from '../utils/logger';
 import { SlackService } from './slackService';
+import { MonitoringService } from './monitoringService';
 
 export interface FraudAssessment {
   score: number; // 0 to 100
@@ -29,6 +30,7 @@ export class FraudService {
   ): Promise<FraudAssessment> {
     let score = 0;
     const reasons: string[] = [];
+    const triggeredRules: string[] = [];
 
     try {
       const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
@@ -43,6 +45,7 @@ export class FraudService {
       if (recentTxCount >= 5) {
         score += 35;
         reasons.push(`Vélocité élevée: ${recentTxCount} transactions dans les 10 dernières minutes`);
+        triggeredRules.push('velocity');
       }
 
       // Règle 2 : Retraits rapprochés
@@ -56,6 +59,7 @@ export class FraudService {
         if (recentWithdrawals >= 3) {
           score += 25;
           reasons.push(`Multiples retraits rapprochés: ${recentWithdrawals} retraits dans la dernière heure`);
+          triggeredRules.push('rapid_withdrawals');
         }
       }
 
@@ -73,6 +77,7 @@ export class FraudService {
             reasons.push(
               `Montant atypique: ${amount} ${currency} dépasse 5x la moyenne (${Math.round(avg)} ${currency})`,
             );
+            triggeredRules.push('amount_deviation');
           }
         }
       }
@@ -97,6 +102,7 @@ export class FraudService {
           reasons.push(
             `Multiples tentatives de dépôt rapprochées: ${recentDepositAttempts} dans la dernière heure`,
           );
+          triggeredRules.push('rapid_deposits');
         }
       }
 
@@ -105,6 +111,13 @@ export class FraudService {
 
       if (isSuspicious) {
         logger.warn(`[FRAUD] Transaction suspecte détectée pour user ${userId}. Score: ${score}/100. Raisons: ${reasons.join(', ')}`);
+
+        const severity: 'high' | 'critical' = block ? 'critical' : 'high';
+        const actionTaken = block ? 'blocked' : 'flagged';
+        for (const rule of triggeredRules) {
+          MonitoringService.recordSuspiciousActivity(rule, severity, actionTaken);
+          MonitoringService.recordFraudAlert(rule, severity);
+        }
 
         // A score of 50-69 previously produced only this log line — invisible
         // to anyone not actively tailing logs. It still gets a Slack alert now,

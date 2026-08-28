@@ -822,7 +822,7 @@ export class AdminController {
         return next(new AppError('No user found with that ID', 404));
       }
 
-      AuditService.record(
+      await AuditService.recordSync(
         {
           userId: (req as any).user._id,
           action: 'USER_STATUS_UPDATE',
@@ -832,6 +832,7 @@ export class AdminController {
           status: 'success',
         },
         req,
+        'admin',
       );
 
       // Notification de suspension / réactivation
@@ -924,7 +925,7 @@ export class AdminController {
         },
       });
 
-      AuditService.record(
+      await AuditService.recordSync(
         {
           userId: (req as any).user._id,
           action: 'WALLET_SIMULATION_CREDIT',
@@ -934,6 +935,7 @@ export class AdminController {
           status: 'success',
         },
         req,
+        'admin',
       );
 
       const updatedUser = await User.findById(id).select('walletBalance currency');
@@ -997,6 +999,7 @@ export class AdminController {
           metadata: { count: data.length },
         },
         req,
+        'admin',
       );
 
       res.status(200).json({
@@ -1081,7 +1084,7 @@ export class AdminController {
         return next(new AppError('No user found with that ID', 404));
       }
 
-      AuditService.record(
+      await AuditService.recordSync(
         {
           userId: (req as any).user._id,
           action: 'role' in updates ? 'USER_ROLE_CHANGE' : 'USER_UPDATE',
@@ -1091,6 +1094,7 @@ export class AdminController {
           status: 'success',
         },
         req,
+        'admin',
       );
 
       res.status(200).json({
@@ -1548,6 +1552,7 @@ export class AdminController {
           status: 'success',
         },
         req,
+        'admin',
       );
 
       res.status(200).json({ status: 'success', data: setting });
@@ -1853,14 +1858,18 @@ export class AdminController {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const filename = `db_dump_${timestamp}.json`;
 
-      AuditService.record({
-        userId: (req as any).user._id,
-        action: 'DB_EXPORT',
-        resource: 'DATABASE',
-        resourceId: filename,
-        status: 'success',
-        metadata: { collections: collections.map((c) => c.name) },
-      });
+      await AuditService.recordSync(
+        {
+          userId: (req as any).user._id,
+          action: 'DB_EXPORT',
+          resource: 'DATABASE',
+          resourceId: filename,
+          status: 'success',
+          metadata: { collections: collections.map((c) => c.name) },
+        },
+        req,
+        'admin',
+      );
 
       res.setHeader('Content-Type', 'application/json');
       res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
@@ -2492,7 +2501,7 @@ export class AdminController {
         throw new AppError('Une demande de relance est déjà en attente d\'approbation', 400);
       }
 
-      AuditService.record(
+      await AuditService.recordSync(
         {
           userId: requesterId,
           action: 'PAYOUT_RETRY_REQUESTED',
@@ -2502,6 +2511,7 @@ export class AdminController {
           status: 'success',
         },
         req,
+        'admin',
       );
 
       res.status(200).json({
@@ -2557,7 +2567,7 @@ export class AdminController {
         throw new AppError('Aucune demande de relance en attente pour ce retrait', 400);
       }
 
-      AuditService.record(
+      await AuditService.recordSync(
         {
           userId: approverId,
           action: 'PAYOUT_RETRY_APPROVED',
@@ -2570,6 +2580,7 @@ export class AdminController {
           status: 'success',
         },
         req,
+        'admin',
       );
 
       res.status(200).json({ success: true, message: 'Relance approuvée — statut réinitialisé à pending' });
@@ -2599,7 +2610,7 @@ export class AdminController {
         throw new AppError('Aucune demande de relance en attente pour ce retrait', 400);
       }
 
-      AuditService.record(
+      await AuditService.recordSync(
         {
           userId: approverId,
           action: 'PAYOUT_RETRY_REJECTED',
@@ -2613,6 +2624,7 @@ export class AdminController {
           status: 'success',
         },
         req,
+        'admin',
       );
 
       res.status(200).json({ success: true, message: 'Demande de relance rejetée' });
@@ -2644,14 +2656,18 @@ export class AdminController {
         { status: 'revoked', revokedAt: new Date(), revokedBy: req.user._id }
       );
 
-      await (await import('../services/auditService')).AuditService.record({
-        userId: req.user._id,
-        action: 'USER_SESSIONS_REVOKED',
-        resource: 'USER',
-        resourceId: id,
-        status: 'success',
-        metadata: { revokedSessionsCount: keys.length },
-      });
+      await (await import('../services/auditService')).AuditService.recordSync(
+        {
+          userId: req.user._id,
+          action: 'USER_SESSIONS_REVOKED',
+          resource: 'USER',
+          resourceId: id,
+          status: 'success',
+          metadata: { revokedSessionsCount: keys.length },
+        },
+        req,
+        'admin',
+      );
 
       res.status(204).end();
     } catch (err) {

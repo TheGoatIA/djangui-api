@@ -1,6 +1,8 @@
 import { RedisStore } from 'rate-limit-redis';
+import { Request, Response, NextFunction } from 'express';
 import redis from '../config/redis';
 import logger from './logger';
+import { MonitoringService } from '../services/monitoringService';
 
 /**
  * Builds a Redis-backed store for express-rate-limit, shared by the global
@@ -44,4 +46,19 @@ export function createRateLimitStore(prefix: string): RedisStore | undefined {
     logger.error(`Failed to construct RedisStore for prefix "${prefix}": ${err.message}`);
     return undefined; // express-rate-limit falls back to its in-memory store
   }
+}
+
+/**
+ * Standard "blocked" handler for express-rate-limit, shared by every limiter
+ * in the app so a rate-limit hit is always recorded on `rate_limit_hits_total`
+ * (endpoint-labeled) — this metric existed but nothing ever called it, so
+ * limiter activity was invisible in Grafana. Reproduces express-rate-limit's
+ * own default handler behavior (status + message from `options`) so response
+ * shape is unchanged for clients.
+ */
+export function createRateLimitHandler(endpoint: string, tier: string = 'default') {
+  return (_req: Request, res: Response, _next: NextFunction, options: any) => {
+    MonitoringService.recordRateLimitHit(endpoint, tier);
+    res.status(options.statusCode).send(options.message);
+  };
 }

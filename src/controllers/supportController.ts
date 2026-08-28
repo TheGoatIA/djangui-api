@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import SupportTicket from '../models/SupportTicket';
 import { SlackService } from '../services/slackService';
+import logger from '../utils/logger';
 
 // --- User Actions ---
 
@@ -23,7 +24,7 @@ export const createTicket = async (req: Request, res: Response) => {
 
     res.status(201).json({ success: true, data: ticket });
   } catch (error) {
-    console.error('Error creating ticket:', error);
+    logger.error('Error creating support ticket', { error });
     res.status(500).json({ success: false, message: 'Server Error' });
   }
 };
@@ -50,7 +51,7 @@ export const getUserTickets = async (req: Request, res: Response) => {
       total,
     });
   } catch (error) {
-    console.error('Error fetching user tickets:', error);
+    logger.error('Error fetching user tickets', { error });
     res.status(500).json({ success: false, message: 'Server Error' });
   }
 };
@@ -112,7 +113,7 @@ export const getAllTickets = async (req: Request, res: Response) => {
       total,
     });
   } catch (error) {
-    console.error('Error fetching all tickets:', error);
+    logger.error('Error fetching all support tickets', { error });
     res.status(500).json({ success: false, message: 'Server Error' });
   }
 };

@@ -220,6 +220,7 @@ export class WalletService {
       if (isDebit || (paymentMethod === 'wallet' && !isCredit)) {
         const totalDebit = safeAmount;
         if (user.walletBalance < totalDebit) {
+          MonitoringService.recordNegativeBalanceAttempt('standard');
           throw new AppError('Solde insuffisant dans le portefeuille', 400);
         }
         user.walletBalance = roundAmount(user.walletBalance - totalDebit);

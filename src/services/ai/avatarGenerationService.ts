@@ -77,9 +77,10 @@ export class AvatarGenerationService {
       : basePrompt;
 
     const startTime = Date.now();
+    const modelName = 'gemini-2.5-flash-image';
     try {
       const model = genAI.getGenerativeModel({
-        model: 'gemini-2.5-flash-image',
+        model: modelName,
         generationConfig: {
           responseModalities: ['IMAGE'],
         } as any,
@@ -98,6 +99,19 @@ export class AvatarGenerationService {
             : 'No image returned by the AI model',
         );
       }
+
+      // Bypasses GeminiService.generateContent/generateJSON (this is an image
+      // response, not text/JSON), so cost tracking (AIUsage) and Prometheus AI
+      // metrics have to be reported explicitly here via the same saveUsage
+      // choke point every other Gemini-backed feature (OCR, coach, auto-budget)
+      // goes through — otherwise this feature's real Gemini spend is invisible.
+      GeminiService.saveUsage(
+        modelName,
+        'avatar_generation',
+        response.usageMetadata,
+        Date.now() - startTime,
+        'success',
+      );
 
       const buffer = Buffer.from(imagePart.inlineData.data, 'base64');
       const mimeType = imagePart.inlineData.mimeType || 'image/png';
@@ -121,6 +135,14 @@ export class AvatarGenerationService {
       return avatarUrl;
     } catch (error: any) {
       logger.error(`Avatar generation error: ${error.message}`, { stack: error.stack });
+      GeminiService.saveUsage(
+        modelName,
+        'avatar_generation',
+        {},
+        Date.now() - startTime,
+        'failure',
+        error.message,
+      );
       // Surface the real reason outside production — this is a brand new
       // integration (Gemini image generation) never yet exercised against a
       // real API key, so a generic message would hide exactly what's needed

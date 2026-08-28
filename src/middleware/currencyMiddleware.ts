@@ -1,6 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from './auth';
 import { CurrencyService } from '../services/currencyService';
+import logger from '../utils/logger';
 
 const MONETARY_FIELDS = new Set([
   'amount',
@@ -42,7 +43,7 @@ export const currencyMiddleware = (req: AuthRequest, res: Response, next: NextFu
         body = convertObject(body, userCurrency);
       } catch (err) {
         // Fallback silencieux : retourne le body en XAF sans planter
-        console.error('[Currency] Erreur de conversion, fallback XAF:', err);
+        logger.error('[Currency] Erreur de conversion, fallback XAF', { error: err });
       }
     }
 

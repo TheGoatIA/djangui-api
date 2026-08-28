@@ -2,7 +2,7 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { PremiumController } from '../controllers/premiumController';
 import { protect, premiumOnly } from '../middleware/auth';
-import { createRateLimitStore } from '../utils/rateLimitStore';
+import { createRateLimitStore, createRateLimitHandler } from '../utils/rateLimitStore';
 
 const router = Router();
 
@@ -21,6 +21,7 @@ const autoBudgetLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: createRateLimitStore('auto-budget'),
+  handler: createRateLimitHandler('auto-budget'),
 });
 
 router.get('/auto-budget', autoBudgetLimiter, PremiumController.generateAutoBudget);

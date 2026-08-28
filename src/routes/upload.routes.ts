@@ -3,6 +3,7 @@ import { UploadController } from '../controllers/uploadController';
 import { upload, validateFileMagicBytes } from '../config/multer';
 import { protect, premiumOnly } from '../middleware/auth';
 import rateLimit from 'express-rate-limit';
+import { createRateLimitHandler } from '../utils/rateLimitStore';
 
 const uploadLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -10,6 +11,7 @@ const uploadLimiter = rateLimit({
   message: 'Trop de téléversements, veuillez réessayer plus tard',
   standardHeaders: true,
   legacyHeaders: false,
+  handler: createRateLimitHandler('upload'),
 });
 
 const router = Router();

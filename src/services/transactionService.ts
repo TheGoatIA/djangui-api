@@ -160,6 +160,18 @@ export class TransactionService {
             goal.currentAmount -= transaction.amount;
           }
 
+          // Trace ce mouvement dans le même historique que les contributions
+          // manuelles/automatiques — sans ça, une transaction liée à un
+          // objectif changeait son solde sans jamais apparaître dans
+          // l'historique affiché à l'utilisateur.
+          goal.contributions.push({
+            userId: userId as any,
+            amount: transaction.amount,
+            date: new Date(),
+            note: transaction.description,
+            type: transaction.type === 'income' ? 'contribution' : 'redemption',
+          });
+
           await (goal as any).save({ session });
 
           // Check for milestones
@@ -505,6 +517,7 @@ export class TransactionService {
       );
 
       goal.contributions.push({
+        userId: userId as any,
         amount,
         date: new Date(),
         note: description,

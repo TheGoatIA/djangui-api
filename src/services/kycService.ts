@@ -7,6 +7,7 @@ import { SlackService } from './slackService';
 import { GeminiService } from './ai/geminiService';
 import { PromptBuilder } from './ai/promptBuilder';
 import { StorageService } from './storageService';
+import { MonitoringService } from './monitoringService';
 
 export class KYCService {
   /**
@@ -84,6 +85,8 @@ export class KYCService {
       false,
     );
 
+    MonitoringService.recordUserVerification('submission', 'success');
+
     // Déclencher l'analyse IA en arrière-plan
     this.processAIValidation(userId).catch((err) =>
       logger.error(`KYC AI Background Error: ${err.message}`),
@@ -97,6 +100,7 @@ export class KYCService {
    */
   private static async processAIValidation(userId: string) {
     logger.info(`Starting Real AI KYC Validation for user ${userId}`);
+    const startedAt = Date.now();
 
     const user = await User.findById(userId);
     if (!user || user.kycLevel !== 'pending' || !user.kycData) return;
@@ -146,6 +150,9 @@ export class KYCService {
         `🤖 *Analyse IA KYC Terminée* ${statusEmoji}\n*Utilisateur*: ${user.firstName} ${user.lastName}\n*Score*: ${aiResult.confidenceScore}%\n*Rapport*: ${aiResult.analysisReport.substring(0, 500)}...\n*Lien Admin*: ${process.env.ADMIN_URL}/users/${user._id}`,
         false,
       );
+
+      MonitoringService.observeKycDuration('ai_analysis', 'gemini', (Date.now() - startedAt) / 1000);
+      MonitoringService.recordUserVerification('ai_analysis', 'success');
     } catch (error: any) {
       const errorMsg = error.response
         ? `Axios Error: ${error.response.status} ${error.response.statusText}`
@@ -160,6 +167,9 @@ export class KYCService {
         `🚨 *Erreur Analyse IA KYC*\n*Utilisateur*: ${user.firstName}\n*Erreur*: ${errorMsg}`,
         true,
       );
+
+      MonitoringService.observeKycDuration('ai_analysis', 'gemini', (Date.now() - startedAt) / 1000);
+      MonitoringService.recordUserVerification('ai_analysis', 'failure');
     }
   }
 
@@ -233,6 +243,11 @@ export class KYCService {
       status: 'success',
       metadata: { reason },
     });
+
+    MonitoringService.recordUserVerification(
+      'admin_review',
+      status === 'verified' ? 'success' : 'failure',
+    );
 
     return user;
   }

@@ -3,6 +3,7 @@ import { OCRController } from '../controllers/ocrController';
 import { protect, premiumOnly } from '../middleware/auth';
 import { upload, validateFileMagicBytes } from '../config/multer';
 import rateLimit from 'express-rate-limit';
+import { createRateLimitHandler } from '../utils/rateLimitStore';
 
 const ocrLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -10,6 +11,7 @@ const ocrLimiter = rateLimit({
   message: 'Trop de requêtes OCR/Scan, veuillez réessayer plus tard',
   standardHeaders: true,
   legacyHeaders: false,
+  handler: createRateLimitHandler('ocr'),
 });
 
 const router = Router();

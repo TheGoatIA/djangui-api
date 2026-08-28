@@ -1,18 +1,23 @@
 import AuditLog, { IAuditLog } from '../models/AuditLog';
 import logger from '../utils/logger';
 import { Request } from 'express';
+import { MonitoringService } from './monitoringService';
+
+type ActorType = 'user' | 'admin' | 'system';
 
 export class AuditService {
   /**
    * Record an audit log entry (async non-blocking with error logging)
    */
-  static async record(data: Partial<IAuditLog>, req?: Request) {
+  static async record(data: Partial<IAuditLog>, req?: Request, actorType: ActorType = 'user') {
     try {
       const logEntry = {
         ...data,
         ip: data.ip || (req ? req.ip : undefined),
         userAgent: data.userAgent || (req ? req.get('user-agent') : undefined),
       };
+
+      if (data.action) MonitoringService.recordAuditLogEvent(data.action, actorType);
 
       AuditLog.create(logEntry).catch((err) => {
         logger.error(`Failed to create audit log: ${err.message}`, { logEntry });
@@ -25,13 +30,19 @@ export class AuditService {
   /**
    * Record an audit log entry synchronously (awaited for critical financial/KYC/security events)
    */
-  static async recordSync(data: Partial<IAuditLog>, req?: Request): Promise<IAuditLog | null> {
+  static async recordSync(
+    data: Partial<IAuditLog>,
+    req?: Request,
+    actorType: ActorType = 'user',
+  ): Promise<IAuditLog | null> {
     try {
       const logEntry = {
         ...data,
         ip: data.ip || (req ? req.ip : undefined),
         userAgent: data.userAgent || (req ? req.get('user-agent') : undefined),
       };
+
+      if (data.action) MonitoringService.recordAuditLogEvent(data.action, actorType);
 
       return await AuditLog.create(logEntry);
     } catch (error: any) {

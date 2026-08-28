@@ -4,6 +4,7 @@ import { TontineController } from '../controllers/tontineController';
 import { protect, restrictTo } from '../middleware/auth';
 import { upload, validateFileMagicBytes, uploadVoice, validateVoiceMagicBytes } from '../config/multer';
 import { idempotency } from '../middleware/idempotency';
+import { createRateLimitHandler } from '../utils/rateLimitStore';
 
 const router = Router();
 
@@ -15,6 +16,7 @@ const joinLimiter = rateLimit({
   message: 'Trop de tentatives, veuillez réessayer plus tard.',
   standardHeaders: true,
   legacyHeaders: false,
+  handler: createRateLimitHandler('tontine-join'),
 });
 
 // Routes protégées par authentification

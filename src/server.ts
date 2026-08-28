@@ -117,12 +117,16 @@ const validateEnvironment = () => {
   }
 
   // Afficher les avertissements
-  warnings.forEach((w) => console.warn(`[WARN] ${w}`));
+  warnings.forEach((w) => {
+    console.warn(`[WARN] ${w}`);
+    logger.warn(`[ENV] ${w}`);
+  });
 
   // Bloquer le démarrage si erreurs critiques
   if (errors.length > 0) {
     console.error('FATAL: Validation de l\'environnement échouée :');
     errors.forEach((e) => console.error(` ✖ ${e}`));
+    logger.error('FATAL: Validation de l\'environnement échouée', { errors });
     process.exit(1);
   }
 

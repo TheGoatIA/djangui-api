@@ -11,7 +11,7 @@ import {
 } from '../validators/authValidator';
 import protect, { restrictTo } from '../middleware/auth';
 import rateLimit from 'express-rate-limit';
-import { createRateLimitStore } from '../utils/rateLimitStore';
+import { createRateLimitStore, createRateLimitHandler } from '../utils/rateLimitStore';
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -20,6 +20,7 @@ const authLimiter = rateLimit({
   message: 'Trop de tentatives de connexion, veuillez réessayer dans 15 minutes',
   standardHeaders: true,
   legacyHeaders: false,
+  handler: createRateLimitHandler('auth'),
 });
 
 // Dedicated rate limiter for token refresh — tighter than global to prevent abuse
@@ -30,6 +31,7 @@ const refreshLimiter = rateLimit({
   message: 'Trop de tentatives de rafraîchissement, veuillez réessayer dans 15 minutes',
   standardHeaders: true,
   legacyHeaders: false,
+  handler: createRateLimitHandler('refresh'),
 });
 
 // 2FA setup/enable/disable only require `protect` (a valid session)
@@ -40,6 +42,7 @@ const totpLimiter = rateLimit({
   message: 'Trop de tentatives, veuillez réessayer dans 15 minutes',
   standardHeaders: true,
   legacyHeaders: false,
+  handler: createRateLimitHandler('totp'),
 });
 
 const router = Router();

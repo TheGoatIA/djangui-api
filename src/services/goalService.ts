@@ -410,6 +410,8 @@ export class GoalService {
     goal.isShared = true;
     await goal.save();
 
+    MonitoringService.recordGoalEvent('share', goal.type || 'unknown');
+
     return { inviteCode: goal.inviteCode! };
   }
 
@@ -427,6 +429,7 @@ export class GoalService {
         existing.invitationStatus = 'accepted';
         existing.joinedAt = new Date();
         await existing.save();
+        MonitoringService.recordGoalEvent('join', goal.type || 'unknown');
         return goal;
       }
       throw new AppError('Vous participez déjà à cet objectif', 400);
@@ -438,6 +441,8 @@ export class GoalService {
       displayName,
       invitationStatus: 'accepted',
     });
+
+    MonitoringService.recordGoalEvent('join', goal.type || 'unknown');
 
     return goal;
   }
@@ -462,7 +467,9 @@ export class GoalService {
   }
 
   static async removeParticipant(goalId: string, ownerId: string, participantId: string) {
-    const goal = await SavingGoal.findOne({ _id: goalId, userId: ownerId }).select('_id').lean();
+    const goal = await SavingGoal.findOne({ _id: goalId, userId: ownerId })
+      .select('_id type')
+      .lean();
     if (!goal) throw new AppError('Objectif non trouvé ou non autorisé', 404);
 
     const participant = await GoalParticipant.findOneAndUpdate(
@@ -471,6 +478,8 @@ export class GoalService {
       { new: true },
     );
     if (!participant) throw new AppError('Participant non trouvé', 404);
+
+    MonitoringService.recordGoalEvent('remove_participant', goal.type || 'unknown');
 
     return true;
   }
@@ -482,6 +491,9 @@ export class GoalService {
       { new: true },
     );
     if (!participant) throw new AppError('Vous ne participez pas à cet objectif', 404);
+
+    const goal = await SavingGoal.findById(goalId).select('type').lean();
+    MonitoringService.recordGoalEvent('leave', goal?.type || 'unknown');
 
     return true;
   }

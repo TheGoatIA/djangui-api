@@ -7,6 +7,7 @@ import { notchpayConfig } from '../config/notchpay';
 import { verifyNotchPaySignature } from '../utils/cryptoUtils';
 import { SlackService } from '../services/slackService';
 import logger from '../utils/logger';
+import { MonitoringService } from '../services/monitoringService';
 
 // A sustained forgery attempt shouldn't spam Slack on every single request â€”
 // this just keeps the alert to roughly once per 5-minute window per process,
@@ -17,6 +18,7 @@ const INVALID_SIGNATURE_ALERT_COOLDOWN_MS = 5 * 60 * 1000;
 export class WebhookController {
   static async stripeWebhook(req: Request, res: Response, next: NextFunction) {
     const sig = req.headers['stripe-signature'] as string;
+    const startedAt = Date.now();
     let event;
 
     try {
@@ -27,8 +29,12 @@ export class WebhookController {
       );
     } catch (err: any) {
       logger.error(`Stripe Webhook Error: ${err.message}`);
+      MonitoringService.recordWebhookReceived('stripe', 'unknown', 'invalid_signature');
+      MonitoringService.observeWebhookProcessingDuration('stripe', 'unknown', (Date.now() - startedAt) / 1000);
       return res.status(400).send(`Webhook Error: ${err.message}`);
     }
+
+    let status: 'processed' | 'failed' = 'processed';
 
     if (event.type === 'checkout.session.completed') {
       const session = event.data.object as any;
@@ -38,14 +44,19 @@ export class WebhookController {
         await PaymentService.completePayment(reference, session.id);
       } catch (err: any) {
         logger.error(`Error completing payment via Stripe Webhook: ${err.message}`);
+        status = 'failed';
       }
     }
+
+    MonitoringService.recordWebhookReceived('stripe', event.type, status);
+    MonitoringService.observeWebhookProcessingDuration('stripe', event.type, (Date.now() - startedAt) / 1000);
 
     res.json({ received: true });
   }
 
   static async notchpayWebhook(req: Request, res: Response, next: NextFunction) {
     const signature = req.headers['x-notchpay-signature'] as string;
+    const startedAt = Date.now();
 
     // Verify against the exact raw bytes NotchPay signed (captured by app.ts's
     // express.json `verify` hook), not a re-serialization of the parsed body â€”
@@ -53,6 +64,8 @@ export class WebhookController {
     const rawBody = (req as any).rawBody || req.body;
     if (!verifyNotchPaySignature(rawBody, signature, notchpayConfig.webhookSecret || '')) {
       logger.warn('Invalid NotchPay webhook signature received');
+      MonitoringService.recordWebhookReceived('notchpay', 'unknown', 'invalid_signature');
+      MonitoringService.observeWebhookProcessingDuration('notchpay', 'unknown', (Date.now() - startedAt) / 1000);
 
       const now = Date.now();
       if (now - lastInvalidSignatureAlertAt > INVALID_SIGNATURE_ALERT_COOLDOWN_MS) {
@@ -67,6 +80,7 @@ export class WebhookController {
     }
 
     const data = req.body;
+    let status: 'processed' | 'failed' = 'processed';
 
     if (data.event === 'payment.complete') {
       const reference = data.data.reference;
@@ -74,6 +88,7 @@ export class WebhookController {
         await PaymentService.completePayment(reference);
       } catch (err: any) {
         logger.error(`Error completing payment via NotchPay Webhook: ${err.message}`);
+        status = 'failed';
       }
     } else if (data.event === 'transfer.complete') {
       // Le transfert est confirmÃ© par NotchPay â€” marquer la transaction en base comme confirmÃ©e.
@@ -100,6 +115,7 @@ export class WebhookController {
         }
       } catch (confirmErr: any) {
         logger.error(`Failed to confirm transfer ${reference}: ${confirmErr.message}`);
+        status = 'failed';
       }
     } else if (data.event === 'transfer.failed') {
       // The transfer payload now sends our internal reference at the top level
@@ -156,8 +172,16 @@ export class WebhookController {
           `ðŸš¨ *Ã‰chec du remboursement automatique* pour le transfert \`${reference}\`\n*Erreur*: ${refundErr.message}\nLe portefeuille de l'utilisateur reste dÃ©bitÃ© â€” vÃ©rification manuelle requise (la rÃ©conciliation NotchPay retentera automatiquement, mais ne pas attendre sans vÃ©rifier).`,
           true,
         ).catch((e: any) => logger.error(`Slack alert error: ${e.message}`));
+        status = 'failed';
       }
     }
+
+    MonitoringService.recordWebhookReceived('notchpay', data.event || 'unknown', status);
+    MonitoringService.observeWebhookProcessingDuration(
+      'notchpay',
+      data.event || 'unknown',
+      (Date.now() - startedAt) / 1000,
+    );
 
     res.json({ received: true });
   }

@@ -3,6 +3,7 @@ import { AuthRequest } from './auth';
 import redis from '../config/redis';
 import { AppError } from './errorHandler';
 import logger from '../utils/logger';
+import { MonitoringService } from '../services/monitoringService';
 
 const IDEMPOTENCY_KEY_TTL_SECONDS = 24 * 60 * 60; // 24h — long enough to cover client retries
 
@@ -39,6 +40,7 @@ export async function idempotency(req: AuthRequest, res: Response, next: NextFun
   try {
     const claimed = await redis.set(redisKey, '1', 'EX', IDEMPOTENCY_KEY_TTL_SECONDS, 'NX');
     if (claimed === null) {
+      MonitoringService.recordIdempotencyCollision(req.originalUrl);
       return next(new AppError('Duplicate request: this operation was already submitted', 409));
     }
 

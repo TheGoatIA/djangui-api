@@ -4,6 +4,7 @@ import { WalletService } from './walletService';
 import { GamificationService } from './gamificationService';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
+import { MonitoringService } from './monitoringService';
 
 export class ChallengeService {
   /**
@@ -48,13 +49,16 @@ export class ChallengeService {
       }
     }
 
-    return UserChallenge.create({
+    const created = await UserChallenge.create({
       userId,
       challengeId,
       endDate,
       weeks,
       status: 'active',
     });
+
+    MonitoringService.recordChallengeEvent('join', challenge.type);
+    return created;
   }
 
   /**
@@ -96,6 +100,7 @@ export class ChallengeService {
       logger.error(`Post-commit hook error: ${err.message}`),
     );
 
+    MonitoringService.recordChallengeEvent('unjoin', 'unknown');
     return true;
   }
   /**
@@ -154,6 +159,7 @@ export class ChallengeService {
       logger.error(`Post-commit hook error: ${err.message}`),
     );
 
+    MonitoringService.recordChallengeEvent('deposit', 'saving');
     return result.userChallenge;
   }
 
@@ -263,6 +269,12 @@ export class ChallengeService {
       );
     }
 
+    MonitoringService.recordChallengeEvent(
+      'validate_week',
+      (result.uc.challengeId as any)?.type || 'unknown',
+      result.shouldAwardCompletion ? 'completed' : 'in_progress',
+    );
+
     return result.uc;
   }
 
@@ -309,6 +321,7 @@ export class ChallengeService {
       logger.error(`Post-commit hook error: ${err.message}`),
     );
 
+    MonitoringService.recordChallengeEvent('redeem', 'unknown');
     return { redeemedAmount: result.redeemedAmount, userChallenge: result.userChallenge };
   }
 
@@ -335,6 +348,7 @@ export class ChallengeService {
     uc.endDate = new Date(uc.endDate.getTime() + 7 * 24 * 60 * 60 * 1000);
 
     await uc.save();
+    MonitoringService.recordChallengeEvent('postpone', 'unknown');
     return uc;
   }
 
@@ -364,6 +378,7 @@ export class ChallengeService {
     uc.progress = Math.round((processedWeeks / uc.weeks.length) * 100);
 
     await uc.save();
+    MonitoringService.recordChallengeEvent('skip', 'unknown');
     return uc;
   }
 
@@ -388,6 +403,7 @@ export class ChallengeService {
     }
 
     await userChallenge.save();
+    MonitoringService.recordChallengeEvent('resolve', 'unknown', result);
   }
 
   /**
