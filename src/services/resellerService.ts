@@ -112,7 +112,10 @@ export class ResellerService {
         const ownerId = resellerId || (acc.resellerId as any)?._id || acc.resellerId;
         const slots = await SharedSlot.find({ masterAccountId: acc._id, resellerId: ownerId });
         const occupiedSlots = slots.filter((s) => s.status !== 'vacant').length;
-        const totalRevenue = slots.reduce((accTotal, s) => accTotal + (s.status !== 'vacant' ? s.price : 0), 0);
+        const totalRevenue = slots.reduce(
+          (accTotal, s) => accTotal + (s.status !== 'vacant' ? s.price : 0),
+          0,
+        );
         const netMargin = totalRevenue - acc.billingCost;
 
         // Strip vault secrets
@@ -175,7 +178,7 @@ export class ResellerService {
 
     const { iv, authTag, encryptedPassword } = account.vault;
     const decryptedJson = VaultCrypto.decrypt(encryptedPassword, iv, authTag, resellerId);
-    
+
     try {
       const data = JSON.parse(decryptedJson);
       logger.info(`Vault unlocked for account ${accountId} by reseller ${resellerId}`);
@@ -196,7 +199,17 @@ export class ResellerService {
     const account = await SharedMasterAccount.findOne({ _id: accountId, resellerId });
     if (!account) throw new AppError('Compte introuvable', 404);
 
-    const { email, password, pin, recoveryContact, secretNotes, resellerId: _r, vault: _v, status: _s, ...restData } = data;
+    const {
+      email,
+      password,
+      pin,
+      recoveryContact,
+      secretNotes,
+      resellerId: _r,
+      vault: _v,
+      status: _s,
+      ...restData
+    } = data;
 
     if (email || password || pin || secretNotes || recoveryContact) {
       const payloadString = JSON.stringify({
@@ -210,7 +223,8 @@ export class ResellerService {
       const { ciphertext, iv, authTag } = VaultCrypto.encrypt(payloadString, resellerId);
       account.vault = {
         encryptedPassword: ciphertext,
-        recoveryContact: recoveryContact !== undefined ? recoveryContact : account.vault?.recoveryContact,
+        recoveryContact:
+          recoveryContact !== undefined ? recoveryContact : account.vault?.recoveryContact,
         iv,
         authTag,
       };

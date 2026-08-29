@@ -119,9 +119,9 @@ describe('PaymentService Unit Tests', () => {
 
       (User.findById as jest.Mock).mockResolvedValue(mockUser);
 
-      await expect(
-        PaymentService.initializeNotchPay('user123', 5000, 'deposit'),
-      ).rejects.toThrow('NotchPay is only available for users in Cameroon');
+      await expect(PaymentService.initializeNotchPay('user123', 5000, 'deposit')).rejects.toThrow(
+        'NotchPay is only available for users in Cameroon',
+      );
     });
   });
 });

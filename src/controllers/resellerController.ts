@@ -2,7 +2,10 @@ import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { ResellerService } from '../services/resellerService';
 import { ResellerAnalyticsService } from '../services/resellerAnalyticsService';
-import { WhatsAppDeepLinkProvider, ResellerNotificationDispatcher } from '../services/resellerNotificationService';
+import {
+  WhatsAppDeepLinkProvider,
+  ResellerNotificationDispatcher,
+} from '../services/resellerNotificationService';
 import { SERVICE_CATALOG } from '../data/serviceCatalog';
 import SharedSlot from '../models/SharedSlot';
 import SharedMasterAccount from '../models/SharedMasterAccount';
@@ -35,7 +38,11 @@ export class ResellerController {
       const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
       const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string, 10) || 20));
 
-      const { accounts, total } = await ResellerService.getResellerAccounts(adminScope(req), page, limit);
+      const { accounts, total } = await ResellerService.getResellerAccounts(
+        adminScope(req),
+        page,
+        limit,
+      );
       res.status(200).json({
         status: 'success',
         results: accounts.length,
@@ -108,7 +115,11 @@ export class ResellerController {
 
   static async updateAccount(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const account = await ResellerService.updateMasterAccount(req.params.id, req.user._id, req.body);
+      const account = await ResellerService.updateMasterAccount(
+        req.params.id,
+        req.user._id,
+        req.body,
+      );
       res.status(200).json({
         status: 'success',
         data: account,
@@ -182,7 +193,11 @@ export class ResellerController {
 
   static async recordPayment(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const slot = await ResellerService.recordSlotPayment(req.params.slotId, req.user._id, req.body);
+      const slot = await ResellerService.recordSlotPayment(
+        req.params.slotId,
+        req.user._id,
+        req.body,
+      );
       res.status(200).json({
         status: 'success',
         message: 'Paiement enregistré et slot renouvelé avec succès.',

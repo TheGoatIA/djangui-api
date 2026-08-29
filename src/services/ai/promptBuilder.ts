@@ -20,11 +20,7 @@ export class PromptBuilder {
     `;
   }
 
-  static buildCoachSystemPrompt(
-    user: IUser,
-    context: any,
-    streamMode: boolean = false,
-  ): string {
+  static buildCoachSystemPrompt(user: IUser, context: any, streamMode: boolean = false): string {
     const { firstName, monthlyIncome, currency, language, preferences, country } = user;
     const { transactions, budget, goals, challenges, tontines, subscriptions, resellerBusiness } =
       context;
@@ -160,7 +156,8 @@ export class PromptBuilder {
   }
 
   static buildInsightPrompt(user: IUser, transactions: any[]): string {
-    const currencyLabel = user.currency === 'XAF' || user.currency === 'XOF' ? 'FCFA' : user.currency;
+    const currencyLabel =
+      user.currency === 'XAF' || user.currency === 'XOF' ? 'FCFA' : user.currency;
     return `
       Analyse ces transactions récentes pour ${user.firstName} et identifie des habitudes de dépenses ou des anomalies.
       Devise de référence: ${currencyLabel}.
@@ -180,7 +177,8 @@ export class PromptBuilder {
 
   static buildNarrativeReportPrompt(user: IUser, reportData: any): string {
     const langName = user.language === 'en' ? 'English' : 'French';
-    const currencyLabel = user.currency === 'XAF' || user.currency === 'XOF' ? 'FCFA' : user.currency;
+    const currencyLabel =
+      user.currency === 'XAF' || user.currency === 'XOF' ? 'FCFA' : user.currency;
     return `
       En tant qu'Anne, ta coach financière personnelle, rédige un rapport mensuel narratif et motivant pour ${user.firstName}.
       RÉPONDS UNIQUEMENT EN ${langName.toUpperCase()}.
@@ -213,7 +211,8 @@ export class PromptBuilder {
   }
 
   static buildForecastPrompt(user: IUser, context: any): string {
-    const currencyLabel = user.currency === 'XAF' || user.currency === 'XOF' ? 'FCFA' : user.currency;
+    const currencyLabel =
+      user.currency === 'XAF' || user.currency === 'XOF' ? 'FCFA' : user.currency;
     return `
       Tu es Anne, experte en analyse prédictive financière.
       Analyse l'historique de ${user.firstName} et projette son solde bancaire sur les 30 prochains jours.
@@ -245,7 +244,8 @@ export class PromptBuilder {
   }
 
   static buildSimulatorPrompt(user: IUser, scenario: string, context: any): string {
-    const currencyLabel = user.currency === 'XAF' || user.currency === 'XOF' ? 'FCFA' : user.currency;
+    const currencyLabel =
+      user.currency === 'XAF' || user.currency === 'XOF' ? 'FCFA' : user.currency;
     return `
       Tu es le laboratoire financier "What If?" d'Anne.
       ${user.firstName} veut simuler le scénario suivant : "${scenario}"

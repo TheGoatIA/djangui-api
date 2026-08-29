@@ -118,7 +118,10 @@ export class FeatureFlagController {
       // sync with this flag document, with a single consolidated notification
       // broadcast — see the equivalent guard in adminController.updateSystemSetting.
       if (existing.slug === 'feat_real_money' && updates.isEnabled !== undefined) {
-        await FeatureFlagService.setRealMoneyMode(Boolean(updates.isEnabled), (req as any).user._id);
+        await FeatureFlagService.setRealMoneyMode(
+          Boolean(updates.isEnabled),
+          (req as any).user._id,
+        );
         const flag = await FeatureFlag.findById(id);
         return res.status(200).json({ status: 'success', data: flag });
       }

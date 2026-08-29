@@ -1,7 +1,9 @@
 import Joi from 'joi';
 
-const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{8,}$/;
-const PASSWORD_ERROR_MSG = 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character';
+const PASSWORD_REGEX =
+  /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{8,}$/;
+const PASSWORD_ERROR_MSG =
+  'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character';
 
 export const registerSchema = Joi.object({
   email: Joi.string().email().required().messages({

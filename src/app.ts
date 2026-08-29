@@ -154,7 +154,10 @@ app.use(
       // isn't guaranteed to byte-match the original (key order, number formatting,
       // unicode escaping can all differ), which would silently reject legitimate
       // webhook deliveries. See utils/cryptoUtils.ts for the NotchPay side.
-      if (req.originalUrl.includes('/webhooks/stripe') || req.originalUrl.includes('/webhooks/notchpay')) {
+      if (
+        req.originalUrl.includes('/webhooks/stripe') ||
+        req.originalUrl.includes('/webhooks/notchpay')
+      ) {
         req.rawBody = buf;
       }
     },
@@ -163,7 +166,6 @@ app.use(
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(currencyMiddleware);
-
 
 // Routes
 app.get('/', (req, res) => {

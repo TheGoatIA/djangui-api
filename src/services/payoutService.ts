@@ -13,10 +13,10 @@ import { notchpayAdminApi } from '../config/notchpay';
  * Dans ce cas, il est sûr de rembourser le solde car aucun transfert n'a été initié.
  */
 const SAFE_TO_REFUND_CODES = new Set([
-  'ECONNREFUSED',   // Le serveur a activement refusé la connexion (backend off)
-  'ENOTFOUND',      // DNS non résolu
-  'ECONNRESET',     // Connexion réinitialisée avant envoi
-  'ECONNABORTED',   // Connexion avortée avant envoi
+  'ECONNREFUSED', // Le serveur a activement refusé la connexion (backend off)
+  'ENOTFOUND', // DNS non résolu
+  'ECONNRESET', // Connexion réinitialisée avant envoi
+  'ECONNABORTED', // Connexion avortée avant envoi
 ]);
 
 export class PayoutService {
@@ -156,7 +156,9 @@ export class PayoutService {
       const errorDetails = error.response?.data?.errors
         ? JSON.stringify(error.response.data.errors)
         : '';
-      logger.error(`NotchPay Transfer Error [${errorCode || httpStatus}]: ${errorMessage} ${errorDetails}`);
+      logger.error(
+        `NotchPay Transfer Error [${errorCode || httpStatus}]: ${errorMessage} ${errorDetails}`,
+      );
 
       if (error.response?.data) {
         logger.debug(`NotchPay Full Error Response: ${JSON.stringify(error.response.data)}`);
@@ -203,7 +205,10 @@ export class PayoutService {
           category: 'important',
           data: { transactionRef: transactionRef, type: 'withdrawal_cancelled' },
         }).catch((err: any) => logger.error(`Payout Cancel Notification Error: ${err.message}`));
-        throw new AppError("Service de paiement temporairement indisponible. Votre solde n'a pas été débité.", 503);
+        throw new AppError(
+          "Service de paiement temporairement indisponible. Votre solde n'a pas été débité.",
+          503,
+        );
       }
 
       // ── Erreur ambiguë (5xx, timeout après envoi, réponse inattendue) ──────────────
@@ -253,7 +258,10 @@ export class PayoutService {
     } else if (/^6(9\d|5[5-9])\d{6}$/.test(localNumber)) {
       detectedChannel = 'cm.orange';
     } else {
-      throw new AppError('Ce numéro ne correspond à aucun opérateur Mobile Money supporté (MTN ou Orange).', 400);
+      throw new AppError(
+        'Ce numéro ne correspond à aucun opérateur Mobile Money supporté (MTN ou Orange).',
+        400,
+      );
     }
 
     const prov = requestedProvider?.toLowerCase();
@@ -304,7 +312,9 @@ export class PayoutService {
         silent: true,
       });
 
-      logger.info(`[PAYOUT] Remboursement effectué pour transaction ${transactionId} — ${amount} XAF recrédités pour user ${userId}`);
+      logger.info(
+        `[PAYOUT] Remboursement effectué pour transaction ${transactionId} — ${amount} XAF recrédités pour user ${userId}`,
+      );
     } catch (refundError: any) {
       logger.error(
         `[PAYOUT] CRITIQUE: Échec du remboursement pour transaction ${transactionId} user ${userId}: ${refundError.message}`,

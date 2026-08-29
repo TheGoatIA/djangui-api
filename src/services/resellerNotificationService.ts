@@ -24,7 +24,7 @@ export class WhatsAppDeepLinkProvider implements INotificationProvider {
     // Generate text template
     const phone = slot.client.whatsappNumber || slot.client.phone;
     const formattedDate = new Date(slot.currentPeriodEnd).toLocaleDateString('fr-FR');
-    
+
     let msg = '';
     if (type === 'J-3') {
       msg = `Bonjour ${slot.client.fullName} 👋,\n\nVotre accès à *${accountName}* (${slot.profileName}) arrive à expiration dans 3 jours (le *${formattedDate}*).\nMontant du renouvellement : *${slot.price} ${slot.currency}*.\nMerci de régulariser pour éviter toute coupure !`;
@@ -34,7 +34,9 @@ export class WhatsAppDeepLinkProvider implements INotificationProvider {
       msg = `Attention ${slot.client.fullName} ⚠️,\n\nVotre abonnement *${accountName}* (${slot.profileName}) est arrivé à échéance.\nMerci de procéder au paiement de *${slot.price} ${slot.currency}* dès que possible pour réactiver votre profil.`;
     }
 
-    logger.info(`[WhatsApp Provider] Deep link created for client ${slot.client.fullName} (${phone})`);
+    logger.info(
+      `[WhatsApp Provider] Deep link created for client ${slot.client.fullName} (${phone})`,
+    );
     return true;
   }
 
@@ -45,7 +47,9 @@ export class WhatsAppDeepLinkProvider implements INotificationProvider {
     lang: string = 'fr',
   ): string {
     const phone = (slot.client.whatsappNumber || slot.client.phone || '').replace(/[^0-9]/g, '');
-    const formattedDate = new Date(slot.currentPeriodEnd).toLocaleDateString(lang === 'fr' ? 'fr-FR' : 'en-US');
+    const formattedDate = new Date(slot.currentPeriodEnd).toLocaleDateString(
+      lang === 'fr' ? 'fr-FR' : 'en-US',
+    );
 
     const paymentInfo = resellerPhone ? `\nMoyen de paiement (OM/MOMO) : *${resellerPhone}*` : '';
 
@@ -121,10 +125,7 @@ export class ResellerNotificationDispatcher {
   private static whatsAppProvider = new WhatsAppDeepLinkProvider();
   private static smsProvider = new LocalSmsProvider();
 
-  static async dispatch(
-    slot: ISharedSlotDocument,
-    type: 'J-3' | 'J-0' | 'OVERDUE',
-  ): Promise<void> {
+  static async dispatch(slot: ISharedSlotDocument, type: 'J-3' | 'J-0' | 'OVERDUE'): Promise<void> {
     try {
       const account = await SharedMasterAccount.findById(slot.masterAccountId);
       const accountName = account?.serviceName || 'Service Partagé';

@@ -44,7 +44,9 @@ export class FraudService {
 
       if (recentTxCount >= 5) {
         score += 35;
-        reasons.push(`Vélocité élevée: ${recentTxCount} transactions dans les 10 dernières minutes`);
+        reasons.push(
+          `Vélocité élevée: ${recentTxCount} transactions dans les 10 dernières minutes`,
+        );
         triggeredRules.push('velocity');
       }
 
@@ -58,7 +60,9 @@ export class FraudService {
 
         if (recentWithdrawals >= 3) {
           score += 25;
-          reasons.push(`Multiples retraits rapprochés: ${recentWithdrawals} retraits dans la dernière heure`);
+          reasons.push(
+            `Multiples retraits rapprochés: ${recentWithdrawals} retraits dans la dernière heure`,
+          );
           triggeredRules.push('rapid_withdrawals');
         }
       }
@@ -110,7 +114,9 @@ export class FraudService {
       const block = score >= 70;
 
       if (isSuspicious) {
-        logger.warn(`[FRAUD] Transaction suspecte détectée pour user ${userId}. Score: ${score}/100. Raisons: ${reasons.join(', ')}`);
+        logger.warn(
+          `[FRAUD] Transaction suspecte détectée pour user ${userId}. Score: ${score}/100. Raisons: ${reasons.join(', ')}`,
+        );
 
         const severity: 'high' | 'critical' = block ? 'critical' : 'high';
         const actionTaken = block ? 'blocked' : 'flagged';

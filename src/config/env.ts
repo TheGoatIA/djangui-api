@@ -50,17 +50,23 @@ export function validateEnv(): void {
   const swaggerPwd = process.env.SWAGGER_PASSWORD!;
 
   if (jwtAccess.length < 32) {
-    console.error('🚨 [ENV] JWT_ACCESS_SECRET must be at least 32 characters. Generate with: openssl rand -hex 32');
+    console.error(
+      '🚨 [ENV] JWT_ACCESS_SECRET must be at least 32 characters. Generate with: openssl rand -hex 32',
+    );
     process.exit(1);
   }
 
   if (jwtRefresh.length < 32) {
-    console.error('🚨 [ENV] JWT_REFRESH_SECRET must be at least 32 characters. Generate with: openssl rand -hex 32');
+    console.error(
+      '🚨 [ENV] JWT_REFRESH_SECRET must be at least 32 characters. Generate with: openssl rand -hex 32',
+    );
     process.exit(1);
   }
 
   if (vaultKey.length < 32) {
-    console.error('🚨 [ENV] VAULT_ENCRYPTION_KEY must be at least 32 characters. Generate with: openssl rand -hex 32');
+    console.error(
+      '🚨 [ENV] VAULT_ENCRYPTION_KEY must be at least 32 characters. Generate with: openssl rand -hex 32',
+    );
     process.exit(1);
   }
 
@@ -70,11 +76,24 @@ export function validateEnv(): void {
   }
 
   // Warn about insecure known defaults that may have been copied from examples
-  const INSECURE_DEFAULTS = ['kauri2026', 'kaurisecret', 'changeme', 'your_strong_password', 'password'];
-  for (const key of ['SWAGGER_PASSWORD', 'MONGODB_PASSWORD', 'REDIS_PASSWORD', 'MINIO_SECRET_KEY']) {
+  const INSECURE_DEFAULTS = [
+    'kauri2026',
+    'kaurisecret',
+    'changeme',
+    'your_strong_password',
+    'password',
+  ];
+  for (const key of [
+    'SWAGGER_PASSWORD',
+    'MONGODB_PASSWORD',
+    'REDIS_PASSWORD',
+    'MINIO_SECRET_KEY',
+  ]) {
     const val = process.env[key] || '';
     if (INSECURE_DEFAULTS.some((d) => val.toLowerCase().includes(d))) {
-      console.warn(`⚠️  [ENV] ${key} looks like an insecure default value. Please change it before going to production.`);
+      console.warn(
+        `⚠️  [ENV] ${key} looks like an insecure default value. Please change it before going to production.`,
+      );
     }
   }
 }

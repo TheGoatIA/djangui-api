@@ -45,11 +45,35 @@ export const SEED_PLANS = [
           en: 'Budgeting & Expense Tracking',
         },
         items: [
-          { id: 'budgets', name: { fr: 'Nombre de budgets actifs', en: 'Active budgets limit' }, included: true, value: { fr: '3 budgets', en: '3 budgets' } },
-          { id: 'goals', name: { fr: 'Objectifs d’épargne', en: 'Saving goals' }, included: true, value: { fr: '1 objectif', en: '1 goal' } },
-          { id: 'transactions', name: { fr: 'Suivi et saisie des dépenses', en: 'Expense tracking' }, included: true, value: { fr: 'Illimité', en: 'Unlimited' } },
-          { id: 'ocr', name: { fr: 'Scan de reçus / OCR basique', en: 'Receipt scan / Basic OCR' }, included: true, value: { fr: '5 scans/mois', en: '5 scans/mo' } },
-          { id: 'import_sms', name: { fr: 'Import automatique SMS (MoMo/OM)', en: 'Automatic SMS Import (MoMo/OM)' }, included: true },
+          {
+            id: 'budgets',
+            name: { fr: 'Nombre de budgets actifs', en: 'Active budgets limit' },
+            included: true,
+            value: { fr: '3 budgets', en: '3 budgets' },
+          },
+          {
+            id: 'goals',
+            name: { fr: 'Objectifs d’épargne', en: 'Saving goals' },
+            included: true,
+            value: { fr: '1 objectif', en: '1 goal' },
+          },
+          {
+            id: 'transactions',
+            name: { fr: 'Suivi et saisie des dépenses', en: 'Expense tracking' },
+            included: true,
+            value: { fr: 'Illimité', en: 'Unlimited' },
+          },
+          {
+            id: 'ocr',
+            name: { fr: 'Scan de reçus / OCR basique', en: 'Receipt scan / Basic OCR' },
+            included: true,
+            value: { fr: '5 scans/mois', en: '5 scans/mo' },
+          },
+          {
+            id: 'import_sms',
+            name: { fr: 'Import automatique SMS (MoMo/OM)', en: 'Automatic SMS Import (MoMo/OM)' },
+            included: true,
+          },
         ],
       },
       {
@@ -58,11 +82,33 @@ export const SEED_PLANS = [
           en: 'Artificial Intelligence & AI Coach Anne',
         },
         items: [
-          { id: 'coach_chat', name: { fr: 'Coach Financier IA Anne', en: 'AI Financial Coach Anne' }, included: true, value: { fr: '20 msgs d’historique', en: '20 messages history' } },
-          { id: 'ai_insights', name: { fr: 'Analyses de dépenses intelligentes', en: 'Smart spending insights' }, included: true, value: { fr: 'Standards', en: 'Standard' } },
-          { id: 'auto_budget', name: { fr: 'Génération automatique de budget IA', en: 'AI Auto-Budget generation' }, included: false },
-          { id: 'style_magazine', name: { fr: 'Rapport mensuel "Style Magazine"', en: 'Monthly "Style Magazine" report' }, included: false },
-          { id: 'voice_input', name: { fr: 'Commandes et saisie vocale IA', en: 'AI Voice commands & input' }, included: false },
+          {
+            id: 'coach_chat',
+            name: { fr: 'Coach Financier IA Anne', en: 'AI Financial Coach Anne' },
+            included: true,
+            value: { fr: '20 msgs d’historique', en: '20 messages history' },
+          },
+          {
+            id: 'ai_insights',
+            name: { fr: 'Analyses de dépenses intelligentes', en: 'Smart spending insights' },
+            included: true,
+            value: { fr: 'Standards', en: 'Standard' },
+          },
+          {
+            id: 'auto_budget',
+            name: { fr: 'Génération automatique de budget IA', en: 'AI Auto-Budget generation' },
+            included: false,
+          },
+          {
+            id: 'style_magazine',
+            name: { fr: 'Rapport mensuel "Style Magazine"', en: 'Monthly "Style Magazine" report' },
+            included: false,
+          },
+          {
+            id: 'voice_input',
+            name: { fr: 'Commandes et saisie vocale IA', en: 'AI Voice commands & input' },
+            included: false,
+          },
         ],
       },
       {
@@ -71,10 +117,30 @@ export const SEED_PLANS = [
           en: 'Tontines & Community Savings',
         },
         items: [
-          { id: 'tontine_join', name: { fr: 'Participation aux tontines', en: 'Join tontine groups' }, included: true, value: { fr: '1 tontine active', en: '1 active tontine' } },
-          { id: 'tontine_create', name: { fr: 'Création et gestion de tontines', en: 'Create & manage tontines' }, included: false },
-          { id: 'tontine_auto_debit', name: { fr: 'Prélèvement automatique des cotisations', en: 'Automatic contribution debits' }, included: false },
-          { id: 'tontine_trust', name: { fr: 'Trust Score & Badge de fiabilité', en: 'Trust Score & Trust badge' }, included: true },
+          {
+            id: 'tontine_join',
+            name: { fr: 'Participation aux tontines', en: 'Join tontine groups' },
+            included: true,
+            value: { fr: '1 tontine active', en: '1 active tontine' },
+          },
+          {
+            id: 'tontine_create',
+            name: { fr: 'Création et gestion de tontines', en: 'Create & manage tontines' },
+            included: false,
+          },
+          {
+            id: 'tontine_auto_debit',
+            name: {
+              fr: 'Prélèvement automatique des cotisations',
+              en: 'Automatic contribution debits',
+            },
+            included: false,
+          },
+          {
+            id: 'tontine_trust',
+            name: { fr: 'Trust Score & Badge de fiabilité', en: 'Trust Score & Trust badge' },
+            included: true,
+          },
         ],
       },
       {
@@ -83,9 +149,25 @@ export const SEED_PLANS = [
           en: 'Kauri Wallet & Cashout',
         },
         items: [
-          { id: 'wallet', name: { fr: 'Solde Portefeuille MoMo/OM', en: 'MoMo/OM Wallet balance' }, included: true },
-          { id: 'withdrawal_fee', name: { fr: 'Frais de retrait portefeuille', en: 'Wallet cashout fees' }, included: true, value: { fr: '3% (standard)', en: '3% (standard)' } },
-          { id: 'payment_methods', name: { fr: 'Moyens de recharge (MTN, Orange, Carte)', en: 'Top-up methods (MTN, Orange, Card)' }, included: true },
+          {
+            id: 'wallet',
+            name: { fr: 'Solde Portefeuille MoMo/OM', en: 'MoMo/OM Wallet balance' },
+            included: true,
+          },
+          {
+            id: 'withdrawal_fee',
+            name: { fr: 'Frais de retrait portefeuille', en: 'Wallet cashout fees' },
+            included: true,
+            value: { fr: '3% (standard)', en: '3% (standard)' },
+          },
+          {
+            id: 'payment_methods',
+            name: {
+              fr: 'Moyens de recharge (MTN, Orange, Carte)',
+              en: 'Top-up methods (MTN, Orange, Card)',
+            },
+            included: true,
+          },
         ],
       },
       {
@@ -94,11 +176,36 @@ export const SEED_PLANS = [
           en: 'Reseller Hub (Shared Subscriptions)',
         },
         items: [
-          { id: 'master_accounts', name: { fr: 'Services & Comptes Maîtres', en: 'Master Accounts & Services' }, included: true, value: { fr: '2 comptes max', en: '2 accounts max' } },
-          { id: 'client_slots', name: { fr: 'Profils / Slots clients gérés', en: 'Managed client slots' }, included: true, value: { fr: '3 slots max', en: '3 slots max' } },
-          { id: 'vault_crypto', name: { fr: 'Coffre-fort chiffré AES-256', en: 'AES-256 Encrypted Vault' }, included: true },
-          { id: 'auto_reminders', name: { fr: 'Relances automatiques programmées (J-3/J-0)', en: 'Scheduled Auto-Reminders (D-3/D-0)' }, included: false },
-          { id: 'accounting_export', name: { fr: 'Exports comptables & fiscaux CSV', en: 'CSV Accounting & Tax Export' }, included: false },
+          {
+            id: 'master_accounts',
+            name: { fr: 'Services & Comptes Maîtres', en: 'Master Accounts & Services' },
+            included: true,
+            value: { fr: '2 comptes max', en: '2 accounts max' },
+          },
+          {
+            id: 'client_slots',
+            name: { fr: 'Profils / Slots clients gérés', en: 'Managed client slots' },
+            included: true,
+            value: { fr: '3 slots max', en: '3 slots max' },
+          },
+          {
+            id: 'vault_crypto',
+            name: { fr: 'Coffre-fort chiffré AES-256', en: 'AES-256 Encrypted Vault' },
+            included: true,
+          },
+          {
+            id: 'auto_reminders',
+            name: {
+              fr: 'Relances automatiques programmées (J-3/J-0)',
+              en: 'Scheduled Auto-Reminders (D-3/D-0)',
+            },
+            included: false,
+          },
+          {
+            id: 'accounting_export',
+            name: { fr: 'Exports comptables & fiscaux CSV', en: 'CSV Accounting & Tax Export' },
+            included: false,
+          },
         ],
       },
       {
@@ -107,10 +214,29 @@ export const SEED_PLANS = [
           en: 'Customization & Comfort',
         },
         items: [
-          { id: 'dark_mode', name: { fr: 'Mode Sombre & Thème Kauri', en: 'Dark Mode & Kauri Theme' }, included: true },
-          { id: 'premium_themes', name: { fr: 'Thèmes exclusifs (Obsidian Gold, Polar Night...)', en: 'Exclusive themes (Obsidian Gold...)' }, included: false },
-          { id: 'custom_fonts', name: { fr: 'Typographies personnalisées', en: 'Custom fonts' }, included: false },
-          { id: 'support_priority', name: { fr: 'Support client prioritaire', en: 'Priority Customer Support' }, included: false },
+          {
+            id: 'dark_mode',
+            name: { fr: 'Mode Sombre & Thème Kauri', en: 'Dark Mode & Kauri Theme' },
+            included: true,
+          },
+          {
+            id: 'premium_themes',
+            name: {
+              fr: 'Thèmes exclusifs (Obsidian Gold, Polar Night...)',
+              en: 'Exclusive themes (Obsidian Gold...)',
+            },
+            included: false,
+          },
+          {
+            id: 'custom_fonts',
+            name: { fr: 'Typographies personnalisées', en: 'Custom fonts' },
+            included: false,
+          },
+          {
+            id: 'support_priority',
+            name: { fr: 'Support client prioritaire', en: 'Priority Customer Support' },
+            included: false,
+          },
         ],
       },
     ],
@@ -147,11 +273,11 @@ export const SEED_PLANS = [
     order: 2,
     featureSummary: {
       fr: [
-        '5 Budgets & 5 Objectifs d\'épargne simultanés',
+        "5 Budgets & 5 Objectifs d'épargne simultanés",
         'Coach IA Anne Avancé & Auto-Budgeting',
-        'Jusqu\'à 2 tontines créées (Participation libre)',
+        "Jusqu'à 2 tontines créées (Participation libre)",
         'Frais de retrait réduits de 50% (1.5%)',
-        'Revendeur Hub : Jusqu\'à 3 comptes maîtres & 10 profils clients',
+        "Revendeur Hub : Jusqu'à 3 comptes maîtres & 10 profils clients",
         'Thèmes de luxe exclusifs (Obsidian Gold...)',
       ],
       en: [
@@ -170,11 +296,37 @@ export const SEED_PLANS = [
           en: 'Budgeting & Expense Tracking',
         },
         items: [
-          { id: 'budgets', name: { fr: 'Nombre de budgets actifs', en: 'Active budgets limit' }, included: true, highlight: true, value: { fr: '5 Budgets actifs', en: '5 Active budgets' } },
-          { id: 'goals', name: { fr: 'Objectifs d’épargne & Dettes', en: 'Saving & Debt goals' }, included: true, highlight: true, value: { fr: '5 Objectifs simultanés', en: '5 Simultaneous goals' } },
-          { id: 'transactions', name: { fr: 'Suivi et saisie des dépenses', en: 'Expense tracking' }, included: true, value: { fr: 'Illimité', en: 'Unlimited' } },
-          { id: 'ocr', name: { fr: 'Scan de reçus / OCR intelligent', en: 'Smart Receipt Scan / OCR' }, included: true, value: { fr: '15 scans / mois', en: '15 scans / month' } },
-          { id: 'import_sms', name: { fr: 'Import automatique SMS (MoMo/OM)', en: 'Automatic SMS Import (MoMo/OM)' }, included: true },
+          {
+            id: 'budgets',
+            name: { fr: 'Nombre de budgets actifs', en: 'Active budgets limit' },
+            included: true,
+            highlight: true,
+            value: { fr: '5 Budgets actifs', en: '5 Active budgets' },
+          },
+          {
+            id: 'goals',
+            name: { fr: 'Objectifs d’épargne & Dettes', en: 'Saving & Debt goals' },
+            included: true,
+            highlight: true,
+            value: { fr: '5 Objectifs simultanés', en: '5 Simultaneous goals' },
+          },
+          {
+            id: 'transactions',
+            name: { fr: 'Suivi et saisie des dépenses', en: 'Expense tracking' },
+            included: true,
+            value: { fr: 'Illimité', en: 'Unlimited' },
+          },
+          {
+            id: 'ocr',
+            name: { fr: 'Scan de reçus / OCR intelligent', en: 'Smart Receipt Scan / OCR' },
+            included: true,
+            value: { fr: '15 scans / mois', en: '15 scans / month' },
+          },
+          {
+            id: 'import_sms',
+            name: { fr: 'Import automatique SMS (MoMo/OM)', en: 'Automatic SMS Import (MoMo/OM)' },
+            included: true,
+          },
         ],
       },
       {
@@ -183,11 +335,35 @@ export const SEED_PLANS = [
           en: 'Artificial Intelligence & AI Coach Anne',
         },
         items: [
-          { id: 'coach_chat', name: { fr: 'Coach Financier IA Anne', en: 'AI Financial Coach Anne' }, included: true, highlight: true, value: { fr: '50 requêtes & 30j d’historique', en: '50 requests & 30d history' } },
-          { id: 'ai_insights', name: { fr: 'Analyses de dépenses intelligentes', en: 'Smart spending insights' }, included: true, value: { fr: 'Avancées & Prédictives', en: 'Advanced & Predictive' } },
-          { id: 'auto_budget', name: { fr: 'Génération automatique de budget IA', en: 'AI Auto-Budget generation' }, included: true, highlight: true },
-          { id: 'style_magazine', name: { fr: 'Rapport mensuel "Style Magazine"', en: 'Monthly "Style Magazine" report' }, included: true },
-          { id: 'voice_input', name: { fr: 'Commandes et saisie vocale IA', en: 'AI Voice commands & input' }, included: true },
+          {
+            id: 'coach_chat',
+            name: { fr: 'Coach Financier IA Anne', en: 'AI Financial Coach Anne' },
+            included: true,
+            highlight: true,
+            value: { fr: '50 requêtes & 30j d’historique', en: '50 requests & 30d history' },
+          },
+          {
+            id: 'ai_insights',
+            name: { fr: 'Analyses de dépenses intelligentes', en: 'Smart spending insights' },
+            included: true,
+            value: { fr: 'Avancées & Prédictives', en: 'Advanced & Predictive' },
+          },
+          {
+            id: 'auto_budget',
+            name: { fr: 'Génération automatique de budget IA', en: 'AI Auto-Budget generation' },
+            included: true,
+            highlight: true,
+          },
+          {
+            id: 'style_magazine',
+            name: { fr: 'Rapport mensuel "Style Magazine"', en: 'Monthly "Style Magazine" report' },
+            included: true,
+          },
+          {
+            id: 'voice_input',
+            name: { fr: 'Commandes et saisie vocale IA', en: 'AI Voice commands & input' },
+            included: true,
+          },
         ],
       },
       {
@@ -196,10 +372,31 @@ export const SEED_PLANS = [
           en: 'Tontines & Community Savings',
         },
         items: [
-          { id: 'tontine_join', name: { fr: 'Participation aux tontines', en: 'Join tontine groups' }, included: true, value: { fr: 'Illimité', en: 'Unlimited' } },
-          { id: 'tontine_create', name: { fr: 'Création et gestion de tontines', en: 'Create & manage tontines' }, included: true, highlight: true },
-          { id: 'tontine_auto_debit', name: { fr: 'Prélèvement automatique des cotisations', en: 'Automatic contribution debits' }, included: true },
-          { id: 'tontine_trust', name: { fr: 'Trust Score & Badge de fiabilité', en: 'Trust Score & Trust badge' }, included: true },
+          {
+            id: 'tontine_join',
+            name: { fr: 'Participation aux tontines', en: 'Join tontine groups' },
+            included: true,
+            value: { fr: 'Illimité', en: 'Unlimited' },
+          },
+          {
+            id: 'tontine_create',
+            name: { fr: 'Création et gestion de tontines', en: 'Create & manage tontines' },
+            included: true,
+            highlight: true,
+          },
+          {
+            id: 'tontine_auto_debit',
+            name: {
+              fr: 'Prélèvement automatique des cotisations',
+              en: 'Automatic contribution debits',
+            },
+            included: true,
+          },
+          {
+            id: 'tontine_trust',
+            name: { fr: 'Trust Score & Badge de fiabilité', en: 'Trust Score & Trust badge' },
+            included: true,
+          },
         ],
       },
       {
@@ -208,9 +405,26 @@ export const SEED_PLANS = [
           en: 'Kauri Wallet & Cashout',
         },
         items: [
-          { id: 'wallet', name: { fr: 'Solde Portefeuille MoMo/OM', en: 'MoMo/OM Wallet balance' }, included: true },
-          { id: 'withdrawal_fee', name: { fr: 'Frais de retrait portefeuille', en: 'Wallet cashout fees' }, included: true, highlight: true, value: { fr: '1.5% (-50% réduction)', en: '1.5% (-50% discount)' } },
-          { id: 'payment_methods', name: { fr: 'Moyens de recharge (MTN, Orange, Carte)', en: 'Top-up methods (MTN, Orange, Card)' }, included: true },
+          {
+            id: 'wallet',
+            name: { fr: 'Solde Portefeuille MoMo/OM', en: 'MoMo/OM Wallet balance' },
+            included: true,
+          },
+          {
+            id: 'withdrawal_fee',
+            name: { fr: 'Frais de retrait portefeuille', en: 'Wallet cashout fees' },
+            included: true,
+            highlight: true,
+            value: { fr: '1.5% (-50% réduction)', en: '1.5% (-50% discount)' },
+          },
+          {
+            id: 'payment_methods',
+            name: {
+              fr: 'Moyens de recharge (MTN, Orange, Carte)',
+              en: 'Top-up methods (MTN, Orange, Card)',
+            },
+            included: true,
+          },
         ],
       },
       {
@@ -219,11 +433,38 @@ export const SEED_PLANS = [
           en: 'Reseller Hub (Shared Subscriptions)',
         },
         items: [
-          { id: 'master_accounts', name: { fr: 'Services & Comptes Maîtres', en: 'Master Accounts & Services' }, included: true, highlight: true, value: { fr: '3 comptes maîtres max', en: '3 master accounts max' } },
-          { id: 'client_slots', name: { fr: 'Profils / Slots clients gérés', en: 'Managed client slots' }, included: true, value: { fr: '10 profils clients max', en: '10 profils clients max' } },
-          { id: 'vault_crypto', name: { fr: 'Coffre-fort chiffré AES-256', en: 'AES-256 Encrypted Vault' }, included: true },
-          { id: 'auto_reminders', name: { fr: 'Relances automatiques programmées (J-3/J-0)', en: 'Scheduled Auto-Reminders (D-3/D-0)' }, included: true, highlight: true },
-          { id: 'accounting_export', name: { fr: 'Exports comptables & fiscaux CSV', en: 'CSV Accounting & Tax Export' }, included: false },
+          {
+            id: 'master_accounts',
+            name: { fr: 'Services & Comptes Maîtres', en: 'Master Accounts & Services' },
+            included: true,
+            highlight: true,
+            value: { fr: '3 comptes maîtres max', en: '3 master accounts max' },
+          },
+          {
+            id: 'client_slots',
+            name: { fr: 'Profils / Slots clients gérés', en: 'Managed client slots' },
+            included: true,
+            value: { fr: '10 profils clients max', en: '10 profils clients max' },
+          },
+          {
+            id: 'vault_crypto',
+            name: { fr: 'Coffre-fort chiffré AES-256', en: 'AES-256 Encrypted Vault' },
+            included: true,
+          },
+          {
+            id: 'auto_reminders',
+            name: {
+              fr: 'Relances automatiques programmées (J-3/J-0)',
+              en: 'Scheduled Auto-Reminders (D-3/D-0)',
+            },
+            included: true,
+            highlight: true,
+          },
+          {
+            id: 'accounting_export',
+            name: { fr: 'Exports comptables & fiscaux CSV', en: 'CSV Accounting & Tax Export' },
+            included: false,
+          },
         ],
       },
       {
@@ -232,10 +473,33 @@ export const SEED_PLANS = [
           en: 'Customization & Comfort',
         },
         items: [
-          { id: 'dark_mode', name: { fr: 'Mode Sombre & Thème Kauri', en: 'Dark Mode & Kauri Theme' }, included: true },
-          { id: 'premium_themes', name: { fr: 'Thèmes exclusifs (Obsidian Gold, Polar Night...)', en: 'Exclusive themes (Obsidian Gold...)' }, included: true, highlight: true },
-          { id: 'custom_fonts', name: { fr: 'Typographies personnalisées (Outfit, Inter...)', en: 'Custom typography' }, included: true },
-          { id: 'support_priority', name: { fr: 'Support client prioritaire WhatsApp/Email', en: 'Priority WhatsApp/Email Support' }, included: true },
+          {
+            id: 'dark_mode',
+            name: { fr: 'Mode Sombre & Thème Kauri', en: 'Dark Mode & Kauri Theme' },
+            included: true,
+          },
+          {
+            id: 'premium_themes',
+            name: {
+              fr: 'Thèmes exclusifs (Obsidian Gold, Polar Night...)',
+              en: 'Exclusive themes (Obsidian Gold...)',
+            },
+            included: true,
+            highlight: true,
+          },
+          {
+            id: 'custom_fonts',
+            name: { fr: 'Typographies personnalisées (Outfit, Inter...)', en: 'Custom typography' },
+            included: true,
+          },
+          {
+            id: 'support_priority',
+            name: {
+              fr: 'Support client prioritaire WhatsApp/Email',
+              en: 'Priority WhatsApp/Email Support',
+            },
+            included: true,
+          },
         ],
       },
     ],
@@ -297,11 +561,37 @@ export const SEED_PLANS = [
           en: 'Budgeting & Expense Tracking',
         },
         items: [
-          { id: 'budgets', name: { fr: 'Nombre de budgets actifs', en: 'Active budgets limit' }, included: true, highlight: true, value: { fr: 'Illimité', en: 'Unlimited' } },
-          { id: 'goals', name: { fr: 'Objectifs d’épargne & Dettes', en: 'Saving & Debt goals' }, included: true, highlight: true, value: { fr: 'Illimité', en: 'Unlimited' } },
-          { id: 'transactions', name: { fr: 'Suivi et saisie des dépenses', en: 'Expense tracking' }, included: true, value: { fr: 'Illimité', en: 'Unlimited' } },
-          { id: 'ocr', name: { fr: 'Scan de reçus / OCR intelligent', en: 'Smart Receipt Scan / OCR' }, included: true, value: { fr: 'Illimité', en: 'Unlimited' } },
-          { id: 'import_sms', name: { fr: 'Import automatique SMS (MoMo/OM)', en: 'Automatic SMS Import (MoMo/OM)' }, included: true },
+          {
+            id: 'budgets',
+            name: { fr: 'Nombre de budgets actifs', en: 'Active budgets limit' },
+            included: true,
+            highlight: true,
+            value: { fr: 'Illimité', en: 'Unlimited' },
+          },
+          {
+            id: 'goals',
+            name: { fr: 'Objectifs d’épargne & Dettes', en: 'Saving & Debt goals' },
+            included: true,
+            highlight: true,
+            value: { fr: 'Illimité', en: 'Unlimited' },
+          },
+          {
+            id: 'transactions',
+            name: { fr: 'Suivi et saisie des dépenses', en: 'Expense tracking' },
+            included: true,
+            value: { fr: 'Illimité', en: 'Unlimited' },
+          },
+          {
+            id: 'ocr',
+            name: { fr: 'Scan de reçus / OCR intelligent', en: 'Smart Receipt Scan / OCR' },
+            included: true,
+            value: { fr: 'Illimité', en: 'Unlimited' },
+          },
+          {
+            id: 'import_sms',
+            name: { fr: 'Import automatique SMS (MoMo/OM)', en: 'Automatic SMS Import (MoMo/OM)' },
+            included: true,
+          },
         ],
       },
       {
@@ -310,11 +600,38 @@ export const SEED_PLANS = [
           en: 'Artificial Intelligence & AI Coach Anne',
         },
         items: [
-          { id: 'coach_chat', name: { fr: 'Coach Financier & Business IA Anne', en: 'AI Financial & Business Coach' }, included: true, highlight: true, value: { fr: 'Historique Illimité', en: 'Unlimited History' } },
-          { id: 'ai_insights', name: { fr: 'Analyses de rentabilité & dépenses', en: 'Profitability & Spending Analytics' }, included: true, highlight: true, value: { fr: 'Optimisation de Marge', en: 'Margin Optimization' } },
-          { id: 'auto_budget', name: { fr: 'Génération automatique de budget IA', en: 'AI Auto-Budget generation' }, included: true },
-          { id: 'style_magazine', name: { fr: 'Rapport mensuel "Style Magazine"', en: 'Monthly "Style Magazine" report' }, included: true },
-          { id: 'voice_input', name: { fr: 'Commandes et saisie vocale IA', en: 'AI Voice commands & input' }, included: true },
+          {
+            id: 'coach_chat',
+            name: { fr: 'Coach Financier & Business IA Anne', en: 'AI Financial & Business Coach' },
+            included: true,
+            highlight: true,
+            value: { fr: 'Historique Illimité', en: 'Unlimited History' },
+          },
+          {
+            id: 'ai_insights',
+            name: {
+              fr: 'Analyses de rentabilité & dépenses',
+              en: 'Profitability & Spending Analytics',
+            },
+            included: true,
+            highlight: true,
+            value: { fr: 'Optimisation de Marge', en: 'Margin Optimization' },
+          },
+          {
+            id: 'auto_budget',
+            name: { fr: 'Génération automatique de budget IA', en: 'AI Auto-Budget generation' },
+            included: true,
+          },
+          {
+            id: 'style_magazine',
+            name: { fr: 'Rapport mensuel "Style Magazine"', en: 'Monthly "Style Magazine" report' },
+            included: true,
+          },
+          {
+            id: 'voice_input',
+            name: { fr: 'Commandes et saisie vocale IA', en: 'AI Voice commands & input' },
+            included: true,
+          },
         ],
       },
       {
@@ -323,10 +640,31 @@ export const SEED_PLANS = [
           en: 'Tontines & Community Savings',
         },
         items: [
-          { id: 'tontine_join', name: { fr: 'Participation aux tontines', en: 'Join tontine groups' }, included: true, value: { fr: 'Illimité', en: 'Unlimited' } },
-          { id: 'tontine_create', name: { fr: 'Création et gestion de tontines', en: 'Create & manage tontines' }, included: true, value: { fr: '2 tontines créées max', en: '2 managed tontines max' } },
-          { id: 'tontine_auto_debit', name: { fr: 'Prélèvement automatique des cotisations', en: 'Automatic contribution debits' }, included: true },
-          { id: 'tontine_trust', name: { fr: 'Trust Score & Badge de fiabilité', en: 'Trust Score & Trust badge' }, included: true },
+          {
+            id: 'tontine_join',
+            name: { fr: 'Participation aux tontines', en: 'Join tontine groups' },
+            included: true,
+            value: { fr: 'Illimité', en: 'Unlimited' },
+          },
+          {
+            id: 'tontine_create',
+            name: { fr: 'Création et gestion de tontines', en: 'Create & manage tontines' },
+            included: true,
+            value: { fr: '2 tontines créées max', en: '2 managed tontines max' },
+          },
+          {
+            id: 'tontine_auto_debit',
+            name: {
+              fr: 'Prélèvement automatique des cotisations',
+              en: 'Automatic contribution debits',
+            },
+            included: true,
+          },
+          {
+            id: 'tontine_trust',
+            name: { fr: 'Trust Score & Badge de fiabilité', en: 'Trust Score & Trust badge' },
+            included: true,
+          },
         ],
       },
       {
@@ -335,9 +673,26 @@ export const SEED_PLANS = [
           en: 'Kauri Wallet & Cashout',
         },
         items: [
-          { id: 'wallet', name: { fr: 'Solde Portefeuille MoMo/OM', en: 'MoMo/OM Wallet balance' }, included: true },
-          { id: 'withdrawal_fee', name: { fr: 'Frais de retrait portefeuille', en: 'Wallet cashout fees' }, included: true, highlight: true, value: { fr: '1.0% (Taux VIP le plus bas)', en: '1.0% (Lowest VIP rate)' } },
-          { id: 'payment_methods', name: { fr: 'Moyens de recharge (MTN, Orange, Carte)', en: 'Top-up methods (MTN, Orange, Card)' }, included: true },
+          {
+            id: 'wallet',
+            name: { fr: 'Solde Portefeuille MoMo/OM', en: 'MoMo/OM Wallet balance' },
+            included: true,
+          },
+          {
+            id: 'withdrawal_fee',
+            name: { fr: 'Frais de retrait portefeuille', en: 'Wallet cashout fees' },
+            included: true,
+            highlight: true,
+            value: { fr: '1.0% (Taux VIP le plus bas)', en: '1.0% (Lowest VIP rate)' },
+          },
+          {
+            id: 'payment_methods',
+            name: {
+              fr: 'Moyens de recharge (MTN, Orange, Carte)',
+              en: 'Top-up methods (MTN, Orange, Card)',
+            },
+            included: true,
+          },
         ],
       },
       {
@@ -346,12 +701,56 @@ export const SEED_PLANS = [
           en: 'Reseller Hub (Pro Reseller Suite)',
         },
         items: [
-          { id: 'master_accounts', name: { fr: 'Services & Comptes Maîtres', en: 'Master Accounts & Services' }, included: true, highlight: true, value: { fr: 'Illimité', en: 'Unlimited' } },
-          { id: 'client_slots', name: { fr: 'Profils / Slots clients gérés', en: 'Managed client slots' }, included: true, highlight: true, value: { fr: '10 profils clients max', en: '10 client slots max' } },
-          { id: 'vault_crypto', name: { fr: 'Coffre-fort chiffré AES-256 militaire', en: 'Military-grade AES-256 Vault' }, included: true, highlight: true },
-          { id: 'auto_reminders', name: { fr: 'Relances programmées (J-3/J-0 & Impayés)', en: 'Automated Reminders (D-3/D-0 & Overdue)' }, included: true, highlight: true },
-          { id: 'accounting_export', name: { fr: 'Exports comptables & fiscaux CSV / Excel', en: 'CSV / Excel Accounting Export' }, included: true, highlight: true },
-          { id: 'business_analytics', name: { fr: 'KPIs en direct : MRR, Marges Nettes, Taux d’occupation', en: 'Live KPIs: MRR, Net Margins, Occupancy' }, included: true, highlight: true },
+          {
+            id: 'master_accounts',
+            name: { fr: 'Services & Comptes Maîtres', en: 'Master Accounts & Services' },
+            included: true,
+            highlight: true,
+            value: { fr: 'Illimité', en: 'Unlimited' },
+          },
+          {
+            id: 'client_slots',
+            name: { fr: 'Profils / Slots clients gérés', en: 'Managed client slots' },
+            included: true,
+            highlight: true,
+            value: { fr: '10 profils clients max', en: '10 client slots max' },
+          },
+          {
+            id: 'vault_crypto',
+            name: {
+              fr: 'Coffre-fort chiffré AES-256 militaire',
+              en: 'Military-grade AES-256 Vault',
+            },
+            included: true,
+            highlight: true,
+          },
+          {
+            id: 'auto_reminders',
+            name: {
+              fr: 'Relances programmées (J-3/J-0 & Impayés)',
+              en: 'Automated Reminders (D-3/D-0 & Overdue)',
+            },
+            included: true,
+            highlight: true,
+          },
+          {
+            id: 'accounting_export',
+            name: {
+              fr: 'Exports comptables & fiscaux CSV / Excel',
+              en: 'CSV / Excel Accounting Export',
+            },
+            included: true,
+            highlight: true,
+          },
+          {
+            id: 'business_analytics',
+            name: {
+              fr: 'KPIs en direct : MRR, Marges Nettes, Taux d’occupation',
+              en: 'Live KPIs: MRR, Net Margins, Occupancy',
+            },
+            included: true,
+            highlight: true,
+          },
         ],
       },
       {
@@ -360,10 +759,31 @@ export const SEED_PLANS = [
           en: 'VIP Customization & Comfort',
         },
         items: [
-          { id: 'dark_mode', name: { fr: 'Mode Sombre & Thème Kauri', en: 'Dark Mode & Kauri Theme' }, included: true },
-          { id: 'premium_themes', name: { fr: 'Tous les thèmes de luxe débloqués', en: 'All luxury themes unlocked' }, included: true, highlight: true },
-          { id: 'custom_fonts', name: { fr: 'Toutes les polices débloquées', en: 'All premium fonts unlocked' }, included: true },
-          { id: 'support_priority', name: { fr: 'Gestionnaire de compte & Support VIP 24/7', en: 'Dedicated Account Manager & 24/7 VIP' }, included: true, highlight: true },
+          {
+            id: 'dark_mode',
+            name: { fr: 'Mode Sombre & Thème Kauri', en: 'Dark Mode & Kauri Theme' },
+            included: true,
+          },
+          {
+            id: 'premium_themes',
+            name: { fr: 'Tous les thèmes de luxe débloqués', en: 'All luxury themes unlocked' },
+            included: true,
+            highlight: true,
+          },
+          {
+            id: 'custom_fonts',
+            name: { fr: 'Toutes les polices débloquées', en: 'All premium fonts unlocked' },
+            included: true,
+          },
+          {
+            id: 'support_priority',
+            name: {
+              fr: 'Gestionnaire de compte & Support VIP 24/7',
+              en: 'Dedicated Account Manager & 24/7 VIP',
+            },
+            included: true,
+            highlight: true,
+          },
         ],
       },
     ],
@@ -392,7 +812,9 @@ export class PlanConfigService {
         { upsert: true, new: true },
       );
     }
-    logger.info('[PlanConfigService] 3 plans bilingues synchronisés avec les tarifs 0/2000/5000 XAF, 0/5/10 EUR, 0/8/15 USD.');
+    logger.info(
+      '[PlanConfigService] 3 plans bilingues synchronisés avec les tarifs 0/2000/5000 XAF, 0/5/10 EUR, 0/8/15 USD.',
+    );
   }
 
   /**
@@ -436,4 +858,3 @@ export class PlanConfigService {
     );
   }
 }
-

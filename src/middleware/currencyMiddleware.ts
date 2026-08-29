@@ -109,4 +109,3 @@ function convertObject(obj: any, targetCurrency: string, inheritedCurrency: stri
 
   return obj;
 }
-

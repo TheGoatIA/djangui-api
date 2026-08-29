@@ -106,7 +106,7 @@ export class CoachService {
         responseMessage = `⛔ **Accès au coach suspendu** : Le nombre de tentatives de manipulation a atteint un seuil critique. Votre dossier a été transmis à l'équipe Kauri. Contactez le support.`;
         await NotificationService.sendToUser(userId, {
           title: 'Accès coach suspendu ⛔',
-          body: "Votre accès au coach Anne a été suspendu suite à des activités répétées. Contactez le support.",
+          body: 'Votre accès au coach Anne a été suspendu suite à des activités répétées. Contactez le support.',
           category: 'important',
           data: { type: 'coach_suspended_pending_review' },
         }).catch((err: any) => logger.error(`Notification erreur: ${err.message}`));
@@ -200,7 +200,9 @@ export class CoachService {
           (sum, s) => sum + (s.status !== 'vacant' ? s.price : 0),
           0,
         ),
-        overdueClientsCount: resellerSlots.filter((s) => s.status === 'overdue' || s.status === 'blocked').length,
+        overdueClientsCount: resellerSlots.filter(
+          (s) => s.status === 'overdue' || s.status === 'blocked',
+        ).length,
         dueSoonClientsCount: resellerSlots.filter((s) => s.status === 'due_soon').length,
         accounts: resellerAccounts.map((a) => ({
           service: a.serviceName,

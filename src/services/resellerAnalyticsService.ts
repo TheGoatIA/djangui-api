@@ -21,7 +21,8 @@ export class ResellerAnalyticsService {
     const totalSlotsCapacity = accounts.reduce((sum, acc) => sum + acc.maxSlots, 0);
     const occupiedSlots = slots.filter((s) => s.status !== 'vacant').length;
     const vacantSlots = Math.max(0, totalSlotsCapacity - occupiedSlots);
-    const occupancyRate = totalSlotsCapacity > 0 ? Math.round((occupiedSlots / totalSlotsCapacity) * 100) : 0;
+    const occupancyRate =
+      totalSlotsCapacity > 0 ? Math.round((occupiedSlots / totalSlotsCapacity) * 100) : 0;
 
     // Monthly Recurring Revenue (MRR)
     const mrr = slots.reduce((sum, s) => sum + (s.status !== 'vacant' ? s.price : 0), 0);

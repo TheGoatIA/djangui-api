@@ -127,7 +127,8 @@ export class FeatureFlagService {
       name: 'Argent Réel & Retraits Mobile Money',
       slug: 'feat_real_money',
       isEnabled: false,
-      description: 'Active les paiements réels Stripe/NotchPay et retraits Mobile Money (sinon mode virtuel simulation)',
+      description:
+        'Active les paiements réels Stripe/NotchPay et retraits Mobile Money (sinon mode virtuel simulation)',
     },
   ];
 
@@ -264,7 +265,9 @@ export class FeatureFlagService {
         body,
         category: 'informational',
         data: { type: 'real_money_mode_changed', isEnabled: String(enabled) },
-      }).catch((err: any) => logger.error(`Broadcast real-money-mode change error: ${err.message}`));
+      }).catch((err: any) =>
+        logger.error(`Broadcast real-money-mode change error: ${err.message}`),
+      );
     }
 
     return enabled;

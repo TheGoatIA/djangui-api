@@ -40,7 +40,9 @@ const validateEnvironment = () => {
       errors.push(`${key} est trop courte (min ${minLength} chars, reçu ${value.length})`);
     }
     if (weakDefaults.some((d) => value.toLowerCase().includes(d))) {
-      errors.push(`${key} contient une valeur par défaut faible — utiliser un secret aléatoire fort`);
+      errors.push(
+        `${key} contient une valeur par défaut faible — utiliser un secret aléatoire fort`,
+      );
     }
   }
 
@@ -59,7 +61,9 @@ const validateEnvironment = () => {
     }
     const minioAccessKey = process.env.MINIO_ACCESS_KEY;
     if (!minioAccessKey || minioAccessKey === 'kauriadmin') {
-      errors.push('MINIO_ACCESS_KEY ne doit pas utiliser la valeur par défaut "kauriadmin" en production');
+      errors.push(
+        'MINIO_ACCESS_KEY ne doit pas utiliser la valeur par défaut "kauriadmin" en production',
+      );
     }
 
     // IA
@@ -78,7 +82,9 @@ const validateEnvironment = () => {
 
     // Firebase (push notifications)
     if (!process.env.FIREBASE_SERVICE_ACCOUNT && !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-      warnings.push('FIREBASE_SERVICE_ACCOUNT non défini — les notifications push seront désactivées');
+      warnings.push(
+        'FIREBASE_SERVICE_ACCOUNT non défini — les notifications push seront désactivées',
+      );
     }
 
     // TLS en transit vers MongoDB/Redis (F23) — fail-closed par défaut : ces deux
@@ -124,15 +130,14 @@ const validateEnvironment = () => {
 
   // Bloquer le démarrage si erreurs critiques
   if (errors.length > 0) {
-    console.error('FATAL: Validation de l\'environnement échouée :');
+    console.error("FATAL: Validation de l'environnement échouée :");
     errors.forEach((e) => console.error(` ✖ ${e}`));
-    logger.error('FATAL: Validation de l\'environnement échouée', { errors });
+    logger.error("FATAL: Validation de l'environnement échouée", { errors });
     process.exit(1);
   }
 
-  console.log('[ENV] Validation de l\'environnement réussie ✓');
+  console.log("[ENV] Validation de l'environnement réussie ✓");
 };
-
 
 validateEnvironment();
 

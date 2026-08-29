@@ -20,9 +20,7 @@ describe('GoalService — collaborative goals', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    (WalletService.runInTransaction as jest.Mock).mockImplementation((fn: any) =>
-      fn(mockSession),
-    );
+    (WalletService.runInTransaction as jest.Mock).mockImplementation((fn: any) => fn(mockSession));
     (WalletService.executeTransaction as jest.Mock).mockResolvedValue({});
     (NotificationService.sendToUser as jest.Mock).mockResolvedValue(true);
     (User.findById as jest.Mock).mockReturnValue({
@@ -116,8 +114,7 @@ describe('GoalService — collaborative goals', () => {
     it('notifies every accepted participant plus the owner, deduplicated', async () => {
       (GoalParticipant.find as jest.Mock).mockReturnValue({
         select: () => ({
-          lean: () =>
-            Promise.resolve([{ userId: participantId }, { userId: 'participant2' }]),
+          lean: () => Promise.resolve([{ userId: participantId }, { userId: 'participant2' }]),
         }),
       });
       const goal = makeGoal({ progress: 55 });
@@ -145,9 +142,9 @@ describe('GoalService — collaborative goals', () => {
     it('rejects an invalid invite code with 404', async () => {
       (SavingGoal.findOne as jest.Mock).mockResolvedValue(null);
 
-      await expect(
-        GoalService.joinGoal(participantId, 'Ada', 'BADCODE'),
-      ).rejects.toMatchObject({ statusCode: 404 });
+      await expect(GoalService.joinGoal(participantId, 'Ada', 'BADCODE')).rejects.toMatchObject({
+        statusCode: 404,
+      });
     });
 
     it('reactivates a previously-removed participant instead of erroring', async () => {

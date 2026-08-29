@@ -27,7 +27,7 @@ export class InvestmentService {
       throw new AppError('Le titre est requis', 400);
     }
     if (!type || !['crypto', 'stock', 'real_estate', 'other'].includes(type)) {
-      throw new AppError('Type d\'investissement invalide', 400);
+      throw new AppError("Type d'investissement invalide", 400);
     }
     if (!Number.isFinite(initialAmount) || (initialAmount as number) <= 0) {
       throw new AppError('Montant initial invalide', 400);
@@ -65,9 +65,9 @@ export class InvestmentService {
       return { investment, transaction };
     });
 
-    (result.transaction as any)?._postCommit?.().catch((err: any) =>
-      logger.error(`Post-commit hook error: ${err.message}`),
-    );
+    (result.transaction as any)
+      ?._postCommit?.()
+      .catch((err: any) => logger.error(`Post-commit hook error: ${err.message}`));
 
     return result.investment;
   }
@@ -135,9 +135,7 @@ export class InvestmentService {
     session.startTransaction();
 
     try {
-      const investment = await Investment.findOne({ _id: investmentId, userId }).session(
-        session,
-      );
+      const investment = await Investment.findOne({ _id: investmentId, userId }).session(session);
       if (!investment) {
         throw new AppError('Investment not found', 404);
       }
@@ -158,11 +156,7 @@ export class InvestmentService {
       investment.history.push({ value: closingValue, date: new Date() });
       await investment.save({ session });
 
-      await User.findByIdAndUpdate(
-        userId,
-        { $inc: { walletBalance: closingValue } },
-        { session },
-      );
+      await User.findByIdAndUpdate(userId, { $inc: { walletBalance: closingValue } }, { session });
 
       await Transaction.create(
         [
@@ -238,9 +232,9 @@ export class InvestmentService {
       return transaction;
     });
 
-    (result as any)?._postCommit?.().catch((err: any) =>
-      logger.error(`Post-commit hook error: ${err.message}`),
-    );
+    (result as any)
+      ?._postCommit?.()
+      .catch((err: any) => logger.error(`Post-commit hook error: ${err.message}`));
 
     return true;
   }
@@ -248,7 +242,12 @@ export class InvestmentService {
   /**
    * Admin: List all investments across all users with user details and filters
    */
-  static async listAllInvestments(query: { status?: string; type?: string; page?: number; limit?: number }) {
+  static async listAllInvestments(query: {
+    status?: string;
+    type?: string;
+    page?: number;
+    limit?: number;
+  }) {
     const filter: Record<string, any> = {};
     if (query.status) filter.status = query.status;
     if (query.type) filter.type = query.type;

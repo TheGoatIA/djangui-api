@@ -5,7 +5,10 @@ import { AuthRequest } from '../middleware/auth';
 export class InvestmentController {
   static async create(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const investment = await InvestmentService.createInvestment(req.user!._id.toString(), req.body);
+      const investment = await InvestmentService.createInvestment(
+        req.user!._id.toString(),
+        req.body,
+      );
       res.status(201).json({ success: true, data: investment });
     } catch (error) {
       next(error);
@@ -41,7 +44,11 @@ export class InvestmentController {
     try {
       const { id } = req.params;
       const { value } = req.body;
-      const investment = await InvestmentService.closeInvestment(req.user!._id.toString(), id, value);
+      const investment = await InvestmentService.closeInvestment(
+        req.user!._id.toString(),
+        id,
+        value,
+      );
       res.status(200).json({ success: true, data: investment });
     } catch (error) {
       next(error);

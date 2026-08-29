@@ -20,4 +20,3 @@ router.patch('/:id', SubscriptionController.update);
 router.delete('/:id', SubscriptionController.delete);
 
 export default router;
-

@@ -20,7 +20,8 @@ const resolveChannelUrl = (): Record<SlackChannel, string | undefined> => {
     alert,
     security,
     finance: process.env.SLACK_WEBHOOK_FINANCE || base,
-    transactions: process.env.SLACK_WEBHOOK_TRANSACTIONS || process.env.SLACK_WEBHOOK_FINANCE || base,
+    transactions:
+      process.env.SLACK_WEBHOOK_TRANSACTIONS || process.env.SLACK_WEBHOOK_FINANCE || base,
   };
 };
 
@@ -105,7 +106,9 @@ export class SlackService {
         : this.WEBHOOK_URL;
 
     if (!webhookUrl || !webhookUrl.startsWith('https://hooks.slack.com/')) {
-      logger.debug('Slack Webhook URL not configured or is a placeholder. Skipping rich notification.');
+      logger.debug(
+        'Slack Webhook URL not configured or is a placeholder. Skipping rich notification.',
+      );
       return;
     }
 

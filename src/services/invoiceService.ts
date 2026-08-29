@@ -359,7 +359,6 @@ export class InvoiceService {
       logger.error(`[FINTECH] createPhysicalPDF Error: ${err.message}`);
       throw err;
     }
-
   }
 
   /**

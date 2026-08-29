@@ -37,7 +37,11 @@ export class StorageService {
    * Ensure a bucket exists, create it if not
    */
   static async ensureBucketExists(bucket: string): Promise<void> {
-    const { CreateBucketCommand, HeadBucketCommand, PutBucketPolicyCommand } = require('@aws-sdk/client-s3');
+    const {
+      CreateBucketCommand,
+      HeadBucketCommand,
+      PutBucketPolicyCommand,
+    } = require('@aws-sdk/client-s3');
     try {
       await this.getClient().send(new HeadBucketCommand({ Bucket: bucket }));
     } catch (err: any) {
@@ -72,7 +76,9 @@ export class StorageService {
           }),
         );
       } catch (policyErr: any) {
-        logger.debug(`[STORAGE] Could not set public bucket policy on ${bucket}: ${policyErr.message}`);
+        logger.debug(
+          `[STORAGE] Could not set public bucket policy on ${bucket}: ${policyErr.message}`,
+        );
       }
     }
   }

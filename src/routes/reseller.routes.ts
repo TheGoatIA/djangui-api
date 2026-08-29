@@ -1,7 +1,11 @@
 import { Router } from 'express';
 import { ResellerController } from '../controllers/resellerController';
 import { protect } from '../middleware/auth';
-import { checkAccountQuota, checkSlotQuota, requireBusinessPlan } from '../middleware/resellerQuota';
+import {
+  checkAccountQuota,
+  checkSlotQuota,
+  requireBusinessPlan,
+} from '../middleware/resellerQuota';
 
 const router = Router();
 

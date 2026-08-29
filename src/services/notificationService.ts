@@ -76,7 +76,9 @@ export class NotificationService {
 
       // Guard: Firebase may not be initialized in dev if credentials are missing
       if (!admin.apps.length) {
-        logger.debug(`[FCM] Firebase not initialized — push skipped for user ${userId}: ${payload.title}`);
+        logger.debug(
+          `[FCM] Firebase not initialized — push skipped for user ${userId}: ${payload.title}`,
+        );
         MonitoringService.recordNotificationEvent('skipped', 'firebase_not_configured');
         return;
       }
@@ -135,7 +137,9 @@ export class NotificationService {
     try {
       // Guard: Firebase may not be initialized in dev if credentials are missing
       if (!admin.apps.length) {
-        logger.debug(`[FCM] Firebase not initialized — topic push skipped (${topic}): ${payload.title}`);
+        logger.debug(
+          `[FCM] Firebase not initialized — topic push skipped (${topic}): ${payload.title}`,
+        );
         return;
       }
 

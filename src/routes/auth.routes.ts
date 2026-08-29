@@ -82,7 +82,12 @@ router.delete('/sessions', AuthController.revokeAllSessions);
 // codes for a protection that silently never activates on login.
 router.post('/2fa/setup', totpLimiter, restrictTo('admin', 'support'), AuthController.setupTotp);
 router.post('/2fa/enable', totpLimiter, restrictTo('admin', 'support'), AuthController.enableTotp);
-router.post('/2fa/disable', totpLimiter, restrictTo('admin', 'support'), AuthController.disableTotp);
+router.post(
+  '/2fa/disable',
+  totpLimiter,
+  restrictTo('admin', 'support'),
+  AuthController.disableTotp,
+);
 router.post('/logout', AuthController.logout);
 router.post('/fcm-token', AuthController.updateFCMToken);
 router.post('/link-phone', AuthController.linkPhoneNumber);

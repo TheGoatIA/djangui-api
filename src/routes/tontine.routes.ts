@@ -2,7 +2,12 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { TontineController } from '../controllers/tontineController';
 import { protect, restrictTo } from '../middleware/auth';
-import { upload, validateFileMagicBytes, uploadVoice, validateVoiceMagicBytes } from '../config/multer';
+import {
+  upload,
+  validateFileMagicBytes,
+  uploadVoice,
+  validateVoiceMagicBytes,
+} from '../config/multer';
 import { idempotency } from '../middleware/idempotency';
 import { createRateLimitHandler } from '../utils/rateLimitStore';
 
@@ -50,10 +55,7 @@ router.get('/:id/messages', TontineController.getMessages);
 router.get('/:id/export', TontineController.exportReport);
 router.get('/:id/members', TontineController.getMembers);
 router.get('/:id/contributions', TontineController.getContributions);
-router.patch(
-  '/:id/contributions/:contributionId/validate',
-  TontineController.validateContribution,
-);
+router.patch('/:id/contributions/:contributionId/validate', TontineController.validateContribution);
 router.delete('/:id/members/:memberId', TontineController.removeMember);
 router.patch('/:id/members/:memberId/auto-debit/toggle', TontineController.toggleAutoDebit);
 

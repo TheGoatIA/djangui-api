@@ -19,9 +19,15 @@ export class VaultCrypto {
     if (!masterSecret || masterSecret.length < 32) {
       // In test mode, fallback to standard test key if not set
       if (process.env.NODE_ENV === 'test') {
-        return crypto.scryptSync('test_32_bytes_vault_secret_key_kauri_2026_test', `salt_${saltId}`, 32);
+        return crypto.scryptSync(
+          'test_32_bytes_vault_secret_key_kauri_2026_test',
+          `salt_${saltId}`,
+          32,
+        );
       }
-      throw new Error('🚨 [VAULT] VAULT_ENCRYPTION_KEY manquant ou trop court (min 32 caractères requis)');
+      throw new Error(
+        '🚨 [VAULT] VAULT_ENCRYPTION_KEY manquant ou trop court (min 32 caractères requis)',
+      );
     }
     return crypto.scryptSync(masterSecret, `salt_${saltId}`, 32);
   }
@@ -65,11 +71,7 @@ export class VaultCrypto {
 
     try {
       const key = this.deriveKey(saltId);
-      const decipher = crypto.createDecipheriv(
-        this.ALGORITHM,
-        key,
-        Buffer.from(iv, 'hex'),
-      );
+      const decipher = crypto.createDecipheriv(this.ALGORITHM, key, Buffer.from(iv, 'hex'));
       decipher.setAuthTag(Buffer.from(authTag, 'hex'));
 
       let decrypted = decipher.update(ciphertext, 'hex', 'utf8');

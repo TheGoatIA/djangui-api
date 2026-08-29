@@ -36,11 +36,7 @@ export const RESELLER_LIMITS = {
  * TOCTOU race a check-then-create like this one has under concurrency) happens
  * again, under a Redis lock, in ResellerService.createMasterAccount/createSlot.
  */
-export const checkAccountQuota = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction,
-) => {
+export const checkAccountQuota = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user;
     if (!user) return next(new AppError('Authentification requise', 401));
@@ -73,11 +69,7 @@ export const checkAccountQuota = async (
 /**
  * Middleware: Verify slot/profile creation quota across all reseller's accounts
  */
-export const checkSlotQuota = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction,
-) => {
+export const checkSlotQuota = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user;
     if (!user) return next(new AppError('Authentification requise', 401));
@@ -110,11 +102,7 @@ export const checkSlotQuota = async (
 /**
  * Middleware: Requires Super Premium (Business tier) for advanced features (e.g. accounting exports)
  */
-export const requireBusinessPlan = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction,
-) => {
+export const requireBusinessPlan = async (req: AuthRequest, res: Response, next: NextFunction) => {
   const user = req.user;
   if (!user) return next(new AppError('Authentification requise', 401));
 

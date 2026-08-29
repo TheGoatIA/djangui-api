@@ -30,7 +30,11 @@ export class WebhookController {
     } catch (err: any) {
       logger.error(`Stripe Webhook Error: ${err.message}`);
       MonitoringService.recordWebhookReceived('stripe', 'unknown', 'invalid_signature');
-      MonitoringService.observeWebhookProcessingDuration('stripe', 'unknown', (Date.now() - startedAt) / 1000);
+      MonitoringService.observeWebhookProcessingDuration(
+        'stripe',
+        'unknown',
+        (Date.now() - startedAt) / 1000,
+      );
       return res.status(400).send(`Webhook Error: ${err.message}`);
     }
 
@@ -49,7 +53,11 @@ export class WebhookController {
     }
 
     MonitoringService.recordWebhookReceived('stripe', event.type, status);
-    MonitoringService.observeWebhookProcessingDuration('stripe', event.type, (Date.now() - startedAt) / 1000);
+    MonitoringService.observeWebhookProcessingDuration(
+      'stripe',
+      event.type,
+      (Date.now() - startedAt) / 1000,
+    );
 
     res.json({ received: true });
   }
@@ -65,7 +73,11 @@ export class WebhookController {
     if (!verifyNotchPaySignature(rawBody, signature, notchpayConfig.webhookSecret || '')) {
       logger.warn('Invalid NotchPay webhook signature received');
       MonitoringService.recordWebhookReceived('notchpay', 'unknown', 'invalid_signature');
-      MonitoringService.observeWebhookProcessingDuration('notchpay', 'unknown', (Date.now() - startedAt) / 1000);
+      MonitoringService.observeWebhookProcessingDuration(
+        'notchpay',
+        'unknown',
+        (Date.now() - startedAt) / 1000,
+      );
 
       const now = Date.now();
       if (now - lastInvalidSignatureAlertAt > INVALID_SIGNATURE_ALERT_COOLDOWN_MS) {
@@ -184,4 +196,3 @@ export class WebhookController {
     res.json({ received: true });
   }
 }
-

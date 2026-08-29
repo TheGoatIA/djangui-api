@@ -172,14 +172,7 @@ export class DbBackupService {
       // --drop is used to clear existing collections before restore. execFile
       // (not exec) passes these as discrete arguments — no shell involved, so
       // there's nothing for a crafted filename to break out into.
-      await execFilePromise(toolsPath, [
-        '--uri',
-        uri,
-        '--archive',
-        backupPath,
-        '--gzip',
-        '--drop',
-      ]);
+      await execFilePromise(toolsPath, ['--uri', uri, '--archive', backupPath, '--gzip', '--drop']);
 
       logger.info(`Database restored successfully from ${filename}`);
 

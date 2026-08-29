@@ -51,9 +51,7 @@ const protect = async (req: AuthRequest, res: Response, next: NextFunction) => {
 
     // 4) Check if user is active
     if (!currentUser.isActive) {
-      return next(
-        new AppError('This user account is deactivated.', 403, 'ACCOUNT_DEACTIVATED'),
-      );
+      return next(new AppError('This user account is deactivated.', 403, 'ACCOUNT_DEACTIVATED'));
     }
 
     // GRANT ACCESS TO PROTECTED ROUTE

@@ -106,17 +106,23 @@ export const validateFileMagicBytes = (req: any, res: any, next: any) => {
     fs.closeSync(fd);
 
     const isJpeg = buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
-    const isPng = buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47;
+    const isPng =
+      buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47;
     const isPdf = buffer.toString('ascii', 0, 4) === '%PDF';
-    const isWebp = buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP';
+    const isWebp =
+      buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP';
 
     if (!isJpeg && !isPng && !isPdf && !isWebp) {
-      try { fs.unlinkSync(file.path); } catch (_) {}
+      try {
+        fs.unlinkSync(file.path);
+      } catch (_) {}
       return next(new AppError('Type de fichier invalide (signature binaire non reconnue)', 400));
     }
     next();
   } catch (err: any) {
-    try { fs.unlinkSync(file.path); } catch (_) {}
+    try {
+      fs.unlinkSync(file.path);
+    } catch (_) {}
     return next(new AppError('Erreur de validation du fichier téléversé', 400));
   }
 };
@@ -140,16 +146,23 @@ export const validateVoiceMagicBytes = (req: any, res: any, next: any) => {
     const isM4a = buffer.toString('ascii', 4, 8) === 'ftyp';
     const isAdts = buffer[0] === 0xff && (buffer[1] === 0xf1 || buffer[1] === 0xf9);
     const isMp3 =
-      (buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0) || buffer.toString('ascii', 0, 3) === 'ID3';
+      (buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0) ||
+      buffer.toString('ascii', 0, 3) === 'ID3';
     const isOgg = buffer.toString('ascii', 0, 4) === 'OggS';
 
     if (!isM4a && !isAdts && !isMp3 && !isOgg) {
-      try { fs.unlinkSync(file.path); } catch (_) {}
-      return next(new AppError('Type de fichier audio invalide (signature binaire non reconnue)', 400));
+      try {
+        fs.unlinkSync(file.path);
+      } catch (_) {}
+      return next(
+        new AppError('Type de fichier audio invalide (signature binaire non reconnue)', 400),
+      );
     }
     next();
   } catch (err: any) {
-    try { fs.unlinkSync(file.path); } catch (_) {}
+    try {
+      fs.unlinkSync(file.path);
+    } catch (_) {}
     return next(new AppError('Erreur de validation du fichier audio', 400));
   }
 };

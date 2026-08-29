@@ -84,9 +84,7 @@ export class BudgetService {
     if (filters.year) query['period.year'] = parseInt(filters.year);
     if (filters.month) query['period.month'] = parseInt(filters.month);
 
-    const budgets = await Budget.find(query)
-      .sort({ 'period.year': -1, 'period.month': -1 })
-      .lean();
+    const budgets = await Budget.find(query).sort({ 'period.year': -1, 'period.month': -1 }).lean();
     return budgets.map((b) => BudgetService.withOwnerFlag(b, userId));
   }
 
@@ -144,7 +142,7 @@ export class BudgetService {
 
   static async joinBudget(userId: string, displayName: string, inviteCode: string) {
     const budget = await Budget.findOne({ inviteCode: inviteCode.toUpperCase(), isShared: true });
-    if (!budget) throw new AppError('Code d\'invitation invalide', 404);
+    if (!budget) throw new AppError("Code d'invitation invalide", 404);
 
     if (budget.userId.toString() === userId.toString()) {
       throw new AppError('Vous êtes déjà le propriétaire de ce budget', 400);
@@ -255,9 +253,7 @@ export class BudgetService {
 
     return budgets
       .map((b) => {
-        const cat = b.categories.find(
-          (c) => c.name.toLowerCase() === category.toLowerCase(),
-        );
+        const cat = b.categories.find((c) => c.name.toLowerCase() === category.toLowerCase());
         return {
           month: b.period.month,
           year: b.period.year,

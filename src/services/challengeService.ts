@@ -102,9 +102,9 @@ export class ChallengeService {
       return tx;
     });
 
-    transaction?._postCommit?.().catch((err: any) =>
-      logger.error(`Post-commit hook error: ${err.message}`),
-    );
+    transaction
+      ?._postCommit?.()
+      .catch((err: any) => logger.error(`Post-commit hook error: ${err.message}`));
 
     MonitoringService.recordChallengeEvent('unjoin', 'unknown');
     return true;
@@ -126,9 +126,8 @@ export class ChallengeService {
         throw new AppError('Challenge utilisateur non trouvé ou non autorisé', 404);
 
       if (userChallenge.status !== 'active')
-        throw new AppError('Ce challenge n\'est plus actif', 400);
-      if (userChallenge.endDate < new Date())
-        throw new AppError('Ce challenge est expiré', 400);
+        throw new AppError("Ce challenge n'est plus actif", 400);
+      if (userChallenge.endDate < new Date()) throw new AppError('Ce challenge est expiré', 400);
 
       const week = userChallenge.weeks.find((w) => w.weekNumber === weekNumber);
       if (!week) throw new AppError('Semaine non trouvée', 404);
@@ -161,9 +160,9 @@ export class ChallengeService {
       return { userChallenge, transaction };
     });
 
-    (result.transaction as any)?._postCommit?.().catch((err: any) =>
-      logger.error(`Post-commit hook error: ${err.message}`),
-    );
+    (result.transaction as any)
+      ?._postCommit?.()
+      .catch((err: any) => logger.error(`Post-commit hook error: ${err.message}`));
 
     MonitoringService.recordChallengeEvent('deposit', 'saving');
     return result.userChallenge;
@@ -183,7 +182,7 @@ export class ChallengeService {
         .populate('challengeId')
         .session(session);
       if (!uc) throw new AppError('Challenge non trouvé ou non autorisé', 404);
-      if (uc.status !== 'active') throw new AppError('Ce challenge n\'est plus actif', 400);
+      if (uc.status !== 'active') throw new AppError("Ce challenge n'est plus actif", 400);
       if (uc.endDate < new Date()) throw new AppError('Ce challenge est expiré', 400);
 
       const week = uc.weeks.find((w) => w.weekNumber === weekNumber);
@@ -215,7 +214,7 @@ export class ChallengeService {
               userId,
               amount: amountToWithdraw,
               type: 'saving_transfer',
-          category: 'challenge_stake',
+              category: 'challenge_stake',
               description: `Validation Challenge : ${challenge.title} - Semaine ${weekNumber}`,
               paymentMethod: 'wallet',
               metadata: { userChallengeId, weekNumber },
@@ -263,9 +262,9 @@ export class ChallengeService {
       return { uc, transaction, shouldAwardCompletion };
     });
 
-    result.transaction?._postCommit?.().catch((err: any) =>
-      logger.error(`Post-commit hook error: ${err.message}`),
-    );
+    result.transaction
+      ?._postCommit?.()
+      .catch((err: any) => logger.error(`Post-commit hook error: ${err.message}`));
 
     // Gamification : effet secondaire non-critique, hors transaction. Une
     // erreur ici ne doit pas annuler la validation de la semaine déjà actée.
@@ -323,9 +322,9 @@ export class ChallengeService {
       return { redeemedAmount, userChallenge: uc, transaction };
     });
 
-    (result.transaction as any)?._postCommit?.().catch((err: any) =>
-      logger.error(`Post-commit hook error: ${err.message}`),
-    );
+    (result.transaction as any)
+      ?._postCommit?.()
+      .catch((err: any) => logger.error(`Post-commit hook error: ${err.message}`));
 
     MonitoringService.recordChallengeEvent('redeem', 'unknown');
     return { redeemedAmount: result.redeemedAmount, userChallenge: result.userChallenge };

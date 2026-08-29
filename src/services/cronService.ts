@@ -1207,7 +1207,8 @@ export class CronService {
       const overdueSlots = await SharedSlot.find({ status: 'overdue' });
       for (const slot of overdueSlots) {
         const graceDeadline = new Date(
-          new Date(slot.currentPeriodEnd).getTime() + (slot.gracePeriodDays || 2) * 24 * 60 * 60 * 1000,
+          new Date(slot.currentPeriodEnd).getTime() +
+            (slot.gracePeriodDays || 2) * 24 * 60 * 60 * 1000,
         );
         if (now > graceDeadline) {
           slot.status = 'blocked';

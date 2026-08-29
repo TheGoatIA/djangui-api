@@ -118,11 +118,7 @@ export class BudgetController {
 
   static async removeParticipant(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      await BudgetService.removeParticipant(
-        req.params.id,
-        req.user._id,
-        req.params.participantId,
-      );
+      await BudgetService.removeParticipant(req.params.id, req.user._id, req.params.participantId);
       res.status(204).json({ success: true, data: null });
     } catch (err) {
       next(err);

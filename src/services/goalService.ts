@@ -152,9 +152,9 @@ export class GoalService {
       return { goal, transaction, before };
     });
 
-    (result.transaction as any)?._postCommit?.().catch((err: any) =>
-      logger.error(`Post-commit hook error: ${err.message}`),
-    );
+    (result.transaction as any)
+      ?._postCommit?.()
+      .catch((err: any) => logger.error(`Post-commit hook error: ${err.message}`));
 
     // Check for milestones
     this.checkMilestones(
@@ -329,9 +329,9 @@ export class GoalService {
       return { goal, transaction };
     });
 
-    result.transaction?._postCommit?.().catch((err: any) =>
-      logger.error(`Post-commit hook error: ${err.message}`),
-    );
+    result.transaction
+      ?._postCommit?.()
+      .catch((err: any) => logger.error(`Post-commit hook error: ${err.message}`));
 
     MonitoringService.recordGoalEvent('delete', result.goal.type || 'unknown');
     return true;
@@ -394,9 +394,9 @@ export class GoalService {
       return { goal, transaction };
     });
 
-    (result.transaction as any)?._postCommit?.().catch((err: any) =>
-      logger.error(`Post-commit hook error: ${err.message}`),
-    );
+    (result.transaction as any)
+      ?._postCommit?.()
+      .catch((err: any) => logger.error(`Post-commit hook error: ${err.message}`));
 
     MonitoringService.recordGoalEvent('redeem', result.goal.type || 'unknown', 'success');
 

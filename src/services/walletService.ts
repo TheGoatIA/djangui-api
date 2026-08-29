@@ -44,8 +44,27 @@ const getUserLimits = (user: {
   const rate = CurrencyService.getRate('XAF', userCurrency);
   const symbol = CurrencyService.getSymbol(userCurrency);
 
-  const isZeroDecimal = ['XAF', 'XOF', 'JPY', 'CLP', 'GNF', 'KRW', 'PYG', 'VND', 'BIF', 'DJF', 'ISK', 'KMF', 'MGA', 'RWF', 'UGX', 'VUV', 'XPF'].includes(userCurrency);
-  const roundLimit = (val: number) => isZeroDecimal ? Math.round(val) : Math.round(val * 100) / 100;
+  const isZeroDecimal = [
+    'XAF',
+    'XOF',
+    'JPY',
+    'CLP',
+    'GNF',
+    'KRW',
+    'PYG',
+    'VND',
+    'BIF',
+    'DJF',
+    'ISK',
+    'KMF',
+    'MGA',
+    'RWF',
+    'UGX',
+    'VUV',
+    'XPF',
+  ].includes(userCurrency);
+  const roundLimit = (val: number) =>
+    isZeroDecimal ? Math.round(val) : Math.round(val * 100) / 100;
 
   return {
     MAX_SINGLE_TRANSACTION: roundLimit(baseLimits.MAX_SINGLE_TRANSACTION * rate),
@@ -71,7 +90,9 @@ export class WalletService {
    * documents *inside* `fn` so a retry re-reads fresh state instead of
    * re-applying an in-memory mutation twice.
    */
-  static async runInTransaction<T>(fn: (session: mongoose.ClientSession) => Promise<T>): Promise<T> {
+  static async runInTransaction<T>(
+    fn: (session: mongoose.ClientSession) => Promise<T>,
+  ): Promise<T> {
     const session = await mongoose.startSession();
     try {
       let result: T = undefined as any;

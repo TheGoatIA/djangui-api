@@ -259,7 +259,7 @@ export class TontineService {
     // anyone already in the rotation once the tontine has started.
     if (tontine.status === 'active' && (member as any).rotationOrder != null) {
       throw new AppError(
-        "Ce membre ne peut pas être retiré : la tontine est active et son tour de versement est déjà planifié. Attendez la fin du cycle, ou contactez le support pour un remboursement manuel.",
+        'Ce membre ne peut pas être retiré : la tontine est active et son tour de versement est déjà planifié. Attendez la fin du cycle, ou contactez le support pour un remboursement manuel.',
         400,
       );
     }
@@ -363,15 +363,16 @@ export class TontineService {
       member.hasPaidSocialFund = true;
       await member.save({ session });
 
-      tontine.socialFund.totalCollected = (tontine.socialFund.totalCollected || 0) + convertedAmount;
+      tontine.socialFund.totalCollected =
+        (tontine.socialFund.totalCollected || 0) + convertedAmount;
       await tontine.save({ session });
 
       return { tx, member };
     });
 
-    (result.tx as any)._postCommit?.().catch((err: any) =>
-      logger.error(`Post-commit hook error: ${err.message}`),
-    );
+    (result.tx as any)
+      ._postCommit?.()
+      .catch((err: any) => logger.error(`Post-commit hook error: ${err.message}`));
 
     return result.member;
   }
@@ -460,9 +461,9 @@ export class TontineService {
         });
 
         if (tx) {
-          (tx as any)._postCommit?.().catch((err: any) =>
-            logger.error(`Post-commit hook error: ${err.message}`),
-          );
+          (tx as any)
+            ._postCommit?.()
+            .catch((err: any) => logger.error(`Post-commit hook error: ${err.message}`));
         }
       } catch (err: any) {
         // Solde insuffisant ou autre échec ponctuel : on logue et on continue
@@ -494,9 +495,7 @@ export class TontineService {
     // Same lookup rotateTurn uses to pick who gets paid this turn — surfaced
     // here so the app can show "who receives this turn's pot" instead of
     // leaving members to guess or check off-app.
-    const beneficiary = members.find(
-      (m) => (m as any).rotationOrder === tontine?.currentTurn,
-    );
+    const beneficiary = members.find((m) => (m as any).rotationOrder === tontine?.currentTurn);
 
     return {
       collectedAmount: contributions.reduce((s, c) => s + c.amountPaid, 0),
@@ -628,9 +627,9 @@ export class TontineService {
     });
 
     if (result.transaction) {
-      result.transaction._postCommit?.().catch((err: any) =>
-        logger.error(`Post-commit hook error: ${err.message}`),
-      );
+      result.transaction
+        ._postCommit?.()
+        .catch((err: any) => logger.error(`Post-commit hook error: ${err.message}`));
       InvoiceService.generateForTransaction(result.transaction._id.toString()).catch((err: any) =>
         logger.error(`Invoice generation error: ${err.message}`),
       );
@@ -722,11 +721,16 @@ export class TontineService {
         title: '',
         body: '',
         translationKey:
-          decision === 'approve' ? 'TONTINE_CONTRIBUTION_VALIDATED' : 'TONTINE_CONTRIBUTION_REJECTED',
+          decision === 'approve'
+            ? 'TONTINE_CONTRIBUTION_VALIDATED'
+            : 'TONTINE_CONTRIBUTION_REJECTED',
         translationData: { turn: contribution.turnIndex, tontineName: tontine.name },
         data: {
           tontineId,
-          type: decision === 'approve' ? 'TONTINE_CONTRIBUTION_VALIDATED' : 'TONTINE_CONTRIBUTION_REJECTED',
+          type:
+            decision === 'approve'
+              ? 'TONTINE_CONTRIBUTION_VALIDATED'
+              : 'TONTINE_CONTRIBUTION_REJECTED',
         },
       }).catch((err) => logger.error(`Contribution validation notification error: ${err.message}`));
     }
@@ -760,7 +764,11 @@ export class TontineService {
     const sender = await User.findById(senderId).select('firstName lastName');
     const senderName = sender ? `${sender.firstName} ${sender.lastName}`.trim() : 'Un membre';
     const preview =
-      type === 'audio' ? '🎤 Note vocale' : content.length > 60 ? `${content.slice(0, 57)}...` : content;
+      type === 'audio'
+        ? '🎤 Note vocale'
+        : content.length > 60
+          ? `${content.slice(0, 57)}...`
+          : content;
 
     TontineMember.find({ tontineId, invitationStatus: 'accepted' })
       .then((members) => {
@@ -777,7 +785,9 @@ export class TontineService {
             }).catch((err: any) => logger.error(`New message notification error: ${err.message}`));
           });
       })
-      .catch((err: any) => logger.error(`Failed to list tontine members for notification: ${err.message}`));
+      .catch((err: any) =>
+        logger.error(`Failed to list tontine members for notification: ${err.message}`),
+      );
 
     return message;
   }
@@ -866,9 +876,9 @@ export class TontineService {
             });
 
             if (result) {
-              (result.tx as any)._postCommit?.().catch((err: any) =>
-                logger.error(`Post-commit hook error: ${err.message}`),
-              );
+              (result.tx as any)
+                ._postCommit?.()
+                .catch((err: any) => logger.error(`Post-commit hook error: ${err.message}`));
               InvoiceService.generateForTransaction(result.tx._id.toString()).catch((err: any) =>
                 logger.error(`Invoice generation error: ${err.message}`),
               );
@@ -943,11 +953,7 @@ export class TontineService {
     // compares objects by reference, so it never matched — every member could vote
     // an unlimited number of times. Compare by string value instead.
     if (vote.voters.some((v) => v.toString() === userId)) throw new AppError('Déjà voté', 400);
-    if (
-      !Number.isInteger(optionIndex) ||
-      optionIndex < 0 ||
-      optionIndex >= vote.options.length
-    ) {
+    if (!Number.isInteger(optionIndex) || optionIndex < 0 || optionIndex >= vote.options.length) {
       throw new AppError('Option de vote invalide', 400);
     }
     if (vote.status === 'closed' || vote.expiresAt < new Date()) {

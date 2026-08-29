@@ -12,7 +12,12 @@ import { AuditService } from './auditService';
 import Country from '../models/Country';
 import redis from '../config/redis';
 import { hashToken } from '../utils/cryptoUtils';
-import { generateBase32Secret, generateOtpauthUrl, verifyTotp, generateBackupCodes } from '../utils/totp';
+import {
+  generateBase32Secret,
+  generateOtpauthUrl,
+  verifyTotp,
+  generateBackupCodes,
+} from '../utils/totp';
 
 const signToken = (id: string, secret: string, expiresIn: any) => {
   return jwt.sign({ id }, secret, {
@@ -328,7 +333,9 @@ export class AuthService {
     }
 
     // Successful login clears the counter for this account.
-    redis.del(lockKey).catch((err: any) => logger.error(`Login lockout clear Redis error: ${err.message}`));
+    redis
+      .del(lockKey)
+      .catch((err: any) => logger.error(`Login lockout clear Redis error: ${err.message}`));
 
     // 2FA is opt-in and currently only ever surfaced to admin/support
     // accounts (via the admin dashboard's Settings page) — never forced on
@@ -429,7 +436,12 @@ export class AuthService {
     user.security.backupCodeHashes = backupCodeHashes;
     await (user as any).save({ validateBeforeSave: false });
 
-    AuditService.record({ userId: user._id as any, action: '2FA_ENABLED', resource: 'USER', status: 'success' });
+    AuditService.record({
+      userId: user._id as any,
+      action: '2FA_ENABLED',
+      resource: 'USER',
+      status: 'success',
+    });
     return { backupCodes };
   }
 
@@ -437,7 +449,9 @@ export class AuthService {
     if (typeof code !== 'string' || !code) {
       throw new AppError('Code de vérification requis', 400);
     }
-    const user = await User.findById(userId).select('+security.totpSecret +security.backupCodeHashes');
+    const user = await User.findById(userId).select(
+      '+security.totpSecret +security.backupCodeHashes',
+    );
     if (!user?.security?.totpEnabled) {
       throw new AppError("La double authentification n'est pas activée", 400);
     }
@@ -460,7 +474,12 @@ export class AuthService {
     user.security.backupCodeHashes = [];
     await (user as any).save({ validateBeforeSave: false });
 
-    AuditService.record({ userId: user._id as any, action: '2FA_DISABLED', resource: 'USER', status: 'success' });
+    AuditService.record({
+      userId: user._id as any,
+      action: '2FA_DISABLED',
+      resource: 'USER',
+      status: 'success',
+    });
     return { success: true };
   }
 
@@ -500,7 +519,9 @@ export class AuthService {
     // Sécurité Fintech : Limitation stricte à 3 sessions simultanées maximum
     if (user.sessions.length > MAX_ACTIVE_SESSIONS) {
       user.sessions.sort(
-        (a, b) => new Date(a.lastActive || a.createdAt).getTime() - new Date(b.lastActive || b.createdAt).getTime(),
+        (a, b) =>
+          new Date(a.lastActive || a.createdAt).getTime() -
+          new Date(b.lastActive || b.createdAt).getTime(),
       );
       while (user.sessions.length > MAX_ACTIVE_SESSIONS) {
         user.sessions.shift();
@@ -848,7 +869,10 @@ export class AuthService {
     await Promise.all([
       // Transactions manuelles supprimées, transactions financières réelles anonymisées
       Transaction.deleteMany({ userId, paymentMethod: 'cash' }),
-      Transaction.updateMany({ userId }, { $set: { userId: null, description: 'Anonymized User Transaction' } }),
+      Transaction.updateMany(
+        { userId },
+        { $set: { userId: null, description: 'Anonymized User Transaction' } },
+      ),
       // Rétention AML légale de 5 ans : Payment anonymisé (détachement de userId et PII)
       Payment.updateMany({ userId }, { $set: { userId: null, 'metadata.anonymized': true } }),
       // Nettoyage des collections associées (droit à l'oubli complet)

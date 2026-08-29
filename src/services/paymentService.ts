@@ -57,7 +57,10 @@ export class PaymentService {
    * otherwise a client can request an arbitrary (e.g. near-zero) checkout amount and
    * still be granted Premium once the payment completes.
    */
-    private static getBusinessSubscriptionPrice(countryCode?: string | null): { amount: number; currency: string } {
+  private static getBusinessSubscriptionPrice(countryCode?: string | null): {
+    amount: number;
+    currency: string;
+  } {
     switch (countryCode) {
       case 'FR':
       case 'BE':
@@ -75,7 +78,10 @@ export class PaymentService {
     }
   }
 
-  private static getSubscriptionPrice(countryCode?: string | null): { amount: number; currency: string } {
+  private static getSubscriptionPrice(countryCode?: string | null): {
+    amount: number;
+    currency: string;
+  } {
     switch (countryCode) {
       case 'FR':
       case 'BE':
@@ -121,7 +127,7 @@ export class PaymentService {
     // user actually is (see FeatureFlagService.getRealMoneyCountries).
     if (!(await FeatureFlagService.isCountryAllowedForRealMoney(user.country))) {
       throw new AppError(
-        "Les paiements réels ne sont pas encore disponibles dans votre pays.",
+        'Les paiements réels ne sont pas encore disponibles dans votre pays.',
         400,
       );
     }
@@ -143,7 +149,9 @@ export class PaymentService {
     // client-supplied amount is what's actually charged and credited, which is safe.
     const { amount, currency } =
       type === 'subscription'
-        ? (plan === 'business' ? this.getBusinessSubscriptionPrice(user.country) : this.getSubscriptionPrice(user.country))
+        ? plan === 'business'
+          ? this.getBusinessSubscriptionPrice(user.country)
+          : this.getSubscriptionPrice(user.country)
         : { amount: clientAmount, currency: user.currency || 'USD' };
 
     let session; // Declare session outside try block for wider scope
@@ -156,7 +164,10 @@ export class PaymentService {
             price_data: {
               currency: currency.toLowerCase(),
               product_data: {
-                name: type === 'subscription' ? `Kauri ${plan === 'business' ? 'Super Premium (Business)' : 'Premium'}` : 'Wallet Deposit',
+                name:
+                  type === 'subscription'
+                    ? `Kauri ${plan === 'business' ? 'Super Premium (Business)' : 'Premium'}`
+                    : 'Wallet Deposit',
               },
               unit_amount: this.formatAmount(amount, currency),
             },
@@ -262,7 +273,12 @@ export class PaymentService {
     // withdrawals were checked) — velocity and deposit-clustering rules now
     // apply here too. See FraudService for the exact heuristics.
     if (type === 'deposit') {
-      const fraud = await FraudService.assess(userIdStr, clientAmount, 'deposit', user.currency || 'XAF');
+      const fraud = await FraudService.assess(
+        userIdStr,
+        clientAmount,
+        'deposit',
+        user.currency || 'XAF',
+      );
       if (fraud.block) {
         throw new AppError(
           'Opération temporairement suspendue par notre système de sécurité. Veuillez contacter le support.',
@@ -276,7 +292,9 @@ export class PaymentService {
     // Same rule as Stripe: subscription price is fixed server-side, never client-supplied.
     const { amount, currency } =
       type === 'subscription'
-        ? (plan === 'business' ? this.getBusinessSubscriptionPrice(user.country) : this.getSubscriptionPrice(user.country))
+        ? plan === 'business'
+          ? this.getBusinessSubscriptionPrice(user.country)
+          : this.getSubscriptionPrice(user.country)
         : { amount: clientAmount, currency: user.currency || 'XAF' };
 
     const start = Date.now();
@@ -289,7 +307,10 @@ export class PaymentService {
           email: user.email,
           phone: finalPhone,
         },
-        description: type === 'subscription' ? `Abonnement Kauri ${plan === 'business' ? 'Super Premium (Business)' : 'Premium'}` : 'Recharge Portefeuille',
+        description:
+          type === 'subscription'
+            ? `Abonnement Kauri ${plan === 'business' ? 'Super Premium (Business)' : 'Premium'}`
+            : 'Recharge Portefeuille',
         reference,
         callback: `${process.env.SERVER_URL || `http://localhost:${process.env.PORT || 5000}`}/payment/success?ref=${reference}`,
       });
@@ -387,13 +408,15 @@ export class PaymentService {
           { session },
         );
       } else if (payment.type === 'subscription') {
-        const targetPlan = (payment.metadata && payment.metadata.plan) || (payment.amount >= 4000 ? 'business' : 'premium');
-          logger.info(`Upgrading user ${payment.userId} to ${targetPlan}...`);
+        const targetPlan =
+          (payment.metadata && payment.metadata.plan) ||
+          (payment.amount >= 4000 ? 'business' : 'premium');
+        logger.info(`Upgrading user ${payment.userId} to ${targetPlan}...`);
 
-          await User.findByIdAndUpdate(
-            payment.userId,
-            {
-              'subscription.plan': targetPlan,
+        await User.findByIdAndUpdate(
+          payment.userId,
+          {
+            'subscription.plan': targetPlan,
             'subscription.status': 'active',
             'subscription.startDate': new Date(),
             'subscription.endDate': new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
@@ -415,9 +438,9 @@ export class PaymentService {
     // Post-commit side effects: the transaction above has committed, so it's now
     // safe to generate invoices / fire the wallet transaction's own notification.
     if (payment.type === 'deposit' && walletTransaction) {
-      (walletTransaction as any)._postCommit?.().catch((err: any) =>
-        logger.error(`Post-commit hook error: ${err.message}`),
-      );
+      (walletTransaction as any)
+        ._postCommit?.()
+        .catch((err: any) => logger.error(`Post-commit hook error: ${err.message}`));
       await InvoiceService.generateForTransaction(walletTransaction._id.toString());
     } else if (payment.type === 'subscription') {
       await InvoiceService.generateForPayment(payment._id.toString());
@@ -526,7 +549,10 @@ export class PaymentService {
     const user = await User.findById(userIdStr);
     if (!user) throw new AppError('User not found', 404);
 
-    const priceInfo = plan === 'business' ? this.getBusinessSubscriptionPrice(user.country) : this.getSubscriptionPrice(user.country);
+    const priceInfo =
+      plan === 'business'
+        ? this.getBusinessSubscriptionPrice(user.country)
+        : this.getSubscriptionPrice(user.country);
     const amount = priceInfo.amount;
     const currency = priceInfo.currency;
 

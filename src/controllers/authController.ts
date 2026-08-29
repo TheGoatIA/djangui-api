@@ -292,8 +292,7 @@ export class AuthController {
     try {
       const refreshToken = req.body?.refreshToken || req.cookies?.refresh_token;
       // Extract the access token to blacklist it immediately in Redis
-      const accessToken =
-        req.headers.authorization?.split(' ')[1] || req.cookies?.access_token;
+      const accessToken = req.headers.authorization?.split(' ')[1] || req.cookies?.access_token;
       await AuthService.logout(req.user._id, refreshToken, accessToken);
 
       clearAuthCookies(res);

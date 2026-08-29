@@ -30,7 +30,10 @@ export class KYCService {
 
     // Bloquer la re-soumission si le KYC est déjà validé
     if (user.kycLevel === 'verified') {
-      throw new AppError('Votre identité est déjà vérifiée. Aucune nouvelle soumission n\'est nécessaire.', 400);
+      throw new AppError(
+        "Votre identité est déjà vérifiée. Aucune nouvelle soumission n'est nécessaire.",
+        400,
+      );
     }
 
     // Whitelist des champs autorisés pour éviter l'injection de champs sensibles
@@ -151,7 +154,11 @@ export class KYCService {
         false,
       );
 
-      MonitoringService.observeKycDuration('ai_analysis', 'gemini', (Date.now() - startedAt) / 1000);
+      MonitoringService.observeKycDuration(
+        'ai_analysis',
+        'gemini',
+        (Date.now() - startedAt) / 1000,
+      );
       MonitoringService.recordUserVerification('ai_analysis', 'success');
     } catch (error: any) {
       const errorMsg = error.response
@@ -168,7 +175,11 @@ export class KYCService {
         true,
       );
 
-      MonitoringService.observeKycDuration('ai_analysis', 'gemini', (Date.now() - startedAt) / 1000);
+      MonitoringService.observeKycDuration(
+        'ai_analysis',
+        'gemini',
+        (Date.now() - startedAt) / 1000,
+      );
       MonitoringService.recordUserVerification('ai_analysis', 'failure');
     }
   }
@@ -208,7 +219,11 @@ export class KYCService {
   /**
    * Validation manuelle par un admin (Point de décision final)
    */
-  static async adminVerify(userId: string, status: 'verified' | 'rejected' | 'expired' | 'update_required', reason?: string) {
+  static async adminVerify(
+    userId: string,
+    status: 'verified' | 'rejected' | 'expired' | 'update_required',
+    reason?: string,
+  ) {
     const user = await User.findById(userId);
     if (!user) throw new AppError('Utilisateur non trouvé', 404);
 
@@ -264,8 +279,15 @@ export class KYCService {
         return 'image/jpeg';
       }
       if (
-        buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46 &&
-        buffer.length >= 12 && buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50
+        buffer[0] === 0x52 &&
+        buffer[1] === 0x49 &&
+        buffer[2] === 0x46 &&
+        buffer[3] === 0x46 &&
+        buffer.length >= 12 &&
+        buffer[8] === 0x57 &&
+        buffer[9] === 0x45 &&
+        buffer[10] === 0x42 &&
+        buffer[11] === 0x50
       ) {
         return 'image/webp';
       }

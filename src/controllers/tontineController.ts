@@ -207,7 +207,8 @@ export class TontineController {
 
       res.status(201).json({
         status: 'success',
-        message: 'Cotisation reçue, en attente de validation manuelle par le créateur de la tontine.',
+        message:
+          'Cotisation reçue, en attente de validation manuelle par le créateur de la tontine.',
         data: contribution,
       });
     } catch (error) {

@@ -394,10 +394,10 @@ export interface ISharedMasterAccount {
   resellerId: mongoose.Types.ObjectId;
   // Service identity
   serviceName: string;
-  servicePreset?: string;        // Catalogue slug (e.g. 'netflix', 'spotify')
+  servicePreset?: string; // Catalogue slug (e.g. 'netflix', 'spotify')
   category: ResellerServiceCategory;
   iconUrl?: string;
-  brandColor?: string;           // Hex color for UI theming (e.g. '#E50914')
+  brandColor?: string; // Hex color for UI theming (e.g. '#E50914')
   // Billing (revendeur → fournisseur)
   billingCost: number;
   billingCurrency: string;
@@ -416,7 +416,7 @@ export interface ISharedMasterAccount {
 export interface ISharedSlot {
   masterAccountId: mongoose.Types.ObjectId;
   resellerId: mongoose.Types.ObjectId;
-  profileName: string;            // E.g. 'Profil 1 - Paul'
+  profileName: string; // E.g. 'Profil 1 - Paul'
   // Encrypted PIN (optional profile PIN)
   encryptedPin?: string;
   pinIv?: string;
@@ -424,9 +424,9 @@ export interface ISharedSlot {
   // Client info
   client: {
     fullName: string;
-    phone: string;                // E.164 format (+237699...)
+    phone: string; // E.164 format (+237699...)
     email?: string;
-    whatsappNumber?: string;      // If different from phone
+    whatsappNumber?: string; // If different from phone
     preferredReminderChannel: ReminderChannel;
     notes?: string;
   };
@@ -437,10 +437,10 @@ export interface ISharedSlot {
   // Period management
   startDate: Date;
   currentPeriodStart: Date;
-  currentPeriodEnd: Date;         // Client's expiry date
-  gracePeriodDays: number;        // Default: 2
+  currentPeriodEnd: Date; // Client's expiry date
+  gracePeriodDays: number; // Default: 2
   // Reminder automation
-  autoSendReminders: boolean;     // Enabled for premium/business
+  autoSendReminders: boolean; // Enabled for premium/business
   lastReminderSentAt?: Date;
   lastReminderType?: 'J-3' | 'J-0' | 'OVERDUE';
   status: SlotStatus;

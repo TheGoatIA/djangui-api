@@ -174,7 +174,7 @@ export class AdminController {
     }
   }
 
-    // 2. Comprehensive Real-time System Health (Mongo, Redis, MinIO, NotchPay, Gemini, Email, Firebase, Slack, Server)
+  // 2. Comprehensive Real-time System Health (Mongo, Redis, MinIO, NotchPay, Gemini, Email, Firebase, Slack, Server)
   static async getSystemHealth(req: Request, res: Response, next: NextFunction) {
     try {
       const startTime = Date.now();
@@ -215,10 +215,17 @@ export class AdminController {
 
       // 3. MinIO / S3 Storage Check
       let storageStatus = 'operational';
-      let storageDetails: any = { provider: process.env.STORAGE_PROVIDER || 'minio', bucket: process.env.S3_BUCKET || 'kauri-uploads' };
+      let storageDetails: any = {
+        provider: process.env.STORAGE_PROVIDER || 'minio',
+        bucket: process.env.S3_BUCKET || 'kauri-uploads',
+      };
       try {
         const hasStorageCreds = Boolean(
-          process.env.S3_ACCESS_KEY || process.env.MINIO_ACCESS_KEY || process.env.AWS_ACCESS_KEY_ID || process.env.MINIO_ENDPOINT || process.env.S3_ENDPOINT
+          process.env.S3_ACCESS_KEY ||
+          process.env.MINIO_ACCESS_KEY ||
+          process.env.AWS_ACCESS_KEY_ID ||
+          process.env.MINIO_ENDPOINT ||
+          process.env.S3_ENDPOINT,
         );
         if (!hasStorageCreds) {
           storageStatus = 'not_configured';
@@ -230,7 +237,9 @@ export class AdminController {
       // 4. NotchPay Gateway Check & Live Balance
       let notchpayStatus = 'not_configured';
       let notchpayDetails: any = { configured: false };
-      const notchpayConfigured = Boolean(process.env.NOTCHPAY_PUBLIC_KEY && process.env.NOTCHPAY_PRIVATE_KEY);
+      const notchpayConfigured = Boolean(
+        process.env.NOTCHPAY_PUBLIC_KEY && process.env.NOTCHPAY_PRIVATE_KEY,
+      );
       if (notchpayConfigured) {
         try {
           const npRes = await notchpayAdminApi.get('/balance');
@@ -258,13 +267,19 @@ export class AdminController {
 
       // 6. Email / SMTP Service
       const emailConfigured = Boolean(
-        process.env.SMTP_HOST || process.env.EMAIL_HOST || process.env.BREVO_API_KEY || process.env.RESEND_API_KEY || process.env.SENDGRID_API_KEY
+        process.env.SMTP_HOST ||
+        process.env.EMAIL_HOST ||
+        process.env.BREVO_API_KEY ||
+        process.env.RESEND_API_KEY ||
+        process.env.SENDGRID_API_KEY,
       );
       const emailStatus = emailConfigured ? 'operational' : 'not_configured';
 
       // 7. Firebase Cloud Messaging (Push notifications)
       const firebaseConfigured = Boolean(
-        process.env.FIREBASE_SERVICE_ACCOUNT || process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.FIREBASE_PROJECT_ID
+        process.env.FIREBASE_SERVICE_ACCOUNT ||
+        process.env.GOOGLE_APPLICATION_CREDENTIALS ||
+        process.env.FIREBASE_PROJECT_ID,
       );
       const firebaseStatus = firebaseConfigured ? 'operational' : 'not_configured';
 
@@ -274,19 +289,82 @@ export class AdminController {
 
       // Service List with Metadata
       const services = [
-        { id: 'mongo', name: 'Base de Données Principale', tech: 'MongoDB', status: mongoStatus, latencyMs: mongoLatencyMs, critical: true, icon: 'database' },
-        { id: 'redis', name: 'Cache & Files d\'attente', tech: 'Redis', status: redisStatus, latencyMs: redisLatencyMs, critical: true, icon: 'zap' },
-        { id: 'storage', name: 'Stockage Documents & Médias', tech: 'MinIO / S3', status: storageStatus, details: storageDetails, critical: true, icon: 'hard-drive' },
-        { id: 'notchpay', name: 'Passerelle Paiements & MoMo', tech: 'NotchPay API', status: notchpayStatus, details: notchpayDetails, critical: true, icon: 'credit-card' },
-        { id: 'gemini', name: 'Moteur d\'Intelligence Artificielle', tech: 'Google Gemini Pro', status: geminiStatus, critical: false, icon: 'brain' },
-        { id: 'email', name: 'Service d\'E-mails Transactionnels', tech: 'SMTP / Mailer', status: emailStatus, critical: false, icon: 'mail' },
-        { id: 'firebase', name: 'Notifications Push Mobiles', tech: 'Firebase FCM', status: firebaseStatus, critical: false, icon: 'bell' },
-        { id: 'slack', name: 'Canal d\'Alertes Incidents', tech: 'Slack Webhook', status: slackStatus, critical: false, icon: 'message-square' },
+        {
+          id: 'mongo',
+          name: 'Base de Données Principale',
+          tech: 'MongoDB',
+          status: mongoStatus,
+          latencyMs: mongoLatencyMs,
+          critical: true,
+          icon: 'database',
+        },
+        {
+          id: 'redis',
+          name: "Cache & Files d'attente",
+          tech: 'Redis',
+          status: redisStatus,
+          latencyMs: redisLatencyMs,
+          critical: true,
+          icon: 'zap',
+        },
+        {
+          id: 'storage',
+          name: 'Stockage Documents & Médias',
+          tech: 'MinIO / S3',
+          status: storageStatus,
+          details: storageDetails,
+          critical: true,
+          icon: 'hard-drive',
+        },
+        {
+          id: 'notchpay',
+          name: 'Passerelle Paiements & MoMo',
+          tech: 'NotchPay API',
+          status: notchpayStatus,
+          details: notchpayDetails,
+          critical: true,
+          icon: 'credit-card',
+        },
+        {
+          id: 'gemini',
+          name: "Moteur d'Intelligence Artificielle",
+          tech: 'Google Gemini Pro',
+          status: geminiStatus,
+          critical: false,
+          icon: 'brain',
+        },
+        {
+          id: 'email',
+          name: "Service d'E-mails Transactionnels",
+          tech: 'SMTP / Mailer',
+          status: emailStatus,
+          critical: false,
+          icon: 'mail',
+        },
+        {
+          id: 'firebase',
+          name: 'Notifications Push Mobiles',
+          tech: 'Firebase FCM',
+          status: firebaseStatus,
+          critical: false,
+          icon: 'bell',
+        },
+        {
+          id: 'slack',
+          name: "Canal d'Alertes Incidents",
+          tech: 'Slack Webhook',
+          status: slackStatus,
+          critical: false,
+          icon: 'message-square',
+        },
       ];
 
-      const downCritical = services.filter(s => s.critical && (s.status === 'down' || s.status === 'disconnected'));
-      const hasDegraded = services.some(s => s.status === 'degraded' || s.status === 'down');
-      const overallStatus = downCritical.length > 0 ? 'outage' : (hasDegraded ? 'degraded' : 'healthy');
+      const downCritical = services.filter(
+        (s) => s.critical && (s.status === 'down' || s.status === 'disconnected'),
+      );
+      const hasDegraded = services.some((s) => s.status === 'degraded' || s.status === 'down');
+      const overallStatus =
+        downCritical.length > 0 ? 'outage' : hasDegraded ? 'degraded' : 'healthy';
 
       const uptimeSeconds = process.uptime();
 
@@ -502,7 +580,14 @@ export class AdminController {
       // PFM-only transactions: user-declared budget entries (income/expense saisies manuellement).
       // Real financial flows (recharges NotchPay, retraits MoMo) have a paymentMethod set
       // and belong to "Portefeuilles & Séquestres" / "Gains Kauri" — NOT to PFM.
-      const PFM_EXCLUDED_METHODS = ['notchpay', 'wallet', 'momo', 'orange_money', 'mtn_momo', 'bank_transfer'];
+      const PFM_EXCLUDED_METHODS = [
+        'notchpay',
+        'wallet',
+        'momo',
+        'orange_money',
+        'mtn_momo',
+        'bank_transfer',
+      ];
       const transactionsStats = await Transaction.aggregate([
         {
           $match: {
@@ -587,7 +672,7 @@ export class AdminController {
       // dashboard previously pulling up to 1000 full user records (with PII:
       // email, phone, sessions/IPs...) just to bucket their createdAt client-side,
       // which also silently went wrong past 1000 signups.
-            // 6. NotchPay Real Balance
+      // 6. NotchPay Real Balance
       let notchpayData = {
         balance: 0,
         available: 0,
@@ -636,7 +721,7 @@ export class AdminController {
 
       const totalTransactionCommissions = revenueAggregation.reduce(
         (acc, r) => acc + (r.totalFeesFCFA || r.totalFees || 0),
-        0
+        0,
       );
 
       // Subscription revenue
@@ -651,10 +736,20 @@ export class AdminController {
         totalNetRevenue: Math.round(totalTransactionCommissions + subscriptionRevenue),
         commissions: {
           total: Math.round(totalTransactionCommissions),
-          withdrawals: Math.round(revenueAggregation.find((r) => r._id === 'withdrawal')?.totalFeesFCFA || 0),
-          tontines: Math.round(revenueAggregation.find((r) => r._id === 'tontine_payout' || r._id === 'tontine')?.totalFeesFCFA || 0),
-          deposits: Math.round(revenueAggregation.find((r) => r._id === 'deposit')?.totalFeesFCFA || 0),
-          savings: Math.round(revenueAggregation.find((r) => r._id === 'savings' || r._id === 'goal')?.totalFeesFCFA || 0),
+          withdrawals: Math.round(
+            revenueAggregation.find((r) => r._id === 'withdrawal')?.totalFeesFCFA || 0,
+          ),
+          tontines: Math.round(
+            revenueAggregation.find((r) => r._id === 'tontine_payout' || r._id === 'tontine')
+              ?.totalFeesFCFA || 0,
+          ),
+          deposits: Math.round(
+            revenueAggregation.find((r) => r._id === 'deposit')?.totalFeesFCFA || 0,
+          ),
+          savings: Math.round(
+            revenueAggregation.find((r) => r._id === 'savings' || r._id === 'goal')
+              ?.totalFeesFCFA || 0,
+          ),
         },
         subscriptions: {
           total: Math.round(subscriptionRevenue),
@@ -663,7 +758,7 @@ export class AdminController {
         currency: 'FCFA',
       };
 
-            // 8. Real Money (User Wallets + Tontine Escrow)
+      // 8. Real Money (User Wallets + Tontine Escrow)
       const walletAggregation = await User.aggregate([
         { $match: { isActive: true } },
         { $group: { _id: null, totalWalletBalance: { $sum: { $ifNull: ['$walletBalance', 0] } } } },
@@ -717,7 +812,7 @@ export class AdminController {
   }
 
   // Get All Users (with pagination & search)
-  
+
   // Get NotchPay Live Balance
   static async getNotchPayBalance(req: Request, res: Response, next: NextFunction) {
     try {
@@ -731,7 +826,6 @@ export class AdminController {
     }
   }
 
-  
   // Get Wallet & Real Money Summary
   static async getWalletSummary(req: Request, res: Response, next: NextFunction) {
     try {
@@ -741,7 +835,9 @@ export class AdminController {
           { $group: { _id: null, totalDeposits: { $sum: '$amount' }, count: { $sum: 1 } } },
         ]),
         User.aggregate([
-          { $group: { _id: null, totalWalletBalance: { $sum: { $ifNull: ['$walletBalance', 0] } } } },
+          {
+            $group: { _id: null, totalWalletBalance: { $sum: { $ifNull: ['$walletBalance', 0] } } },
+          },
         ]),
         Tontine.aggregate([
           { $match: { status: { $in: ['active', 'in_progress', 'open'] } } },
@@ -882,7 +978,7 @@ export class AdminController {
       if (await FeatureFlagService.isRealMoneyEnabled()) {
         return next(
           new AppError(
-            "Le crédit manuel de portefeuille est désactivé pendant que le mode Argent Réel est actif — il ne doit jamais être utilisé pour simuler un vrai dépôt.",
+            'Le crédit manuel de portefeuille est désactivé pendant que le mode Argent Réel est actif — il ne doit jamais être utilisé pour simuler un vrai dépôt.',
             403,
           ),
         );
@@ -966,7 +1062,9 @@ export class AdminController {
           // fields must be excluded explicitly here even though password/
           // totpSecret/backupCodeHashes already carry `select: false`.
           data = await User.find()
-            .select('-refreshToken -sessions.refreshToken -security.totpSecret -security.backupCodeHashes')
+            .select(
+              '-refreshToken -sessions.refreshToken -security.totpSecret -security.backupCodeHashes',
+            )
             .sort('-createdAt')
             .limit(REPORT_LIMIT)
             .lean();
@@ -986,7 +1084,12 @@ export class AdminController {
             .lean();
           break;
         default:
-          return next(new AppError('Type de rapport inconnu. Valeurs autorisées : users, transactions, tontines', 400));
+          return next(
+            new AppError(
+              'Type de rapport inconnu. Valeurs autorisées : users, transactions, tontines',
+              400,
+            ),
+          );
       }
 
       AuditService.record(
@@ -1406,7 +1509,14 @@ export class AdminController {
   // like ?$where=... (which `qs` parses straight into an object) — is stripped.
   // These admin list endpoints build their Mongo filter directly from req.query,
   // and are reachable by the lower-trust `support` role too, not just `admin`.
-  private static readonly SAFE_QUERY_OPERATORS = new Set(['$gte', '$gt', '$lte', '$lt', '$ne', '$in']);
+  private static readonly SAFE_QUERY_OPERATORS = new Set([
+    '$gte',
+    '$gt',
+    '$lte',
+    '$lt',
+    '$ne',
+    '$in',
+  ]);
 
   private static sanitizeQueryObject(obj: any): any {
     if (Array.isArray(obj)) {
@@ -1501,7 +1611,10 @@ export class AdminController {
       }
       if (group !== undefined && !ALLOWED_GROUPS.includes(group)) {
         return next(
-          new AppError(`Groupe de paramètre invalide. Valeurs autorisées : ${ALLOWED_GROUPS.join(', ')}`, 400),
+          new AppError(
+            `Groupe de paramètre invalide. Valeurs autorisées : ${ALLOWED_GROUPS.join(', ')}`,
+            400,
+          ),
         );
       }
       if (value === undefined) {
@@ -2189,14 +2302,14 @@ export class AdminController {
     }
   }
 
-    // --- KYC REVIEW & MANAGEMENT ---
+  // --- KYC REVIEW & MANAGEMENT ---
   static async getKycPendingUsers(req: Request, res: Response, next: NextFunction) {
     try {
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
       const skip = (page - 1) * limit;
       const status = (req.query.status as string) || 'pending';
-      const search = (req.query.search as string || '').trim();
+      const search = ((req.query.search as string) || '').trim();
 
       // Build status filter
       const query: any = {};
@@ -2230,29 +2343,34 @@ export class AdminController {
         });
       }
 
-      const [users, total, pendingCount, verifiedCount, rejectedCount, totalSubmissions] = await Promise.all([
-        User.find(query)
-          .select('firstName lastName email phone country kycLevel kycData createdAt updatedAt')
-          .sort({ updatedAt: -1, createdAt: -1 })
-          .skip(skip)
-          .limit(limit)
-          .lean(),
-        User.countDocuments(query),
-        User.countDocuments({ kycLevel: 'pending' }),
-        User.countDocuments({ kycLevel: { $in: ['verified', 'tier1', 'tier2', 'approved'] } }),
-        User.countDocuments({ kycLevel: 'rejected' }),
-        User.countDocuments({
-          $or: [
-            { kycLevel: { $in: ['pending', 'verified', 'tier1', 'tier2', 'rejected'] } },
-            { 'kycData.documentImageUrl': { $exists: true, $ne: '' } },
-          ],
-        }),
-      ]);
+      const [users, total, pendingCount, verifiedCount, rejectedCount, totalSubmissions] =
+        await Promise.all([
+          User.find(query)
+            .select('firstName lastName email phone country kycLevel kycData createdAt updatedAt')
+            .sort({ updatedAt: -1, createdAt: -1 })
+            .skip(skip)
+            .limit(limit)
+            .lean(),
+          User.countDocuments(query),
+          User.countDocuments({ kycLevel: 'pending' }),
+          User.countDocuments({ kycLevel: { $in: ['verified', 'tier1', 'tier2', 'approved'] } }),
+          User.countDocuments({ kycLevel: 'rejected' }),
+          User.countDocuments({
+            $or: [
+              { kycLevel: { $in: ['pending', 'verified', 'tier1', 'tier2', 'rejected'] } },
+              { 'kycData.documentImageUrl': { $exists: true, $ne: '' } },
+            ],
+          }),
+        ]);
 
       // Generate temporary signed URLs for private KYC documents
       const usersWithSignedDocs = await Promise.all(
         users.map(async (u: any) => {
-          if (!u.kycData?.documentImageUrl && !u.kycData?.selfieImageUrl && !u.kycData?.documentBackImageUrl) {
+          if (
+            !u.kycData?.documentImageUrl &&
+            !u.kycData?.selfieImageUrl &&
+            !u.kycData?.documentBackImageUrl
+          ) {
             return u;
           }
           const signed = await KYCService.getSignedDocumentUrls(u._id.toString());
@@ -2290,7 +2408,14 @@ export class AdminController {
   static async updateKycData(req: Request, res: Response, next: NextFunction) {
     try {
       const { userId } = req.params;
-      const { fullName, documentNumber, documentType, documentExpiryDate, kycLevel, rejectionReason } = req.body;
+      const {
+        fullName,
+        documentNumber,
+        documentType,
+        documentExpiryDate,
+        kycLevel,
+        rejectionReason,
+      } = req.body;
 
       const user = await User.findById(userId);
       if (!user) {
@@ -2336,12 +2461,15 @@ export class AdminController {
     }
   }
 
-  
   static async revalidateKyc(req: Request, res: Response, next: NextFunction) {
     try {
       const { userId } = req.params;
       const { reason } = req.body;
-      const user = await KYCService.adminVerify(userId, 'update_required', reason || 'Mise à jour requise pour vos documents KYC');
+      const user = await KYCService.adminVerify(
+        userId,
+        'update_required',
+        reason || 'Mise à jour requise pour vos documents KYC',
+      );
       return res.status(200).json({
         success: true,
         message: 'Demande de mise à jour KYC transmise avec succès',
@@ -2377,7 +2505,8 @@ export class AdminController {
 
       const filter: any = {};
       if (typeof req.query.type === 'string') filter.type = req.query.type;
-      if (typeof req.query.paymentMethod === 'string') filter.paymentMethod = req.query.paymentMethod;
+      if (typeof req.query.paymentMethod === 'string')
+        filter.paymentMethod = req.query.paymentMethod;
 
       const [transactions, total] = await Promise.all([
         Transaction.find(filter)
@@ -2391,7 +2520,10 @@ export class AdminController {
 
       res.status(200).json({
         success: true,
-        data: { transactions, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } },
+        data: {
+          transactions,
+          pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+        },
       });
     } catch (error) {
       next(error);
@@ -2406,20 +2538,22 @@ export class AdminController {
       const skip = (page - 1) * limit;
 
       const [transactions, total, user] = await Promise.all([
-        Transaction.find({ userId })
-          .sort({ createdAt: -1 })
-          .skip(skip)
-          .limit(limit)
-          .lean(),
+        Transaction.find({ userId }).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
         Transaction.countDocuments({ userId }),
-        User.findById(userId).select('firstName lastName email walletBalance currency kycLevel').lean(),
+        User.findById(userId)
+          .select('firstName lastName email walletBalance currency kycLevel')
+          .lean(),
       ]);
 
       if (!user) throw new AppError('Utilisateur non trouvé', 404);
 
       res.status(200).json({
         success: true,
-        data: { user, transactions, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } },
+        data: {
+          user,
+          transactions,
+          pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+        },
       });
     } catch (error) {
       next(error);
@@ -2458,7 +2592,9 @@ export class AdminController {
   static async getPayoutDetails(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const payout = await Payment.findById(id).populate('userId', 'firstName lastName email country kycLevel').lean();
+      const payout = await Payment.findById(id)
+        .populate('userId', 'firstName lastName email country kycLevel')
+        .lean();
       if (!payout) throw new AppError('Retrait non trouvé', 404);
 
       res.status(200).json({ success: true, data: payout });
@@ -2481,7 +2617,10 @@ export class AdminController {
         {
           _id: id,
           type: 'withdrawal',
-          $or: [{ 'retryApproval.status': { $exists: false } }, { 'retryApproval.status': { $ne: 'pending_approval' } }],
+          $or: [
+            { 'retryApproval.status': { $exists: false } },
+            { 'retryApproval.status': { $ne: 'pending_approval' } },
+          ],
         },
         {
           retryApproval: {
@@ -2496,8 +2635,9 @@ export class AdminController {
       if (!payout) {
         const existing = await Payment.findById(id);
         if (!existing) throw new AppError('Retrait non trouvé', 404);
-        if (existing.type !== 'withdrawal') throw new AppError("Ce paiement n'est pas un retrait", 400);
-        throw new AppError('Une demande de relance est déjà en attente d\'approbation', 400);
+        if (existing.type !== 'withdrawal')
+          throw new AppError("Ce paiement n'est pas un retrait", 400);
+        throw new AppError("Une demande de relance est déjà en attente d'approbation", 400);
       }
 
       await AuditService.recordSync(
@@ -2515,7 +2655,8 @@ export class AdminController {
 
       res.status(200).json({
         success: true,
-        message: "Demande de relance enregistrée — en attente de l'approbation d'un second administrateur",
+        message:
+          "Demande de relance enregistrée — en attente de l'approbation d'un second administrateur",
       });
     } catch (error) {
       next(error);
@@ -2582,7 +2723,9 @@ export class AdminController {
         'admin',
       );
 
-      res.status(200).json({ success: true, message: 'Relance approuvée — statut réinitialisé à pending' });
+      res
+        .status(200)
+        .json({ success: true, message: 'Relance approuvée — statut réinitialisé à pending' });
     } catch (error) {
       next(error);
     }
@@ -2652,10 +2795,12 @@ export class AdminController {
       const SessionLog = (await import('../models/SessionLog')).default;
       await SessionLog.updateMany(
         { userId: id, status: 'active' },
-        { status: 'revoked', revokedAt: new Date(), revokedBy: req.user._id }
+        { status: 'revoked', revokedAt: new Date(), revokedBy: req.user._id },
       );
 
-      await (await import('../services/auditService')).AuditService.recordSync(
+      await (
+        await import('../services/auditService')
+      ).AuditService.recordSync(
         {
           userId: req.user._id,
           action: 'USER_SESSIONS_REVOKED',

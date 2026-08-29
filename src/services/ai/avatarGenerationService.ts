@@ -37,7 +37,7 @@ export class AvatarGenerationService {
   static async generate(userId: string, style: string, refinement?: string): Promise<string> {
     const basePrompt = STYLE_PROMPTS[style];
     if (!basePrompt) {
-      throw new AppError('Style d\'avatar invalide', 400);
+      throw new AppError("Style d'avatar invalide", 400);
     }
 
     if (refinement) {

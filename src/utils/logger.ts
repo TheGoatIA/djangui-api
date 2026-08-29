@@ -139,7 +139,10 @@ class CriticalAlertTransport extends Transport {
         const sanitizeText = (text: string): string => {
           if (!text) return '';
           return text
-            .replace(/(password|secret|key|token|authorization)\s*[:=]\s*['"]?[^\s,'"]+/gi, '$1: ***MASKED***')
+            .replace(
+              /(password|secret|key|token|authorization)\s*[:=]\s*['"]?[^\s,'"]+/gi,
+              '$1: ***MASKED***',
+            )
             .replace(/Bearer\s+[A-Za-z0-9-_.]+/gi, 'Bearer ***MASKED***');
         };
 

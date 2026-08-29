@@ -67,7 +67,11 @@ export function verifyTotp(secret: string, token: string, window = 1): boolean {
   return false;
 }
 
-export function generateOtpauthUrl(secret: string, accountLabel: string, issuer = 'Kauri Admin'): string {
+export function generateOtpauthUrl(
+  secret: string,
+  accountLabel: string,
+  issuer = 'Kauri Admin',
+): string {
   const params = new URLSearchParams({
     secret,
     issuer,

@@ -28,23 +28,39 @@ router.get(
   AdminController.getBudgetCategoryHistory,
 );
 router.get('/subscriptions', restrictTo('admin', 'support'), AdminController.getAllSubscriptions);
-router.get('/subscriptions/:id', restrictTo('admin', 'support'), AdminController.getSubscriptionDetails);
+router.get(
+  '/subscriptions/:id',
+  restrictTo('admin', 'support'),
+  AdminController.getSubscriptionDetails,
+);
 router.get('/settings', restrictTo('admin', 'support'), AdminController.getSystemSettings);
 router.get('/feature-flags', restrictTo('admin', 'support'), FeatureFlagController.getAllFlags);
 router.get('/countries', restrictTo('admin', 'support'), CountryController.getAllCountries);
-router.get('/country-requests', restrictTo('admin', 'support'), CountryRequestController.listRequests);
+router.get(
+  '/country-requests',
+  restrictTo('admin', 'support'),
+  CountryRequestController.listRequests,
+);
 router.get('/health', restrictTo('admin', 'support'), AdminController.getSystemHealth);
 router.get('/notchpay/balance', restrictTo('admin', 'support'), AdminController.getNotchPayBalance);
 router.get('/db/stats', restrictTo('admin', 'support'), AdminController.getDatabaseStats);
 router.get('/logs', restrictTo('admin', 'support'), AdminController.getLogs);
 router.get('/logs/:filename', restrictTo('admin', 'support'), AdminController.downloadLog);
-router.get('/analytics/financials', restrictTo('admin', 'support'), AdminController.getFinancialAnalytics);
+router.get(
+  '/analytics/financials',
+  restrictTo('admin', 'support'),
+  AdminController.getFinancialAnalytics,
+);
 router.get('/resources', restrictTo('admin', 'support'), AdminController.getServerResources);
 router.get('/audit-logs', restrictTo('admin', 'support'), AdminController.getAuditLogs);
 router.get('/connections', restrictTo('admin', 'support'), AdminController.getConnectionLogs);
 router.get('/ai/stats', restrictTo('admin', 'support'), AdminController.getAIUsageStats);
 router.get('/ai/logs', restrictTo('admin', 'support'), AdminController.getAIUsageLogs);
-router.get('/analytics/dashboard', restrictTo('admin', 'support'), AdminController.getAnalyticsDashboard);
+router.get(
+  '/analytics/dashboard',
+  restrictTo('admin', 'support'),
+  AdminController.getAnalyticsDashboard,
+);
 router.get('/support/tickets', restrictTo('admin', 'support'), SupportController.getAllTickets);
 
 // KYC - lecture support autorisée, validation admin seule
@@ -57,7 +73,11 @@ router.patch('/kyc/:userId/reject', restrictTo('admin'), AdminController.rejectK
 // Wallet Ledger - lecture seule support + admin
 router.get('/wallet/summary', restrictTo('admin', 'support'), AdminController.getWalletSummary);
 router.get('/wallet/ledger', restrictTo('admin', 'support'), AdminController.getWalletLedger);
-router.get('/wallet/ledger/:userId', restrictTo('admin', 'support'), AdminController.getUserWalletLedger);
+router.get(
+  '/wallet/ledger/:userId',
+  restrictTo('admin', 'support'),
+  AdminController.getUserWalletLedger,
+);
 
 // Payouts - lecture support, actions admin seul
 router.get('/payouts', restrictTo('admin', 'support'), AdminController.getPayouts);
@@ -89,7 +109,11 @@ router.patch('/feature-flags/:id', restrictTo('admin'), FeatureFlagController.up
 router.delete('/feature-flags/:id', restrictTo('admin'), FeatureFlagController.deleteFlag);
 router.post('/countries', restrictTo('admin'), CountryController.addCountry);
 router.patch('/countries/:id', restrictTo('admin'), CountryController.updateCountry);
-router.patch('/country-requests/:id/process', restrictTo('admin'), CountryRequestController.processRequest);
+router.patch(
+  '/country-requests/:id/process',
+  restrictTo('admin'),
+  CountryRequestController.processRequest,
+);
 router.delete('/goals/:id', restrictTo('admin'), AdminController.deleteGoal);
 router.patch('/tontines/:id', restrictTo('admin'), AdminController.updateTontine);
 router.patch('/subscriptions/:id', restrictTo('admin'), AdminController.updateSubscription);
@@ -97,8 +121,16 @@ router.get('/db/export', restrictTo('admin'), AdminController.exportDatabase);
 router.get('/db/backup', restrictTo('admin'), AdminController.backupDatabase);
 router.post('/db/restore/:filename', restrictTo('admin'), AdminController.restoreDatabase);
 router.post('/logs', restrictTo('admin'), AdminController.createLog);
-router.patch('/support/tickets/:id/status', restrictTo('admin', 'support'), SupportController.updateTicketStatus);
-router.post('/support/tickets/:id/reply', restrictTo('admin', 'support'), SupportController.replyTicketAdmin);
+router.patch(
+  '/support/tickets/:id/status',
+  restrictTo('admin', 'support'),
+  SupportController.updateTicketStatus,
+);
+router.post(
+  '/support/tickets/:id/reply',
+  restrictTo('admin', 'support'),
+  SupportController.replyTicketAdmin,
+);
 
 // Investissements : lecture admin + support, modification de valeur admin seul
 router.get('/investments', restrictTo('admin', 'support'), InvestmentController.listAll);

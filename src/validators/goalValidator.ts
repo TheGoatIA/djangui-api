@@ -4,16 +4,18 @@ import Joi from 'joi';
 // journée serveur, pas à l'horodatage exact) : le sélecteur de date de l'app
 // autorise "aujourd'hui" comme date la plus proche, un `Joi.date().greater('now')`
 // strict rejetterait donc "aujourd'hui" dès que l'heure serveur dépasse minuit.
-const notInThePast = Joi.date().custom((value: Date, helpers) => {
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-  if (value < startOfToday) {
-    return helpers.error('date.pastDeadline');
-  }
-  return value;
-}, 'reject past dates').messages({
-  'date.pastDeadline': "L'échéance ne peut pas être dans le passé",
-});
+const notInThePast = Joi.date()
+  .custom((value: Date, helpers) => {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    if (value < startOfToday) {
+      return helpers.error('date.pastDeadline');
+    }
+    return value;
+  }, 'reject past dates')
+  .messages({
+    'date.pastDeadline': "L'échéance ne peut pas être dans le passé",
+  });
 
 export const createGoalSchema = Joi.object({
   name: Joi.string().required(),
