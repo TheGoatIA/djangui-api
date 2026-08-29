@@ -1,7 +1,14 @@
 # Supprimer la ligne version (obsolète)
+# name: fixe le préfixe des conteneurs (kauri-staging-api-1...) — voir
+# RUNBOOK.md § Migration de renommage des conteneurs (29/08/2026).
+name: kauri-staging
+
 services:
   api:
-    build: .
+    # Image construite et taguée par le pipeline CI (.github/workflows/deploy.yml,
+    # job build-and-push) au format yyyyMMdd.N ou "staging-latest", poussée sur
+    # GitHub Container Registry. Le déploiement fait un `pull`, jamais un `build`.
+    image: ghcr.io/thegoatia/djangui-api:${IMAGE_TAG:-staging-latest}
     ports:
       - "${PORT:-5000}:5000"
     env_file: .env
@@ -189,6 +196,8 @@ services:
       - kauri-network
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/etc/grafana/dashboards
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_SECURITY_ADMIN_USER=admin

@@ -587,9 +587,8 @@ export class TontineService {
           logger.error(
             `Tontine ${tontineId} tour ${tontine.currentTurn} : aucun gagnant trouvé mais ${summary.collectedAmount} déjà collecté — fonds immobilisés, intervention manuelle requise.`,
           );
-          SlackService.sendNotification(
+          SlackService.sendAlert(
             `🚨 Tontine "${tontine.name}" (${tontineId}), tour ${tontine.currentTurn} : aucun gagnant trouvé alors que ${summary.collectedAmount} ${tontine.currency} ont été collectés. Intervention manuelle requise (remboursement des cotisants).`,
-            true,
           ).catch(() => {});
         }
       } else {
@@ -645,9 +644,8 @@ export class TontineService {
         await this.renewTontine(result.tontine);
       } catch (err: any) {
         logger.error(`Tontine renewal failed for ${tontineId}: ${err.message}`);
-        SlackService.sendNotification(
+        SlackService.sendAlert(
           `🚨 Le renouvellement automatique de la tontine "${result.tontine.name}" (${tontineId}) a échoué : ${err.message}`,
-          true,
         ).catch(() => {});
       }
     }

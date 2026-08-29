@@ -128,7 +128,7 @@ export class FraudService {
           ? `🚨 *ALERTE FRAUDE BLOQUANTE*\n*Utilisateur*: \`${userId}\`\n*Score Fraude*: *${score}/100*\n*Montant*: ${amount} ${currency} (${type})\n*Raisons*:\n${reasonList}`
           : `⚠️ *Transaction suspecte (non bloquée)*\n*Utilisateur*: \`${userId}\`\n*Score Fraude*: ${score}/100\n*Montant*: ${amount} ${currency} (${type})\n*Raisons*:\n${reasonList}`;
 
-        await SlackService.sendNotification(message, block).catch((e) =>
+        await SlackService.sendSecurity(message).catch((e) =>
           logger.error(`Slack alert error: ${e.message}`),
         );
       }

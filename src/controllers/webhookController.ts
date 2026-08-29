@@ -70,9 +70,8 @@ export class WebhookController {
       const now = Date.now();
       if (now - lastInvalidSignatureAlertAt > INVALID_SIGNATURE_ALERT_COOLDOWN_MS) {
         lastInvalidSignatureAlertAt = now;
-        SlackService.sendNotification(
+        SlackService.sendSecurity(
           `ðŸ”’ *Signature de webhook NotchPay invalide dÃ©tectÃ©e* â€” tentative de falsification possible, ou secret webhook mal configurÃ©. IP: ${req.ip}`,
-          true,
         ).catch((e: any) => logger.error(`Slack alert error: ${e.message}`));
       }
 
@@ -168,9 +167,8 @@ export class WebhookController {
         // notices. The NotchPay reconciliation job will retry this on its
         // next run, but a human should be told immediately, not just hope
         // the next cron pass fixes it silently.
-        SlackService.sendNotification(
+        SlackService.sendAlert(
           `ðŸš¨ *Ã‰chec du remboursement automatique* pour le transfert \`${reference}\`\n*Erreur*: ${refundErr.message}\nLe portefeuille de l'utilisateur reste dÃ©bitÃ© â€” vÃ©rification manuelle requise (la rÃ©conciliation NotchPay retentera automatiquement, mais ne pas attendre sans vÃ©rifier).`,
-          true,
         ).catch((e: any) => logger.error(`Slack alert error: ${e.message}`));
         status = 'failed';
       }

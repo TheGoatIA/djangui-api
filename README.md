@@ -1,120 +1,112 @@
-# 🏦 Kauri - Excellence en Ingénierie Financière (Fintech API)
+# 🏦 Kauri — Backend Fintech (API REST)
 
-Kauri est une API REST de pointe, conçue pour révolutionner la gestion des finances personnelles grâce à l'intelligence artificielle. Ce projet combine une architecture robuste, une observabilité totale et une intégration poussée de l'IA pour offrir une expérience financière fluide, sécurisée et intelligente.
+Kauri est une API REST pour la gestion de finances personnelles assistée par IA : portefeuille, tontines digitales, budgets partagés, objectifs d'épargne, défis d'épargne gamifiés, KYC automatisé, et un hub revendeur. Le backend est la seule source de vérité financière — aucun calcul de solde, de taux de change ou de prix n'est jamais confié au client mobile ou admin.
 
----
-
-## 🚀 Vision du Projet
-
-Kauri n'est pas seulement une API de suivi de dépenses. C'est un moteur financier complet capable de :
-- **Analyser** vos comportements via un Coach IA (Gemini 2.0).
-- **Scanner** vos reçus physiques avec une précision chirurgicale (OCR).
-- **Convertir** dynamiquement vos avoirs entre plusieurs devises.
-- **Sécuriser** chaque centime via des protocoles d'idempotence et d'anti-fraude.
+**Documentation complète :**
+- [ARCHITECTURE.md](ARCHITECTURE.md) — comment le système est construit et pourquoi
+- [SECURITY.md](SECURITY.md) — contrôles de sécurité, conformité, résultats d'audit
+- [DEPLOYMENT.md](DEPLOYMENT.md) — déploiement, variables d'environnement, CI/CD
+- [RUNBOOK.md](RUNBOOK.md) — procédures opérationnelles (rotation de secrets, sauvegardes, incidents)
+- [CONTRIBUTING.md](CONTRIBUTING.md) — standards de code et procédure de contribution
+- `/api-docs` — documentation Swagger interactive (protégée par Basic Auth)
 
 ---
 
-## 🏗️ Architecture & Stack Technique
+## Ce que fait Kauri
 
-Le projet repose sur une pile technologique moderne et éprouvée :
+- **Portefeuille & transactions** — dépôt, retrait, transfert, avec détection de fraude heuristique en temps réel et remboursement automatique sur échec de transfert opérateur.
+- **Tontines digitales** — cotisations tournantes avec suivi des tours, pénalités de retard configurables, et code d'invitation.
+- **Budgets** — enveloppes par catégorie, alertes de dépassement, vue "reste à vivre" consolidée, historique visuel des dépenses, **budgets partagés** multi-participants (même modèle que les tontines), et lien optionnel vers un objectif d'épargne (suggestion, jamais de virement automatique).
+- **Objectifs d'épargne** — contribution manuelle ou automatisée, calcul de progression.
+- **Défis d'épargne** — challenges hebdomadaires avec dépôt réel, système de report/skip limité, résolution automatique à l'expiration.
+- **KYC automatisé** — soumission de documents, analyse par IA (Gemini Vision) avec rapport de confiance, validation manuelle finale par un admin.
+- **Coach IA & OCR** — analyse conversationnelle des habitudes financières, scan de reçus par vision, génération d'avatar de profil par IA.
+- **Hub Revendeur** — gestion de slots, facturation d'abonnement automatisée, notifications programmées.
+- **Paiements** — Stripe (cartes) et NotchPay (Mobile Money), webhooks vérifiés par signature.
+- **Gamification** — points d'expérience, niveaux, badges liés aux défis complétés.
+
+---
+
+## Architecture & Stack Technique
 
 | Composant | Technologie | Rôle |
 | :-- | :-- | :-- |
-| **Backend** | Node.js (TypeScript) | Logique métier & API REST |
-| **Base de données** | MongoDB (v7.0) | Stockage persistant & Réplication |
-| **Cache & Pub/Sub** | Redis (v7.0) | Performance, Verrouillage & Rate Limiting |
-| **Fichiers** | MinIO (S3 Compatible) | Stockage des reçus & Factures |
-| **IA & Vision** | Google Gemini 2.0 | Coach financier & OCR |
-| **Observabilité** | Prometheus / Grafana | Métriques en temps réel & Tableaux de bord |
-| **Traces & Logs** | Jaeger / Graylog | Debugging distribué & Centralisation des logs |
+| **Backend** | Node.js 20 / TypeScript / Express | Logique métier & API REST |
+| **Base de données** | MongoDB 7 (replica set) | Stockage persistant, transactions ACID |
+| **Cache & coordination** | Redis 7 | Rate limiting, idempotence, verrous distribués, liste noire JWT |
+| **Fichiers** | MinIO (S3-compatible) | Reçus, documents KYC, avatars, sauvegardes |
+| **IA & Vision** | Google Gemini | Coach financier, OCR, analyse KYC, génération d'avatar |
+| **Paiements** | Stripe / NotchPay | Cartes bancaires / Mobile Money |
+| **Observabilité** | Prometheus / Grafana | 99 métriques métier et techniques, dashboard de 121 panneaux |
+| **Logs** | Winston / Graylog | Logs structurés, rotation, alertes critiques Slack+email |
+| **Traçage** | OpenTelemetry / Jaeger | Traçage distribué des requêtes |
+
+Le détail des décisions d'architecture (garde-fous financiers, anatomie d'une requête, topologie de déploiement) est dans [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ---
 
-## 🛠️ Installation & Guide Pratique
+## Démarrage rapide
 
-### 1. Prérequis
-- **Docker & Docker Compose** (Recommandé)
-- **Node.js v18+** (pour le développement local)
-- **Clé API Gemini** (obligatoire pour les fonctions IA)
-- **Firebase Admin SDK** (pour les notifications push)
-
-### 2. Configuration (`.env`)
-Copiez le fichier `.env.example` et renseignez les variables critiques :
 ```bash
-# Sécurité
-JWT_ACCESS_SECRET=votre_secret_tres_long
-METRICS_TOKEN=votre_jeton_de_monitoring
-
-# IA & Cloud
-GEMINI_API_KEY=AIza...
-FIREBASE_PRIVATE_KEY=votre_cle_privee
-
-# Paiements
-STRIPE_SECRET_KEY=sk_test_...
-NOTCHPAY_PUBLIC_KEY=sb.pk_...
+cp .env.example .env
+# Renseigner au minimum : JWT_ACCESS_SECRET, JWT_REFRESH_SECRET,
+# VAULT_ENCRYPTION_KEY, MONGODB_URI, GEMINI_API_KEY
+docker compose -f docker-compose.dev.yml up --build
 ```
 
-### 3. Lancement via Docker (Processus Standard)
+Trois modes Docker sont disponibles (développement léger, staging avec observabilité complète, production) — détail complet des prérequis, variables d'environnement (applicatives **et** infrastructure), pipeline CI/CD et bootstrap du premier compte admin dans [DEPLOYMENT.md](DEPLOYMENT.md).
 
-Kauri propose trois modes d'exécution optimisés :
+Sans Docker, en local :
+```bash
+npm install
+npm run dev      # nodemon sur src/server.ts
+```
 
-- **Mode Développement** (*Léger - 2GB RAM*) :
-  ```bash
-  docker-compose -f docker-compose.dev.yml up --build
-  ```
-  *Idéal pour coder. Inclut API, Mongo, Redis et MinIO.*
-
-- **Mode Staging** (*Complet - Observabilité totale*) :
-  ```bash
-  docker-compose -f docker-compose.staging.yml up --build
-  ```
-  *Inclut toute la stack de monitoring pour tester en conditions réelles.*
-
-- **Mode Production** (*Stable - Performance maximale*) :
-  ```bash
-  docker-compose up -d
-  ```
+Scripts disponibles :
+| Commande | Rôle |
+| :-- | :-- |
+| `npm run dev` | Serveur de développement avec rechargement à chaud |
+| `npm run build` | Compilation TypeScript vers `dist/` |
+| `npm start` | Lance le build compilé |
+| `npm test` | Suite de tests (Jest) |
+| `npm run lint` / `npm run format` | Vérification / formatage du code |
+| `npm run seed:admin` | Crée ou réinitialise le premier compte administrateur |
+| `npm run seed` | Initialise les feature flags par défaut |
 
 ---
 
-## 📈 Guide de l'Observabilité (Fintech Monitoring)
+## Observabilité
 
-Le projet intègre une plateforme de monitoring de niveau bancaire.
+Le dashboard Grafana **"Kauri API — Production Dashboard"** (`grafana/dashboards/kauri-api.json`, chargé automatiquement au démarrage) couvre l'intégralité des 99 métriques Prometheus exposées, organisées en 16 sections : Overview/SLOs, HTTP, Runtime Node.js, Base de données, Transactions financières, Wallets & Économie, Utilisateurs & Authentification, KYC, Providers de paiement & Webhooks, Notifications, Sécurité & Compliance, Jobs, IA & Cache, Tontines/Objectifs/Défis, Investissement, Services externes.
 
-### Accès aux outils :
-- **Prometheus** : `http://localhost:9090` (Scraping des métriques)
-- **Grafana** : `http://localhost:3001` (Visualisation des Dashboards)
-- **Jaeger** : `http://localhost:16686` (Traces des transactions)
-- **Graylog** : `http://localhost:9000` (Analyse de logs)
+Accès (une fois la stack staging/production démarrée) :
+- **Grafana** — `http://localhost:3001`
+- **Prometheus** — `http://localhost:9090` (protégé, voir `.env.example`)
+- **Jaeger** — `http://localhost:16686`
+- **Graylog** — `http://localhost:9000`
 
-### Dashboard Grafana Critique :
-Le tableau de bord **"Kauri API — Production"** permet de surveiller :
-- **Santé des Transactions** : Taux de succès, volumes par devise (XAF, EUR, USD).
-- **Sécurité** : Alertes fraude, collisions d'idempotence, tentatives d'intrusion.
-- **IA** : Latence du Coach Gemini et efficacité du scan de reçus.
-- **Finance** : Réconciliation des wallets et échecs de paiements Stripe/NotchPay.
+Procédure de mise en route complète, y compris le piège des webhooks d'alerte laissés en placeholder, dans [DEPLOYMENT.md](DEPLOYMENT.md) § Monitoring.
 
 ---
 
-## 🔒 Sécurité & Maintenance
+## Sécurité
 
-1. **Jeton de Métriques** : L'accès à `/metrics` est protégé. Générez un jeton avec `openssl rand -hex 32` et configurez-le dans `METRICS_TOKEN`.
-2. **Backups** : Les données MongoDB sont persistées dans le volume `mongodb_data`. Utilisez le service de backup intégré pour des sauvegardes régulières.
-3. **Idempotence** : Utilisez l'en-tête `X-Idempotency-Key` pour toutes les opérations financières critiques afin d'éviter les doubles paiements.
+Résumé des garanties principales — détail complet, y compris les résultats du dernier audit applicatif, dans [SECURITY.md](SECURITY.md) :
 
----
-
-## 📖 Documentation API (Swagger)
-
-Une fois l'application lancée, la documentation interactive est disponible sur :
-👉 [http://localhost:5000/api-docs](http://localhost:5000/api-docs)
+- **Idempotence** — header `Idempotency-Key` sur toutes les opérations financières, réclamé atomiquement (Redis `SET NX`).
+- **Atomicité** — toute mutation de solde s'exécute dans une transaction MongoDB.
+- **MFA (TOTP)** — sur les comptes admin/support.
+- **Chiffrement au repos** — AES-256-GCM authentifié pour les données sensibles.
+- **Détection de fraude** — score heuristique en temps réel, blocage automatique au-delà du seuil.
+- **Audit trail immuable** — actions à fort impact journalées de façon synchrone, rétention 5 ans.
 
 ---
 
-## 👨‍💻 Contribution
-Les Pull Requests sont les bienvenues. Pour des changements majeurs, veuillez ouvrir une "Issue" pour discuter de ce que vous aimeriez changer.
+## Contribution
+
+Voir [CONTRIBUTING.md](CONTRIBUTING.md). Les Pull Requests sont les bienvenues — pour un changement majeur, ouvrez d'abord une issue pour en discuter.
 
 ---
 
-**Auteur** : Boris Gauty  
+**Auteur** : Boris Gauty
 **Licence** : [MIT](LICENSE)

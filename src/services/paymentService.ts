@@ -436,7 +436,7 @@ export class PaymentService {
     });
 
     // Notify Slack
-    SlackService.sendNotification(
+    SlackService.sendTransaction(
       `💰 *Payment Completed*\n*User ID*: ${payment.userId}\n*Amount*: ${payment.amount} ${payment.currency}\n*Type*: ${payment.type}\n*Reference*: ${reference}`,
     );
 
@@ -603,7 +603,7 @@ export class PaymentService {
       data: { reference, type: 'subscription_success' },
     }).catch((err: any) => logger.error(`Notification Error: ${err.message}`));
 
-    SlackService.sendNotification(
+    SlackService.sendFinance(
       `⭐ *Wallet Subscription Completed*\n*User ID*: ${userIdStr}\n*Amount*: ${amount} ${currency}\n*Reference*: ${reference}`,
     );
 
@@ -630,7 +630,7 @@ export class PaymentService {
     MonitoringService.recordChurn(user.subscription.plan, 'manual_cancel');
 
     // Notify Slack (user ID is enough to look the account up; no need for email/PII here)
-    SlackService.sendNotification(
+    SlackService.sendFinance(
       `📉 *Subscription Cancelled*\n*User ID*: ${userId}\n*Plan*: ${user.subscription.plan}`,
     );
 

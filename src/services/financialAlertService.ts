@@ -49,9 +49,9 @@ export class FinancialAlertService {
             text: { type: 'mrkd_word', text: `\`\`\`${JSON.stringify(metadata, null, 2)}\`\`\`` },
           });
         }
-        await SlackService.sendRichNotification(blocks, true);
+        await SlackService.sendRichNotification(blocks, true, 'finance');
       } else {
-        await SlackService.sendNotification(formattedMessage, level === 'warning');
+        await SlackService.sendFinance(formattedMessage);
       }
     } catch (err: any) {
       logger.error(`Alerting Error (Slack): ${err.message}`);

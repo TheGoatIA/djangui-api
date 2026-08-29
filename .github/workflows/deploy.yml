@@ -1,9 +1,12 @@
-name: CI/CD Pipeline (Staging & Prod)
+name: CI/CD Pipeline (Staging & Production)
 
+# Push sur dev  -> test -> build & push image -> déploiement automatique en staging
+# Push sur main -> test -> build & push image -> déploiement automatique en production
+# Le déclenchement manuel (workflow_dispatch) reste disponible pour rejouer un
+# déploiement (ex: rollback vers un tag existant) sans nouveau push.
 on:
   push:
     branches: [ "main", "dev" ]
-  # Le workflow_dispatch permet de lancer le job manuellement depuis l'interface GitHub
   workflow_dispatch:
     inputs:
       deploy_to:
@@ -15,11 +18,15 @@ on:
           - production
           - staging
 
+permissions:
+  contents: write
+  packages: write
+
 jobs:
   test:
     name: 🧪 Run Tests
     runs-on: ubuntu-latest
-    
+
     services:
       mongodb:
         image: mongo:7.0
@@ -42,6 +49,9 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
+    - name: Fail on high/critical vulnerabilities
+      run: npm audit --audit-level=high
+
     - name: Build
       run: npm run build
 
@@ -53,45 +63,136 @@ jobs:
         NODE_ENV: test
       run: npm run test
 
+  build-and-push:
+    name: 🐳 Build & Push Docker Image
+    needs: test
+    runs-on: ubuntu-latest
+    # Uniquement sur un vrai push (jamais sur un simple re-déploiement manuel,
+    # qui doit réutiliser une image déjà construite — voir déploiement manuel plus bas)
+    if: github.event_name == 'push'
+    outputs:
+      tag: ${{ steps.version.outputs.version }}
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: Calculer la version de build (yyyyMMdd.N)
+      id: version
+      run: |
+        set -e
+        git fetch --tags --force
+        TODAY=$(date -u +%Y%m%d)
+        LAST_N=$(git tag --list "${TODAY}.*" | sed "s/^${TODAY}\.//" | sort -n | tail -1)
+        if [ -z "$LAST_N" ]; then NEXT_N=1; else NEXT_N=$((LAST_N + 1)); fi
+        echo "version=${TODAY}.${NEXT_N}" >> "$GITHUB_OUTPUT"
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata (tags, labels) for Docker
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ghcr.io/${{ github.repository }}
+        tags: |
+          type=raw,value=${{ steps.version.outputs.version }}
+          type=sha,format=long
+          type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+          type=raw,value=staging-latest,enable=${{ github.ref == 'refs/heads/dev' }}
+
+    - name: Build and push
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Tagger ce build dans Git (traçabilité image ↔ commit, sert aussi de compteur journalier)
+      run: |
+        git tag "${{ steps.version.outputs.version }}"
+        git push origin "${{ steps.version.outputs.version }}"
+
   deploy_staging:
     name: 🚀 Deploy to Staging
-    needs: test
-    # S'exécute automatiquement au push (main/dev) OU manuellement si choisi
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_to == 'staging')
+    needs: build-and-push
+    if: |
+      always() && needs.test.result == 'success' &&
+      ((github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
+       (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_to == 'staging'))
     runs-on: ubuntu-latest
-
     steps:
-    - name: Auto-deployment script (Staging)
+    - name: Determine image tag to deploy
+      id: tag
+      run: |
+        # Push normal : utilise le tag qui vient d'être construit.
+        # Déclenchement manuel (rejeu/rollback) : réutilise staging-latest.
+        if [ -n "${{ needs.build-and-push.outputs.tag }}" ]; then
+          echo "tag=${{ needs.build-and-push.outputs.tag }}" >> "$GITHUB_OUTPUT"
+        else
+          echo "tag=staging-latest" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Deploy (pull & restart — aucune action manuelle sur le serveur)
       uses: appleboy/ssh-action@master
       with:
         host: ${{ secrets.PROD_SERVER_IP }}
         username: ${{ secrets.PROD_USERNAME }}
-        password: ${{ secrets.PROD_PASSWORD }}
+        key: ${{ secrets.PROD_SSH_KEY }}
         script: |
-          # Modifie ce chemin vers le dossier où se trouve ton API de Staging sur le serveur
+          set -e
           cd /var/www/kauri/staging-api
-          git pull origin main
-          docker compose -f docker-compose.staging.yml build
+          git fetch origin
+          git checkout dev
+          git pull origin dev
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          export IMAGE_TAG="${{ steps.tag.outputs.tag }}"
+          docker compose -f docker-compose.staging.yml pull api
           docker compose -f docker-compose.staging.yml up -d
           docker image prune -a -f
 
   deploy_production:
     name: 💎 Deploy to Production
-    needs: test
-    # Ne s'exécute JAMAIS automatiquement, UNIQUEMENT via le bouton manuel GitHub
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_to == 'production'
+    needs: build-and-push
+    if: |
+      always() && needs.test.result == 'success' &&
+      ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+       (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_to == 'production'))
     runs-on: ubuntu-latest
-
     steps:
-    - name: Manual-deployment script (Production)
+    - name: Determine image tag to deploy
+      id: tag
+      run: |
+        if [ -n "${{ needs.build-and-push.outputs.tag }}" ]; then
+          echo "tag=${{ needs.build-and-push.outputs.tag }}" >> "$GITHUB_OUTPUT"
+        else
+          echo "tag=latest" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Deploy (pull & restart — aucune action manuelle sur le serveur)
       uses: appleboy/ssh-action@master
       with:
         host: ${{ secrets.PROD_SERVER_IP }}
         username: ${{ secrets.PROD_USERNAME }}
-        password: ${{ secrets.PROD_PASSWORD }}
+        key: ${{ secrets.PROD_SSH_KEY }}
         script: |
+          set -e
           cd /var/www/kauri/api
+          git fetch origin
+          git checkout main
           git pull origin main
-          docker compose -f docker-compose.prod.yml build
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          export IMAGE_TAG="${{ steps.tag.outputs.tag }}"
+          docker compose -f docker-compose.prod.yml pull api
           docker compose -f docker-compose.prod.yml up -d
           docker image prune -a -f

@@ -121,7 +121,7 @@ export class DbBackupService {
          ${statsHtml}`,
       );
 
-      await SlackService.sendNotification(
+      await SlackService.sendAlert(
         `📦 *Backup Success (Multi-Cloud)*\n` +
           `*Status*: Database and Files uploaded to MinIO & Firebase.\n` +
           `*Retention*: ${this.RETENTION_DAYS} days enforced.`,
@@ -135,7 +135,7 @@ export class DbBackupService {
         '🚨 ÉCHEC de la sauvegarde Multi-Cloud',
         `L'erreur suivante est survenue lors de la sauvegarde : ${error.message}`,
       );
-      await SlackService.sendNotification(`🚨 *Backup FAILED*\n*Error*: ${error.message}`);
+      await SlackService.sendAlert(`🚨 *Backup FAILED*\n*Error*: ${error.message}`);
       throw error;
     }
   }
@@ -184,14 +184,14 @@ export class DbBackupService {
       logger.info(`Database restored successfully from ${filename}`);
 
       // Notify Slack
-      await SlackService.sendNotification(
+      await SlackService.sendAlert(
         `⚠️ *DB RESTORE SUCCESS*\n*File*: ${filename}\n*Status*: Database has been replaced by backup.`,
       );
 
       return { success: true, file: filename };
     } catch (error: any) {
       logger.error(`Database restore failed: ${error.message}`);
-      await SlackService.sendNotification(
+      await SlackService.sendAlert(
         `🚨 *DB RESTORE FAILED*\n*File*: ${filename}\n*Error*: ${error.message}`,
       );
       throw error;

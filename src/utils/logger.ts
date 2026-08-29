@@ -130,7 +130,10 @@ class CriticalAlertTransport extends Transport {
   log(info: any, callback: any) {
     setImmediate(async () => {
       if (process.env.NODE_ENV === 'production' && info.level === 'error') {
-        const slackWebhook = process.env.SLACK_ERROR_WEBHOOK_URL || process.env.SLACK_WEBHOOK_URL;
+        const slackWebhook =
+          process.env.SLACK_WEBHOOK_ALERT ||
+          process.env.SLACK_ERROR_WEBHOOK_URL ||
+          process.env.SLACK_WEBHOOK_URL;
 
         // Mask sensitive patterns in error messages & stacks
         const sanitizeText = (text: string): string => {

@@ -8,6 +8,13 @@ import logger from '../utils/logger';
 import { MonitoringService } from './monitoringService';
 import { WalletService } from './walletService';
 
+// Même arrondi que WalletService/TransactionService : appliqué à CHAQUE
+// écriture de `currentAmount`, pas seulement au résultat final — une simple
+// addition/soustraction de deux flottants "propres" à 2 décimales peut déjà
+// produire une valeur du type 1999.9999999999998 en IEEE 754, qui serait
+// alors persistée telle quelle en base sans cet arrondi (audit F-06).
+const roundAmount = (n: number): number => Math.round(n * 100) / 100;
+
 export class GoalService {
   static async createGoal(userId: string, data: any) {
     // A goal's balance must only ever grow through addContribution (which actually
@@ -139,7 +146,7 @@ export class GoalService {
         note,
         type: 'contribution',
       });
-      goal.currentAmount += amount;
+      goal.currentAmount = roundAmount(goal.currentAmount + amount);
       await goal.save({ session });
 
       return { goal, transaction, before };
@@ -299,7 +306,7 @@ export class GoalService {
         let fees = 0;
         // Pénalité de 0.5% si retrait avant la deadline (si elle existe)
         if (goal.deadline && new Date() < new Date(goal.deadline) && goal.status !== 'completed') {
-          fees = goal.currentAmount * 0.005;
+          fees = roundAmount(goal.currentAmount * 0.005);
         }
 
         transaction = await WalletService.executeTransaction(
@@ -353,7 +360,7 @@ export class GoalService {
       // Check for early withdrawal penalty (0.5%)
       let fees = 0;
       if (goal.deadline && new Date() < new Date(goal.deadline)) {
-        fees = redeemAmount * 0.005; // 0.5% penalty
+        fees = roundAmount(redeemAmount * 0.005); // 0.5% penalty
       }
 
       // 1. Créditer le wallet et 2. mettre à jour l'objectif dans la même
@@ -372,7 +379,7 @@ export class GoalService {
         { session },
       );
 
-      goal.currentAmount -= redeemAmount;
+      goal.currentAmount = roundAmount(goal.currentAmount - redeemAmount);
       // Trace le retrait dans le même historique que les contributions
       // (`type: 'redemption'`) pour que l'utilisateur voie exactement ce
       // qui est entré et sorti du pot, pas seulement le solde courant.

@@ -17,7 +17,6 @@ import SessionLog from '../models/SessionLog';
 import { NotificationService } from '../services/notificationService';
 import { CurrencyService } from '../services/currencyService';
 import { AppError } from '../middleware/errorHandler';
-import { exec } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';

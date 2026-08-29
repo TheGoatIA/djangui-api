@@ -147,6 +147,7 @@ app.use(
 
 app.use(
   express.json({
+    limit: '100kb',
     verify: (req: any, res, buf) => {
       // Both webhook signatures must be verified against the exact bytes the
       // provider signed — re-serializing the parsed JSON (JSON.stringify(req.body))

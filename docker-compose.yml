@@ -68,8 +68,13 @@ services:
   redis:
     image: redis:7-alpine # Version spécifique
     command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
+    # Comme MongoDB ci-dessus : accessible uniquement depuis le réseau Docker
+    # interne (les autres services de ce compose), jamais depuis l'hôte. Un
+    # mot de passe protège déjà l'accès, mais exposer le port sur l'hôte reste
+    # une surface d'attaque inutile pour un service qui n'a aucun client hors
+    # de ce réseau.
+    expose:
+      - "6379"
     networks:
       - kauri-network
     restart: unless-stopped

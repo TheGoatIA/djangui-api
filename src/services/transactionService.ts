@@ -55,7 +55,7 @@ export class TransactionService {
 
       // Alert Slack for large transactions (> 500,000)
       if (transaction.amount > 500000) {
-        SlackService.sendNotification(
+        SlackService.sendTransaction(
           `💰 *Large Transaction Alert*\n*User ID*: ${userId}\n*Amount*: ${transaction.amount}\n*Type*: ${transaction.type}\n*Description*: ${transaction.description}`,
         );
       }
@@ -155,9 +155,9 @@ export class TransactionService {
         if (goal) {
           const before = GoalService.milestoneFlags(goal.currentAmount, goal.targetAmount);
           if (transaction.type === 'income') {
-            goal.currentAmount += transaction.amount;
+            goal.currentAmount = roundAmount(goal.currentAmount + transaction.amount);
           } else {
-            goal.currentAmount -= transaction.amount;
+            goal.currentAmount = roundAmount(goal.currentAmount - transaction.amount);
           }
 
           // Trace ce mouvement dans le même historique que les contributions
@@ -371,8 +371,10 @@ export class TransactionService {
     );
     if (categoryIndex === -1) return;
 
-    budget.categories[categoryIndex].spent += amount;
-    budget.totalSpent += amount;
+    budget.categories[categoryIndex].spent = roundAmount(
+      budget.categories[categoryIndex].spent + amount,
+    );
+    budget.totalSpent = roundAmount(budget.totalSpent + amount);
 
     const usagePercentage =
       (budget.categories[categoryIndex].spent / budget.categories[categoryIndex].allocated) * 100;
@@ -523,7 +525,7 @@ export class TransactionService {
         note: description,
         type: 'contribution',
       });
-      goal.currentAmount += amount;
+      goal.currentAmount = roundAmount(goal.currentAmount + amount);
       await goal.save({ session });
 
       await GoalService.checkMilestones(

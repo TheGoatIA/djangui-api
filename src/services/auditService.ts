@@ -2,6 +2,7 @@ import AuditLog, { IAuditLog } from '../models/AuditLog';
 import logger from '../utils/logger';
 import { Request } from 'express';
 import { MonitoringService } from './monitoringService';
+import { SlackService } from './slackService';
 
 type ActorType = 'user' | 'admin' | 'system';
 
@@ -44,7 +45,19 @@ export class AuditService {
 
       if (data.action) MonitoringService.recordAuditLogEvent(data.action, actorType);
 
-      return await AuditLog.create(logEntry);
+      const created = await AuditLog.create(logEntry);
+
+      // recordSync is reserved for high-impact events (money movement,
+      // privilege changes, admin actions) — that's exactly what belongs in
+      // a dedicated #kauri-audit channel, unlike the far higher-volume
+      // fire-and-forget record() (report exports, settings tweaks).
+      if (actorType === 'admin') {
+        SlackService.sendAudit(
+          `📋 *Action admin* — \`${data.action}\` sur \`${data.resource}${data.resourceId ? `:${data.resourceId}` : ''}\`${data.userId ? ` par \`${data.userId}\`` : ''}`,
+        ).catch((e: any) => logger.error(`Slack audit alert error: ${e.message}`));
+      }
+
+      return created;
     } catch (error: any) {
       logger.error(`Error in AuditService.recordSync: ${error.message}`, { data });
       return null;

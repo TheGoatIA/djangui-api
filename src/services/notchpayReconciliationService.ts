@@ -76,10 +76,9 @@ export class NotchPayReconciliationService {
         lines.push(`⚠️ ${results.errors.length} erreur(s) de vérification :`);
         lines.push(...results.errors.slice(0, 5));
       }
-      SlackService.sendNotification(
-        lines.join('\n'),
-        results.paymentsHealed > 0 || results.transfersRefunded > 0 || results.errors.length > 3,
-      ).catch((e: any) => logger.error(`[Reconciliation] Slack alert failed: ${e.message}`));
+      SlackService.sendFinance(lines.join('\n')).catch((e: any) =>
+        logger.error(`[Reconciliation] Slack alert failed: ${e.message}`),
+      );
     }
 
     logger.info(`[Reconciliation] NotchPay sync complete: ${JSON.stringify(results)}`);

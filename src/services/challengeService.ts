@@ -6,6 +6,12 @@ import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import { MonitoringService } from './monitoringService';
 
+// Même arrondi que WalletService/TransactionService/GoalService — appliqué à
+// chaque écriture d'un montant persisté, pas seulement au résultat final
+// (audit F-06 : une addition de deux flottants "propres" peut déjà produire
+// une valeur du type 999.9999999999999 en IEEE 754).
+const roundAmount = (n: number): number => Math.round(n * 100) / 100;
+
 export class ChallengeService {
   /**
    * Liste tous les challenges disponibles
@@ -142,14 +148,14 @@ export class ChallengeService {
       );
 
       // 2. Mettre à jour l'état du challenge (Dépôt réel), dans la même transaction
-      week.savedAmount += amount;
+      week.savedAmount = roundAmount(week.savedAmount + amount);
       if (week.savedAmount >= week.targetAmount) {
         week.status = 'completed';
         week.validatedAt = new Date();
       }
       week.transactionId = transaction.reference;
 
-      userChallenge.currentValue += amount;
+      userChallenge.currentValue = roundAmount(userChallenge.currentValue + amount);
       await userChallenge.save({ session });
 
       return { userChallenge, transaction };
@@ -217,9 +223,9 @@ export class ChallengeService {
             { session },
           );
 
-          week.savedAmount += amountToWithdraw;
+          week.savedAmount = roundAmount(week.savedAmount + amountToWithdraw);
           week.transactionId = transaction.reference;
-          uc.currentValue += amountToWithdraw;
+          uc.currentValue = roundAmount(uc.currentValue + amountToWithdraw);
         }
 
         // Fintech : une semaine d'épargne n'est "complétée" que si le montant
@@ -488,7 +494,7 @@ export class ChallengeService {
     if (!userChallenge) return;
 
     userChallenge.progress = Math.min(100, userChallenge.progress + amount);
-    userChallenge.currentValue += amount;
+    userChallenge.currentValue = roundAmount(userChallenge.currentValue + amount);
 
     if (userChallenge.progress >= 100 && userChallenge.status === 'active') {
       await this.resolveChallenge(userChallengeId, 'success');
