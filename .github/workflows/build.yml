@@ -1,9 +1,10 @@
 name: Build
 
+# Déclenché uniquement manuellement si besoin :
 on:
-  push:
-    branches:
-      - dev
+  workflow_dispatch:
+
+
 
 
 jobs:
