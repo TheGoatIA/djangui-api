@@ -1,13 +1,15 @@
 /**
  * Global Jest Setup File
- * 
+ *
  * Provides mock environment variables for testing in environments where
  * the .env file might be missing (like CI/CD).
  */
 
 // JWT Secrets (Min 32 chars)
-process.env.JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || 'test_access_secret_32_characters_long_minimum';
-process.env.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'test_refresh_secret_32_characters_long_minimum';
+process.env.JWT_ACCESS_SECRET =
+  process.env.JWT_ACCESS_SECRET || 'test_access_secret_32_characters_long_minimum';
+process.env.JWT_REFRESH_SECRET =
+  process.env.JWT_REFRESH_SECRET || 'test_refresh_secret_32_characters_long_minimum';
 
 // Database
 process.env.MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/kauri_test';

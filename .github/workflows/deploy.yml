@@ -153,8 +153,8 @@ jobs:
           set -e
           cd /var/www/kauri/staging-api
           git fetch origin
-          git checkout dev
-          git pull origin dev
+          git checkout -B dev origin/dev
+          git reset --hard origin/dev
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           export IMAGE_TAG="${{ steps.tag.outputs.tag }}"
           docker compose -f docker-compose.staging.yml pull api
@@ -189,8 +189,8 @@ jobs:
           set -e
           cd /var/www/kauri/api
           git fetch origin
-          git checkout main
-          git pull origin main
+          git checkout -B main origin/main
+          git reset --hard origin/main
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           export IMAGE_TAG="${{ steps.tag.outputs.tag }}"
           docker compose -f docker-compose.prod.yml pull api

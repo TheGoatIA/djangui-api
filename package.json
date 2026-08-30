@@ -10,7 +10,7 @@
     "seed": "ts-node scripts/seedFeatureFlags.ts",
     "seed:admin": "ts-node scripts/createAdmin.ts",
     "test": "jest",
-    "lint": "eslint . --ext .ts",
+    "lint": "eslint .",
     "format": "prettier --write \"src/**/*.ts\""
   },
   "keywords": [],
