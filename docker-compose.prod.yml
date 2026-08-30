@@ -391,10 +391,28 @@ networks:
     driver: bridge
 
 volumes:
+  # `external: true` : ces volumes ont été créés à la main (`docker volume
+  # create`) pendant la migration de renommage des conteneurs du 29/08/2026,
+  # pas par Compose — sans ce marqueur, Compose les retrouve et les réutilise
+  # correctement quand même (aucune perte de données), mais réaffiche un
+  # warning "already exists but was not created by Docker Compose" à chaque
+  # déploiement. `external: true` fait taire ce warning sans rien déplacer.
+  # alertmanager_data et minio_data sont exclus : créés directement par
+  # Compose (services ajoutés après la migration), pas de warning pour eux.
   mongodb_data:
+    external: true
+    name: kauri-prod_mongodb_data
   opensearch_data:
+    external: true
+    name: kauri-prod_opensearch_data
   graylog_data:
+    external: true
+    name: kauri-prod_graylog_data
   grafana_data:
+    external: true
+    name: kauri-prod_grafana_data
   prometheus_data:
+    external: true
+    name: kauri-prod_prometheus_data
   alertmanager_data:
   minio_data:

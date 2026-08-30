@@ -39,7 +39,13 @@ const validateEnvironment = () => {
     if (minLength && value.length < minLength) {
       errors.push(`${key} est trop courte (min ${minLength} chars, reçu ${value.length})`);
     }
-    if (weakDefaults.some((d) => value.toLowerCase().includes(d))) {
+    // MONGODB_URI contient légitimement le mot "admin" en clair (authSource=admin
+    // et/ou nom d'utilisateur admin, standard MongoDB) — vérifier la chaîne
+    // entière produit un faux positif systématique. On isole le mot de passe
+    // (entre ":" et "@") et on ne teste que lui contre les valeurs faibles.
+    const checkedValue =
+      key === 'MONGODB_URI' ? (value.match(/:\/\/[^:]+:([^@]+)@/)?.[1] ?? value) : value;
+    if (weakDefaults.some((d) => checkedValue.toLowerCase().includes(d))) {
       errors.push(
         `${key} contient une valeur par défaut faible — utiliser un secret aléatoire fort`,
       );

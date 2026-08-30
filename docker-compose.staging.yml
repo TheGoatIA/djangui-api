@@ -39,8 +39,15 @@ services:
     deploy:
       resources:
         limits:
+          # L'image de staging tourne en PM2 cluster mode avec `instances: 'max'`
+          # (un worker par CPU détecté sur l'hôte, 12 sur ce serveur) — PM2 lit
+          # le nombre de CPU réel de l'hôte, pas le quota cgroup du conteneur.
+          # Avec seulement 1.0 CPU pour 12 workers, chacun est tellement affamé
+          # qu'aucun ne termine jamais son démarrage (aucun log, aucun port
+          # ouvert, malgré un statut PM2 "online"). 4.0 laisse assez de marge
+          # réelle pour que les 12 workers démarrent en ~30-40s.
           memory: 2G
-          cpus: '1.0'
+          cpus: '4.0'
         reservations:
           memory: 1G
 
@@ -285,9 +292,27 @@ networks:
     driver: bridge
 
 volumes:
+  # `external: true` : ces volumes ont été créés à la main (`docker volume
+  # create`) pendant la migration de renommage des conteneurs du 29/08/2026,
+  # pas par Compose — sans ce marqueur, Compose les retrouve et les réutilise
+  # correctement quand même (aucune perte de données), mais réaffiche un
+  # warning "already exists but was not created by Docker Compose" à chaque
+  # déploiement. `external: true` fait taire ce warning sans rien déplacer.
   mongodb_data:
+    external: true
+    name: kauri-staging_mongodb_data
   opensearch_data:
+    external: true
+    name: kauri-staging_opensearch_data
   graylog_data:
+    external: true
+    name: kauri-staging_graylog_data
   grafana_data:
+    external: true
+    name: kauri-staging_grafana_data
   prometheus_data:
+    external: true
+    name: kauri-staging_prometheus_data
   minio_data:
+    external: true
+    name: kauri-staging_minio_data
