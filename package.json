@@ -18,7 +18,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.998.0",
+    "@aws-sdk/client-s3": "^3.1121.0",
     "@aws-sdk/lib-storage": "^3.1007.0",
     "@aws-sdk/s3-request-presigner": "^3.1017.0",
     "@google/generative-ai": "^0.21.0",
