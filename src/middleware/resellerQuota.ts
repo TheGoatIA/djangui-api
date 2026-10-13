@@ -3,6 +3,7 @@ import { AppError } from './errorHandler';
 import { AuthRequest } from './auth';
 import SharedMasterAccount from '../models/SharedMasterAccount';
 import SharedSlot from '../models/SharedSlot';
+import { isSubscriptionEntitled } from '../utils/subscription';
 
 export const RESELLER_LIMITS = {
   free: {
@@ -110,10 +111,7 @@ export const requireBusinessPlan = async (req: AuthRequest, res: Response, next:
   // that isn't gated by the caller's own consumer subscription tier, only by role.
   if (user.role === 'admin' || user.role === 'support') return next();
 
-  const isBusiness =
-    user.subscription?.plan === 'business' &&
-    user.subscription?.status === 'active' &&
-    (!user.subscription?.endDate || new Date(user.subscription.endDate) >= new Date());
+  const isBusiness = isSubscriptionEntitled(user.subscription, ['business']);
 
   if (!isBusiness) {
     return next(

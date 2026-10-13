@@ -4,7 +4,7 @@ import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import { MonitoringService } from '../services/monitoringService';
-import { setAuthCookies, clearAuthCookies } from '../utils/authCookies';
+import { setAuthCookies, clearAuthCookies, isCookieOnlyClient } from '../utils/authCookies';
 
 export class AuthController {
   static async register(req: Request, res: Response, next: NextFunction) {
@@ -17,10 +17,7 @@ export class AuthController {
       setAuthCookies(res, tokens);
       res.status(201).json({
         success: true,
-        data: {
-          user,
-          tokens,
-        },
+        data: isCookieOnlyClient(req) ? { user } : { user, tokens },
       });
     } catch (err) {
       next(err);
@@ -86,10 +83,7 @@ export class AuthController {
       setAuthCookies(res, tokens);
       res.status(200).json({
         success: true,
-        data: {
-          user,
-          tokens,
-        },
+        data: isCookieOnlyClient(req) ? { user } : { user, tokens },
       });
     } catch (err) {
       next(err);
@@ -107,7 +101,10 @@ export class AuthController {
       });
 
       setAuthCookies(res, tokens);
-      res.status(200).json({ success: true, data: { user, tokens } });
+      res.status(200).json({
+        success: true,
+        data: isCookieOnlyClient(req) ? { user } : { user, tokens },
+      });
     } catch (err) {
       next(err);
     }
@@ -142,7 +139,8 @@ export class AuthController {
 
   static async changePassword(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      await AuthService.changePassword(req.user._id, req.body);
+      const currentRefreshToken = req.body?.refreshToken || req.cookies?.refresh_token;
+      await AuthService.changePassword(req.user._id, req.body, currentRefreshToken);
       res.status(200).json({
         success: true,
         message: 'Password updated successfully',
@@ -154,7 +152,8 @@ export class AuthController {
 
   static async deleteMe(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      await AuthService.deleteAccount(req.user._id);
+      await AuthService.deleteAccount(req.user._id, req.body?.password);
+      clearAuthCookies(res);
       res.status(200).json({
         success: true,
         message: 'Account deleted successfully',
@@ -216,9 +215,7 @@ export class AuthController {
       setAuthCookies(res, tokens);
       res.status(200).json({
         success: true,
-        data: {
-          tokens,
-        },
+        data: isCookieOnlyClient(req) ? {} : { tokens },
       });
     } catch (err) {
       next(err);
@@ -327,12 +324,10 @@ export class AuthController {
       const { token } = req.params;
       const { user, tokens } = await AuthService.resetPassword(token, password);
 
+      setAuthCookies(res, tokens);
       res.status(200).json({
         success: true,
-        data: {
-          user,
-          tokens,
-        },
+        data: isCookieOnlyClient(req) ? { user } : { user, tokens },
       });
     } catch (err) {
       next(err);

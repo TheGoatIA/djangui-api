@@ -12,7 +12,7 @@ Kauri est composé de trois dépôts distincts qui communiquent exclusivement vi
 
 | Dépôt | Rôle | Stack |
 | :-- | :-- | :-- |
-| **djangui-api** (ce dépôt) | Backend — logique métier, persistance, intégrations | Node.js 20 / TypeScript / Express |
+| **djangui-api** (ce dépôt) | Backend — logique métier, persistance, intégrations | Node.js 22 LTS / TypeScript / Express |
 | **djangui-admin** | Dashboard d'administration | React / TypeScript |
 | **djangui-mobile** | Application cliente finale | Flutter / Dart |
 

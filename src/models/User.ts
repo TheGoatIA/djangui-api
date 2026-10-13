@@ -2,6 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 import bcrypt from 'bcrypt';
 import { IUser } from '../types/models';
 import { VaultCrypto } from '../utils/vaultCrypto';
+import { isSubscriptionEntitled } from '../utils/subscription';
 
 export interface IUserDocument extends IUser, Document {
   firebaseUid?: string;
@@ -262,24 +263,14 @@ const userSchema = new Schema<IUserDocument>(
 );
 
 // Virtual for isPremium — true for both 'premium' and 'business' plans
+// A cancelled plan stays entitled until its endDate (see utils/subscription.ts).
 userSchema.virtual('isPremium').get(function (this: IUserDocument) {
-  const plan = this.subscription?.plan;
-  const isPaidTier = plan === 'premium' || plan === 'business';
-  const isActive = this.subscription?.status === 'active';
-  const isNotExpired =
-    !this.subscription?.endDate || new Date(this.subscription.endDate) >= new Date();
-
-  return isPaidTier && isActive && isNotExpired;
+  return isSubscriptionEntitled(this.subscription as any);
 });
 
 // Virtual for isBusiness — true only for the 'business' (Super Premium) plan
 userSchema.virtual('isBusiness').get(function (this: IUserDocument) {
-  const isBusinessPlan = this.subscription?.plan === 'business';
-  const isActive = this.subscription?.status === 'active';
-  const isNotExpired =
-    !this.subscription?.endDate || new Date(this.subscription.endDate) >= new Date();
-
-  return isBusinessPlan && isActive && isNotExpired;
+  return isSubscriptionEntitled(this.subscription as any, ['business']);
 });
 
 // Pre-save hook for password hashing

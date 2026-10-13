@@ -17,6 +17,8 @@ import { currencyMiddleware } from './middleware/currencyMiddleware';
 import mongoose from 'mongoose';
 import crypto from 'node:crypto';
 import { AuthController } from './controllers/authController';
+import { requireClientApiKey } from './middleware/clientApiKey';
+import { safeEqual } from './utils/safeCompare';
 
 // Rate limiting using Redis
 
@@ -43,17 +45,35 @@ const developmentOrigins = [
   'http://localhost:5173',
 ];
 
-const allowedOrigins =
-  process.env.NODE_ENV === 'production'
-    ? productionOrigins
-    : [...productionOrigins, ...developmentOrigins];
+// ADMIN_URL (required env) and CORS_ALLOWED_ORIGINS (optional, comma-separated)
+// let staging / non-default deployments be allowed without a code change.
+const toOrigin = (value?: string): string | null => {
+  if (!value) return null;
+  try {
+    return new URL(value.trim()).origin;
+  } catch {
+    return null;
+  }
+};
+const envOrigins = [
+  toOrigin(process.env.ADMIN_URL),
+  ...(process.env.CORS_ALLOWED_ORIGINS || '').split(',').map(toOrigin),
+].filter((o): o is string => !!o);
+
+const allowedOrigins = [
+  ...new Set([
+    ...productionOrigins,
+    ...envOrigins,
+    ...(process.env.NODE_ENV === 'production' ? [] : developmentOrigins),
+  ]),
+];
 
 app.use(
   cors({
     origin: allowedOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Client-Type'],
   }),
 );
 
@@ -71,18 +91,24 @@ const limiter = rateLimit({
 
 // Middlewares
 
-// Telemetry Proxy: Handle raw binary for OTEL before ANY other middleware (to avoid body parsing or rate limiting issues)
+// Rate limit FIRST: the raw-body telemetry parser below buffers up to its limit
+// per request, so it must never run for a client that is already over budget.
+app.use(limiter);
+
+// Telemetry Proxy: Handle raw binary for OTEL before the JSON/urlencoded parsers.
 // Important: application/x-protobuf must be treated as a Buffer. inflate: false ensures we proxy compressed data as-is.
+// The client key is checked BEFORE the body is read so anonymous callers can't
+// make the server buffer megabytes just to be rejected afterwards.
 app.use(
   '/api/v1/system/telemetry/traces',
+  requireClientApiKey,
   express.raw({
     type: ['application/x-protobuf', 'application/json', '*/*'],
-    limit: '10mb',
+    limit: '2mb',
     inflate: false,
   }),
 );
 
-app.use(limiter);
 app.use(MonitoringService.metricsMiddleware.bind(MonitoringService));
 app.use(requestLogger);
 // Per-request CSP nonce so the one legitimate inline <script> left on this app
@@ -165,6 +191,27 @@ app.use(
 );
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+
+// CSRF defence for cookie-authenticated browser sessions (admin dashboard).
+// SameSite=Lax alone is not enough: every *.kauri-app.com subdomain is same-site.
+// Any state-changing request that authenticates ONLY through the auth cookies
+// (no Authorization header) must therefore come from an allowed origin.
+// Mobile (Bearer token) and webhooks (no cookies) are unaffected.
+app.use((req, res, next) => {
+  const safeMethod = ['GET', 'HEAD', 'OPTIONS'].includes(req.method);
+  const usesCookieAuth =
+    !req.headers.authorization && (req.cookies?.access_token || req.cookies?.refresh_token);
+  if (safeMethod || !usesCookieAuth) return next();
+
+  const origin = req.headers.origin || toOrigin(req.headers.referer);
+  if (origin && allowedOrigins.includes(origin)) return next();
+
+  return res.status(403).json({
+    status: 'error',
+    message: 'Origine de la requête non autorisée.',
+  });
+});
+
 app.use(currencyMiddleware);
 
 // Routes
@@ -383,6 +430,39 @@ app.get('/', (req, res) => {
 
 app.get('/reset-password/:token?', AuthController.renderResetPasswordPage);
 
+// Digital Asset Links / Apple App Site Association: let the mobile app claim
+// https://<api>/reset-password/* as a verified link (Android App Links, iOS
+// Universal Links) so the reset token never transits the hijackable custom
+// scheme kauri://. Values come from the environment — nothing is hardcoded.
+app.get('/.well-known/assetlinks.json', (req, res) => {
+  const fingerprints = (process.env.ANDROID_SHA256_CERT_FINGERPRINTS || '')
+    .split(',')
+    .map((f) => f.trim())
+    .filter(Boolean);
+  if (fingerprints.length === 0) return res.status(404).json({ message: 'Not configured' });
+  res.json([
+    {
+      relation: ['delegate_permission/common.handle_all_urls'],
+      target: {
+        namespace: 'android_app',
+        package_name: process.env.ANDROID_PACKAGE_NAME || 'cm.tbg.kauri',
+        sha256_cert_fingerprints: fingerprints,
+      },
+    },
+  ]);
+});
+
+app.get('/.well-known/apple-app-site-association', (req, res) => {
+  const appId = (process.env.IOS_APP_ID || '').trim(); // "<TEAM_ID>.cm.tbg.kauri"
+  if (!appId) return res.status(404).json({ message: 'Not configured' });
+  res.json({
+    applinks: {
+      apps: [],
+      details: [{ appID: appId, paths: ['/reset-password/*'] }],
+    },
+  });
+});
+
 app.use('/api/v1', routes);
 
 // Basic Auth Middleware for Documentation
@@ -394,11 +474,14 @@ const swaggerAuth = (req: any, res: any, next: any) => {
   if (!swaggerUser || !swaggerPassword) {
     return res.status(503).send('Documentation unavailable: server misconfigured.');
   }
-  const auth = { login: swaggerUser, password: swaggerPassword };
   const b64auth = (req.headers.authorization || '').split(' ')[1] || '';
-  const [login, password] = Buffer.from(b64auth, 'base64').toString().split(':');
+  const decoded = Buffer.from(b64auth, 'base64').toString();
+  // Split on the FIRST colon only: a password may legitimately contain ':'.
+  const sep = decoded.indexOf(':');
+  const login = sep === -1 ? '' : decoded.slice(0, sep);
+  const password = sep === -1 ? '' : decoded.slice(sep + 1);
 
-  if (login && password && login === auth.login && password === auth.password) {
+  if (login && password && safeEqual(login, swaggerUser) && safeEqual(password, swaggerPassword)) {
     return next();
   }
 
@@ -475,18 +558,21 @@ app.get('/api/health', async (req, res) => {
 // Prometheus Metrics Endpoint — protected (IP whitelist or internal bearer token)
 const metricsAuth = (req: any, res: any, next: any) => {
   const metricsToken = process.env.METRICS_TOKEN;
-  const allowedIPs = (process.env.METRICS_ALLOWED_IPS || '127.0.0.1,::1,::ffff:127.0.0.1').split(
-    ',',
-  );
+  const allowedIPs = (process.env.METRICS_ALLOWED_IPS || '127.0.0.1,::1')
+    .split(',')
+    .map((ip: string) => ip.trim().replace(/^::ffff:/, ''))
+    .filter(Boolean);
 
-  const clientIP = (req.ip || req.connection?.remoteAddress || '') as string;
-  const isAllowedIP = allowedIPs.some((ip: string) => clientIP.includes(ip.trim()));
+  // Exact match on the normalised address — a substring test would accept e.g.
+  // any IPv6 address ending in '::1'.
+  const clientIP = ((req.ip || req.socket?.remoteAddress || '') as string).replace(/^::ffff:/, '');
+  const isAllowedIP = allowedIPs.includes(clientIP);
 
   if (isAllowedIP) return next();
 
   if (metricsToken) {
     const authHeader = (req.headers.authorization || '') as string;
-    if (authHeader === `Bearer ${metricsToken}`) return next();
+    if (safeEqual(authHeader, `Bearer ${metricsToken}`)) return next();
     return res.status(403).json({ message: 'Forbidden' });
   }
 

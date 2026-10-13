@@ -6,3 +6,6 @@ uploads
 backups
 metrics_token
 mongodb.key
+
+tsconfig.tsbuildinfo
+scratch

@@ -19,9 +19,14 @@ import {
   generateBackupCodes,
 } from '../utils/totp';
 
+// jwtid makes every token unique. Without it, two tokens issued for the same user
+// within the same second are byte-identical (same {id, iat, exp}), so two devices
+// logging in together would share ONE refresh token and per-session revocation
+// could not tell them apart.
 const signToken = (id: string, secret: string, expiresIn: any) => {
   return jwt.sign({ id }, secret, {
     expiresIn,
+    jwtid: crypto.randomUUID(),
   });
 };
 
@@ -147,7 +152,11 @@ export class AuthService {
         user = await User.findOne({ email });
       } else if (!user && phone_number) {
         // Try to find by phone if UID fails
-        user = await User.findOne({ phone: phone_number });
+        // Only match accounts whose phone was proven (isPhoneVerified). The
+        // `phone` field set at email registration is unverified free text:
+        // matching on it would let an attacker pre-register a victim's number
+        // with their own password and inherit the victim's later OTP login.
+        user = await User.findOne({ phone: phone_number, isPhoneVerified: true });
       }
 
       if (!user) {
@@ -195,6 +204,9 @@ export class AuthService {
           metadata: { email: user.email, provider: 'firebase' },
         });
       } else {
+        if (!user.isActive) {
+          throw new AppError('This user account is deactivated.', 403, 'ACCOUNT_DEACTIVATED');
+        }
         // Update user info
         user.firebaseUid = uid;
         if (phone_number && !user.phone) {
@@ -246,6 +258,7 @@ export class AuthService {
         options.platform,
       );
       logger.error(`Error in Firebase Auth: ${error.message}`);
+      if (error instanceof AppError && error.statusCode === 403) throw error;
       throw new AppError('Invalid or expired Firebase token', 401);
     }
   }
@@ -564,6 +577,9 @@ export class AuthService {
       if (!user) {
         throw new AppError('User no longer exists', 401);
       }
+      if (!user.isActive) {
+        throw new AppError('This user account is deactivated.', 401);
+      }
 
       const incomingHash = hashToken(refreshToken);
       const sessionIndex = user.sessions.findIndex((s) => s.refreshToken === incomingHash);
@@ -708,6 +724,9 @@ export class AuthService {
     user.password = password;
     user.passwordResetToken = undefined;
     user.passwordResetExpires = undefined;
+    // A reset means the old credential may be compromised: every refresh token
+    // issued before it (all devices) must stop working immediately.
+    user.sessions = [] as any;
 
     MonitoringService.recordAuthEvent('reset_password', 'email', 'success', user.country);
 
@@ -749,9 +768,11 @@ export class AuthService {
   static async resendVerificationEmail(email: string) {
     if (!email) throw new AppError('Email requis', 400);
 
+    // Identical silent response whether the account exists / is already
+    // verified or not — this endpoint is unauthenticated and must not reveal
+    // which emails are registered.
     const user = await User.findOne({ email });
-    if (!user) throw new AppError('Utilisateur non trouvé', 404);
-    if (user.isEmailVerified) throw new AppError('Ce compte est déjà vérifié', 400);
+    if (!user || user.isEmailVerified) return;
 
     const verificationToken = crypto.randomBytes(32).toString('hex');
     const hashedToken = crypto.createHash('sha256').update(verificationToken).digest('hex');
@@ -775,26 +796,90 @@ export class AuthService {
     const user = await User.findById(userId);
     if (!user) throw new AppError('User not found', 404);
 
-    const allowedFields = [
-      'firstName',
-      'lastName',
-      'country',
-      'currency',
-      'language',
-      'preferences',
-      'phone',
-      'monthlyIncome',
-    ];
+    // This save runs with validateBeforeSave:false (legacy documents may not
+    // satisfy the full schema), so every accepted field is validated by hand
+    // here — otherwise arbitrary strings/types would be persisted as-is.
+    const isCleanName = (v: unknown): v is string =>
+      typeof v === 'string' && v.trim().length >= 1 && v.trim().length <= 60;
 
-    if (updateData.firstName) user.firstName = updateData.firstName;
-    if (updateData.lastName) user.lastName = updateData.lastName;
-    if (updateData.country) user.country = updateData.country;
-    if (updateData.currency) user.currency = updateData.currency;
-    if (updateData.language) user.language = updateData.language;
-    if (updateData.phone) user.phone = updateData.phone;
-    if (updateData.monthlyIncome !== undefined) user.monthlyIncome = updateData.monthlyIncome;
+    if (updateData.firstName !== undefined) {
+      if (!isCleanName(updateData.firstName)) throw new AppError('Prénom invalide', 400);
+      user.firstName = updateData.firstName.trim();
+    }
+    if (updateData.lastName !== undefined) {
+      if (!isCleanName(updateData.lastName)) throw new AppError('Nom invalide', 400);
+      user.lastName = updateData.lastName.trim();
+    }
+
+    // Country (and the currency derived from it) is governed by the admin-approved
+    // country-change request flow (POST /auth/request-country-change). Echoing the
+    // current value is harmless; any actual change is refused here.
+    if (updateData.country && String(updateData.country).toUpperCase() !== user.country) {
+      throw new AppError(
+        'Le changement de pays nécessite une demande de validation (request-country-change).',
+        400,
+      );
+    }
+    if (updateData.currency && String(updateData.currency).toUpperCase() !== user.currency) {
+      throw new AppError(
+        'La devise est déterminée par votre pays et ne peut pas être modifiée directement.',
+        400,
+      );
+    }
+
+    if (updateData.language !== undefined) {
+      if (!['fr', 'en'].includes(updateData.language)) {
+        throw new AppError('Langue non supportée', 400);
+      }
+      user.language = updateData.language;
+    }
+
+    if (updateData.phone !== undefined && updateData.phone !== '') {
+      if (typeof updateData.phone !== 'string' || !/^\+?[0-9 ()-]{6,20}$/.test(updateData.phone)) {
+        throw new AppError('Numéro de téléphone invalide', 400);
+      }
+      if (updateData.phone !== user.phone) {
+        user.phone = updateData.phone;
+        // A changed number is unverified until proven again via link-phone.
+        user.isPhoneVerified = false;
+      }
+    }
+
+    if (updateData.monthlyIncome !== undefined) {
+      const income = Number(updateData.monthlyIncome);
+      if (!Number.isFinite(income) || income < 0 || income > 1e12) {
+        throw new AppError('Revenu mensuel invalide', 400);
+      }
+      user.monthlyIncome = income;
+    }
 
     if (updateData.preferences) {
+      const incoming = updateData.preferences;
+      const TONES = [
+        'encouraging',
+        'firm',
+        'balanced',
+        'billionaire_mentor',
+        'strict_accountant',
+        'kind_auntie',
+      ];
+      const FREQUENCIES = ['high', 'medium', 'low'];
+      if (incoming.coachTone !== undefined && !TONES.includes(incoming.coachTone)) {
+        throw new AppError('Ton du coach invalide', 400);
+      }
+      if (
+        incoming.notificationFrequency !== undefined &&
+        !FREQUENCIES.includes(incoming.notificationFrequency)
+      ) {
+        throw new AppError('Fréquence de notification invalide', 400);
+      }
+      if (incoming.budgetAlertThreshold !== undefined) {
+        const t = Number(incoming.budgetAlertThreshold);
+        if (!Number.isFinite(t) || t < 0 || t > 100) {
+          throw new AppError("Seuil d'alerte budget invalide", 400);
+        }
+      }
+
       // Get current values or defaults
       const currentPrefs = user.preferences || {
         coachTone: 'balanced',
@@ -803,21 +888,15 @@ export class AuthService {
       };
 
       // Merge only provided values
-      const newPrefs = {
-        coachTone: updateData.preferences.coachTone || currentPrefs.coachTone || 'balanced',
+      user.preferences = {
+        coachTone: incoming.coachTone || currentPrefs.coachTone || 'balanced',
         notificationFrequency:
-          updateData.preferences.notificationFrequency ||
-          currentPrefs.notificationFrequency ||
-          'medium',
+          incoming.notificationFrequency || currentPrefs.notificationFrequency || 'medium',
         budgetAlertThreshold:
-          updateData.preferences.budgetAlertThreshold !== undefined
-            ? updateData.preferences.budgetAlertThreshold
-            : currentPrefs.budgetAlertThreshold !== undefined
-              ? currentPrefs.budgetAlertThreshold
-              : 80,
+          incoming.budgetAlertThreshold === undefined
+            ? (currentPrefs.budgetAlertThreshold ?? 80)
+            : Number(incoming.budgetAlertThreshold),
       };
-
-      user.preferences = newPrefs;
       user.markModified('preferences');
     }
 
@@ -825,7 +904,7 @@ export class AuthService {
     return user;
   }
 
-  static async changePassword(userId: string, data: any) {
+  static async changePassword(userId: string, data: any, currentRefreshToken?: string) {
     const { currentPassword, newPassword } = data;
     if (!currentPassword || !newPassword) {
       throw new AppError('Please provide current and new password', 400);
@@ -837,6 +916,23 @@ export class AuthService {
     }
 
     user.password = newPassword;
+    // Sign out every other device: keep only the session the request came from
+    // (identified by its refresh token, when the client supplied it).
+    let keepHash = currentRefreshToken ? hashToken(currentRefreshToken) : undefined;
+    if (!keepHash) {
+      // Client didn't tell us which session is the current one: the most
+      // recently active session is the best available proxy for this device.
+      const latest = [...(user.sessions || [])].sort(
+        (x: any, y: any) =>
+          new Date(y.lastActive || y.createdAt).getTime() -
+          new Date(x.lastActive || x.createdAt).getTime(),
+      )[0] as any;
+      keepHash = latest?.refreshToken;
+    }
+    user.sessions = (user.sessions || []).filter(
+      (s: any) => keepHash && s.refreshToken === keepHash,
+    ) as any;
+    if (!keepHash || user.refreshToken !== keepHash) user.refreshToken = undefined;
     await user.save();
 
     MonitoringService.recordSensitiveAction('password_change', 'success');
@@ -844,9 +940,26 @@ export class AuthService {
     return true;
   }
 
-  static async deleteAccount(userId: string) {
-    const user = await User.findById(userId);
+  static async deleteAccount(userId: string, password?: string) {
+    const user = await User.findById(userId).select('+password');
     if (!user) throw new AppError('User not found', 404);
+
+    // Irreversible action: a stolen access token alone must not be enough.
+    // Password accounts re-prove knowledge of the password; accounts created
+    // through Firebase (Google/Apple/phone) have none, their Firebase session is
+    // the credential.
+    if (user.password) {
+      if (typeof password !== 'string' || !password) {
+        throw new AppError(
+          'Mot de passe requis pour supprimer le compte',
+          400,
+          'PASSWORD_REQUIRED',
+        );
+      }
+      if (!(await user.comparePassword(password))) {
+        throw new AppError('Mot de passe incorrect', 401);
+      }
+    }
 
     // Prevent deletion if user has a positive wallet balance
     if (user.walletBalance > 0) {
@@ -865,8 +978,38 @@ export class AuthService {
     const { default: Subscription } = await import('../models/Subscription');
     const { default: Invoice } = await import('../models/Invoice');
     const { default: SupportTicket } = await import('../models/SupportTicket');
+    const { default: Budget } = await import('../models/Budget');
+    const { default: BudgetParticipant } = await import('../models/BudgetParticipant');
+    const { default: SavingGoal } = await import('../models/SavingGoal');
+    const { default: GoalParticipant } = await import('../models/GoalParticipant');
+    const { default: Notification } = await import('../models/Notification');
+    const { default: Investment } = await import('../models/Investment');
+    const { default: Conversation } = await import('../models/Conversation');
+    const { default: UserChallenge } = await import('../models/UserChallenge');
+    const { default: HealthScoreHistory } = await import('../models/HealthScoreHistory');
+    const { default: UserActivity } = await import('../models/UserActivity');
+    const { default: SessionLog } = await import('../models/SessionLog');
+    const { default: ConnectionLog } = await import('../models/ConnectionLog');
+    const { default: CountryChangeRequest } = await import('../models/CountryChangeRequest');
+    const { default: AIUsage } = await import('../models/AIUsage');
 
     await Promise.all([
+      // Données personnelles non financières : effacées (RGPD art. 17)
+      Budget.deleteMany({ userId }),
+      BudgetParticipant.deleteMany({ userId }),
+      SavingGoal.deleteMany({ userId }),
+      GoalParticipant.deleteMany({ userId }),
+      Notification.deleteMany({ userId }),
+      Investment.deleteMany({ userId }),
+      Conversation.deleteMany({ userId }),
+      UserChallenge.deleteMany({ userId }),
+      HealthScoreHistory.deleteMany({ userId }),
+      UserActivity.deleteMany({ userId }),
+      SessionLog.deleteMany({ userId }),
+      ConnectionLog.deleteMany({ userId }),
+      CountryChangeRequest.deleteMany({ userId }),
+      // Statistiques d'usage IA conservées sans lien avec la personne
+      AIUsage.updateMany({ userId }, { $set: { userId: null } }),
       // Transactions manuelles supprimées, transactions financières réelles anonymisées
       Transaction.deleteMany({ userId, paymentMethod: 'cash' }),
       Transaction.updateMany(

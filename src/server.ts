@@ -86,10 +86,45 @@ const validateEnvironment = () => {
       );
     }
 
-    // Firebase (push notifications)
-    if (!process.env.FIREBASE_SERVICE_ACCOUNT && !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    // Variables lues par les services au runtime : leur absence ne casse pas le
+    // démarrage mais désactive silencieusement une fonctionnalité de sécurité
+    // ou une intégration — en production on refuse de démarrer.
+    for (const key of [
+      'REDIS_URL',
+      'ADMIN_URL',
+      'SWAGGER_USER',
+      'MAILGUN_API_KEY',
+      'MAILGUN_DOMAIN',
+      // Clé client : sans elle, /system/telemetry/* serait ouvert à tout Internet.
+      'MOBILE_CLIENT_API_KEY',
+    ]) {
+      if (!process.env[key]) {
+        errors.push(`${key} est requis en production`);
+      }
+    }
+    // Webhooks de paiement : sans secret, ils sont tous rejetés (400/401) — aucun risque de
+    // fausse validation — et les paiements sont alors confirmés par le sondage actif du
+    // fournisseur (PaymentPollingService, chaque minute). On avertit sans bloquer le démarrage.
+    if (process.env.STRIPE_SECRET_KEY && !process.env.STRIPE_WEBHOOK_SECRET) {
       warnings.push(
-        'FIREBASE_SERVICE_ACCOUNT non défini — les notifications push seront désactivées',
+        'STRIPE_WEBHOOK_SECRET non défini — webhooks Stripe désactivés ; paiements confirmés par polling (≈1 min)',
+      );
+    }
+    if (process.env.NOTCHPAY_PRIVATE_KEY && !process.env.NOTCHPAY_WEBHOOK_SECRET) {
+      warnings.push(
+        'NOTCHPAY_WEBHOOK_SECRET non défini — webhooks NotchPay désactivés ; paiements confirmés par polling (≈1 min)',
+      );
+    }
+
+    // Firebase (auth sociale/téléphone + notifications push) — mêmes variables
+    // que src/config/firebase.ts.
+    if (
+      !process.env.FIREBASE_PROJECT_ID ||
+      !process.env.FIREBASE_CLIENT_EMAIL ||
+      !process.env.FIREBASE_PRIVATE_KEY
+    ) {
+      errors.push(
+        'FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL et FIREBASE_PRIVATE_KEY sont requis en production (connexion Google/Apple/téléphone et notifications push)',
       );
     }
 
@@ -121,7 +156,7 @@ const validateEnvironment = () => {
   }
 
   // ── Variables recommandées (non-bloquantes) ──
-  const recommended = ['METRICS_TOKEN', 'STRIPE_WEBHOOK_SECRET', 'NOTCHPAY_WEBHOOK_SECRET'];
+  const recommended = ['METRICS_TOKEN'];
   for (const key of recommended) {
     if (!process.env[key]) {
       warnings.push(`Variable recommandée non définie : ${key}`);

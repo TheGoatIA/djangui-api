@@ -42,10 +42,10 @@ export const loginSchema = Joi.object({
   appVersion: Joi.string().optional(),
 });
 
+// Optional in the body: browser clients send it as the httpOnly refresh_token cookie
+// instead (AuthController.refresh rejects the request when neither is present).
 export const refreshTokenSchema = Joi.object({
-  refreshToken: Joi.string().required().messages({
-    'any.required': 'Refresh token is required',
-  }),
+  refreshToken: Joi.string().optional(),
 });
 
 export const resetPasswordSchema = Joi.object({
@@ -63,4 +63,7 @@ export const changePasswordSchema = Joi.object({
     'string.pattern.base': PASSWORD_ERROR_MSG,
     'any.required': 'New password is required',
   }),
+  // Identifies the caller's own session so it survives the password change
+  // (every other device is signed out). Browser clients use the cookie instead.
+  refreshToken: Joi.string().optional(),
 });

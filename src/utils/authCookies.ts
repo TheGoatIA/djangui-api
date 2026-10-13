@@ -35,3 +35,15 @@ export function clearAuthCookies(res: Response) {
   res.clearCookie('access_token');
   res.clearCookie('refresh_token');
 }
+
+/**
+ * Browser clients (the admin dashboard) authenticate through the httpOnly
+ * cookies set above and declare themselves with `X-Client-Type: web`. For them
+ * the raw JWTs must never appear in a JSON body: any script running on the page
+ * (XSS) could otherwise call /auth/login or /auth/refresh with `credentials:
+ * 'include'` and read the tokens back, defeating the httpOnly protection.
+ * Mobile clients (no such header) keep receiving tokens in the body.
+ */
+export function isCookieOnlyClient(req: { headers: Record<string, any> }): boolean {
+  return String(req.headers['x-client-type'] || '').toLowerCase() === 'web';
+}

@@ -7,7 +7,9 @@ export const checkoutStripeSchema = Joi.object({
     otherwise: Joi.optional(),
   }),
   type: Joi.string().valid('deposit', 'subscription').required(),
-  plan: Joi.string().valid('free', 'premium', 'business').optional(),
+  // 'free' is deliberately not accepted: it is not purchasable, and letting it
+  // through charged the Premium price then downgraded the user to 'free' on completion.
+  plan: Joi.string().valid('premium', 'business').optional(),
 });
 
 export const initNotchPaySchema = Joi.object({
@@ -18,7 +20,7 @@ export const initNotchPaySchema = Joi.object({
   }),
   type: Joi.string().valid('deposit', 'subscription').required(),
   phone: Joi.string().optional(),
-  plan: Joi.string().valid('free', 'premium', 'business').optional(),
+  plan: Joi.string().valid('premium', 'business').optional(),
 });
 
 export const payWithWalletSchema = Joi.object({

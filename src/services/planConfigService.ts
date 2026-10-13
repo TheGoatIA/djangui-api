@@ -805,10 +805,21 @@ export class PlanConfigService {
    * Initialiser / Mettre à jour les plans de base dans MongoDB
    */
   static async seedPlans(): Promise<void> {
-    for (const planData of SEED_PLANS) {
+    // Marketing copy/features are refreshed from code on every seed, but the
+    // fields an admin edits from the plans screen (prices, limits, visibility,
+    // ordering, highlight) are only written on first insert — otherwise every
+    // GET /subscriptions/plans silently reverted the admin's price changes.
+    const ADMIN_OWNED = ['pricing', 'limits', 'isActive', 'order', 'highlight'];
+    for (const planData of SEED_PLANS as any[]) {
+      const set: Record<string, any> = {};
+      const setOnInsert: Record<string, any> = {};
+      for (const [key, value] of Object.entries(planData)) {
+        if (key === 'slug') continue;
+        (ADMIN_OWNED.includes(key) ? setOnInsert : set)[key] = value;
+      }
       await PlanConfig.findOneAndUpdate(
         { slug: planData.slug },
-        { $set: planData },
+        { $set: set, $setOnInsert: setOnInsert },
         { upsert: true, new: true },
       );
     }

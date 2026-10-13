@@ -3,7 +3,7 @@ import { UploadController } from '../controllers/uploadController';
 import { upload, validateFileMagicBytes } from '../config/multer';
 import { protect, premiumOnly } from '../middleware/auth';
 import rateLimit from 'express-rate-limit';
-import { createRateLimitHandler } from '../utils/rateLimitStore';
+import { createRateLimitStore, createRateLimitHandler } from '../utils/rateLimitStore';
 
 const uploadLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -11,6 +11,9 @@ const uploadLimiter = rateLimit({
   message: 'Trop de téléversements, veuillez réessayer plus tard',
   standardHeaders: true,
   legacyHeaders: false,
+  // Shared Redis store: an in-memory bucket is per-process and multiplies the
+  // real limit by the number of PM2 cluster workers.
+  store: createRateLimitStore('upload'),
   handler: createRateLimitHandler('upload'),
 });
 

@@ -7,6 +7,7 @@ import { NotificationService } from './notificationService';
 import { MonitoringService } from './monitoringService';
 import { FinancialAlertService } from './financialAlertService';
 import { CurrencyService } from './currencyService';
+import { isSubscriptionEntitled } from '../utils/subscription';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger';
 
@@ -34,10 +35,7 @@ const getUserLimits = (user: {
   currency?: string;
   subscription?: { plan?: string; status?: string; endDate?: Date };
 }): AMLLimits => {
-  const isPremium =
-    user.subscription?.plan === 'premium' &&
-    user.subscription?.status === 'active' &&
-    (!user.subscription?.endDate || new Date(user.subscription.endDate) >= new Date());
+  const isPremium = isSubscriptionEntitled(user.subscription);
   const baseLimits = isPremium ? AML_LIMITS.premium : AML_LIMITS.free;
 
   const userCurrency = (user.currency || 'XAF').toUpperCase();
@@ -173,7 +171,7 @@ export class WalletService {
 
       // Limites AML selon le plan de l'utilisateur
       const limits = getUserLimits(user);
-      const planLabel = user.subscription?.plan === 'premium' ? 'premium' : 'gratuit';
+      const planLabel = isSubscriptionEntitled(user.subscription) ? 'premium' : 'gratuit';
 
       // AML: limite par transaction unique
       if (amount > limits.MAX_SINGLE_TRANSACTION) {

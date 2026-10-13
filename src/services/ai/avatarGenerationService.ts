@@ -163,7 +163,14 @@ export class AvatarGenerationService {
    * (e.g. another user's generated preview) and have it applied as their own.
    */
   static async applyAvatar(userId: string, avatarUrl: string): Promise<string> {
-    if (typeof avatarUrl !== 'string' || !avatarUrl.includes(`ai-${userId}-`)) {
+    // Must be an object this service itself stored for THIS user — a substring test
+    // alone would accept any external URL that merely contains the user's id.
+    const stored = typeof avatarUrl === 'string' ? StorageService.parseStoredUrl(avatarUrl) : null;
+    if (
+      !stored ||
+      stored.bucket !== 'kauri-uploads' ||
+      !stored.key.startsWith(`avatars/ai-${userId}-`)
+    ) {
       throw new AppError('Avatar invalide ou expiré. Générez-en un nouveau.', 400);
     }
     await User.findByIdAndUpdate(userId, { avatar: avatarUrl });

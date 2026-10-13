@@ -24,6 +24,11 @@ Ce document décrit l'architecture de sécurité, les politiques de protection d
 
 ### 2.2 Révocation de Sessions
 - Liste noire Redis au logout : le token d'accès est blacklisté avec un TTL égal à sa durée de vie résiduelle — impossible à réutiliser même s'il n'a pas encore expiré.
+- **Réinitialisation de mot de passe** : toutes les sessions (refresh tokens) de tous les appareils sont invalidées.
+- **Changement de mot de passe** : tous les autres appareils sont déconnectés ; seule la session courante est conservée.
+- Un compte désactivé ne peut plus ni se connecter (y compris via Firebase) ni rafraîchir ses tokens.
+- **Clients navigateur** (`X-Client-Type: web`) : les JWT ne sont jamais renvoyés dans le corps JSON (cookies httpOnly uniquement) — un script injecté ne peut pas les relire via `/auth/refresh`.
+- **Anti-CSRF** : toute requête mutante authentifiée uniquement par cookie doit porter un `Origin`/`Referer` appartenant à la liste d'origines autorisées (403 sinon). Les clients Bearer (mobile) et les webhooks ne sont pas concernés.
 - L'administrateur peut révoquer toutes les sessions d'un utilisateur suspect via `DELETE /api/v1/admin/users/:id/sessions` (action journalée de façon synchrone, § 5).
 
 ### 2.3 Authentification à deux facteurs (MFA / TOTP)
@@ -31,8 +36,10 @@ Ce document décrit l'architecture de sécurité, les politiques de protection d
 - Codes de secours hashés en base (bcrypt), jamais stockés en clair.
 
 ### 2.4 Brute force
-- Rate limiter dédié sur `/auth/login` (10 tentatives / 15 min par IP).
-- Verrouillage de compte progressif après échecs répétés, indépendant du rate limiting par IP (protège contre le password spraying distribué).
+- Rate limiter par IP sur login/inscription/2FA (30 / 15 min — volontairement large : de nombreux utilisateurs partagent une IP d'opérateur mobile) et bucket séparé (10 / 15 min) pour les endpoints qui envoient un email ou consomment un jeton (`forgot-password`, `resend-verification`, `reset-password`, `verify-email`).
+- Verrouillage de compte après 10 échecs / 15 min, indépendant de l'IP : c'est la vraie défense contre le brute force et le password spraying distribué.
+- `resend-verification` répond de façon identique que le compte existe ou non (pas d'énumération).
+- Rapprochement d'un compte existant par téléphone lors d'une connexion Firebase : uniquement si le numéro est **vérifié** (`isPhoneVerified`) — empêche le pré-détournement de compte.
 
 ---
 
@@ -71,7 +78,9 @@ Score heuristique évalué à chaque dépôt/retrait :
 - Chaque règle déclenchée est exposée en métrique Prometheus (`fraud_alerts_total`, `suspicious_activity_total`) — visible dans le dashboard Grafana.
 
 ### 4.3 Webhooks de paiement (Stripe & NotchPay)
+- **Sans webhook** : `PaymentPollingService` (cron chaque minute) interroge directement le fournisseur pour les paiements `pending` et les finalise via `completePayment` — même garde d'idempotence atomique que le webhook : pas de double crédit, même si un webhook ou `/payments/verify` arrive en parallèle (testé en concurrence sur une vraie base).
 - Signature vérifiée sur les **octets bruts exacts** capturés avant le parsing JSON (une re-sérialisation de `req.body` ne matcherait pas forcément bit à bit et rejetterait de vrais webhooks légitimes).
+- Un échec de traitement transitoire renvoie un statut 5xx : le prestataire redélivre le webhook (tous les traitements sont idempotents). Une référence inconnue (404) est journalisée et acquittée, car une redélivrance ne la résoudrait pas.
 - Transition d'état atomique sur échec de transfert (`findOneAndUpdate` avec garde `status: { $ne: 'failed' }`) — une livraison dupliquée du même webhook ne peut pas déclencher un double remboursement.
 
 ---
@@ -117,7 +126,9 @@ Score heuristique évalué à chaque dépôt/retrait :
 
 Un audit applicatif complet (authentification, OWASP API Top 10, logique financière, base de données, secrets, HTTP/infra, dépendances, logging/monitoring, gestion d'erreurs, conformité) a été réalisé le 29 août 2026 par lecture directe du code source (pas d'extrait collé — accès complet au dépôt, exécution réelle de `npm audit` et de la suite de tests).
 
-**Résultat** : 0 vulnérabilité critique ou élevée dans le code applicatif. Cinq constats de sévérité moyenne/faible identifiés, **tous corrigés depuis** :
+> **Mise à jour d'octobre 2026 (audit pré-production)** — corrigé depuis : dépendances de production à 0 vulnérabilité (`npm audit --omit=dev`) ; invalidation des sessions après changement/réinitialisation de mot de passe ; pré-détournement de compte par téléphone ; contrôle d'origine anti-CSRF ; jetons absents du corps JSON pour les clients navigateur ; validation de `PATCH /auth/me` (pays/devise non modifiables hors demande validée) ; mot de passe requis pour `DELETE /auth/delete-me` ; effacement complet des données personnelles à la suppression de compte ; webhooks redélivrables ; limitation du corps de la télémétrie et clé client obligatoire en production ; allowlist `/metrics` en correspondance exacte ; comparaisons de secrets en temps constant ; interfaces d'observabilité liées à `127.0.0.1` ; conteneur non-root, Node 22, `npm ci`, `HEALTHCHECK`.
+
+**Résultat (audit du 29 août 2026)** : 0 vulnérabilité critique ou élevée dans le code applicatif. Cinq constats de sévérité moyenne/faible identifiés, **tous corrigés depuis** :
 
 | Constat | Correction appliquée |
 | :-- | :-- |
@@ -127,7 +138,9 @@ Un audit applicatif complet (authentification, OWASP API Top 10, logique financi
 | Déploiement SSH par mot de passe | Migré vers authentification par clé (`PROD_SSH_KEY`) |
 | Limite de payload JSON implicite | Déclarée explicitement (`limit: '100kb'`) |
 
-**Non corrigé, hors périmètre du code** : absence d'endpoint self-service de suppression/anonymisation de compte (RGPD Art. 17) — nécessite une décision produit sur la politique de rétention avant implémentation. Terminaison TLS, gestionnaire de secrets externe, exercice de restauration de sauvegarde testé, et tests de charge sont également hors du périmètre de ce dépôt — voir [DEPLOYMENT.md](DEPLOYMENT.md) § 10.
+**Suppression de compte (RGPD Art. 17)** : `DELETE /api/v1/auth/delete-me` (mot de passe requis pour les comptes à mot de passe) efface les données personnelles non financières et anonymise les enregistrements financiers conservés pour la rétention AML de 5 ans.
+
+**Hors périmètre du code** : terminaison TLS, gestionnaire de secrets externe, exercice de restauration de sauvegarde testé, et tests de charge sont également hors du périmètre de ce dépôt — voir [DEPLOYMENT.md](DEPLOYMENT.md) § 10.
 
 ---
 

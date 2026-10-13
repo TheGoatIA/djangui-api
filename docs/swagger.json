@@ -4633,14 +4633,12 @@
                         "application/json": {
                             "schema": {
                                 "type": "object",
-                                "required": [
-                                    "refreshToken"
-                                ],
                                 "properties": {
                                     "refreshToken": {
                                         "type": "string"
                                     }
-                                }
+                                },
+                                "description": "Mobile clients send refreshToken in the body; browser clients (X-Client-Type: web) rely on the httpOnly refresh_token cookie and get no tokens in the response body."
                             }
                         }
                     }
@@ -4706,6 +4704,23 @@
                 "responses": {
                     "200": {
                         "description": "OK"
+                    }
+                },
+                "description": "Deletes the account and personal data. Password accounts must re-enter their password.",
+                "requestBody": {
+                    "required": false,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "password": {
+                                        "type": "string",
+                                        "description": "Current password (required for password-based accounts)"
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

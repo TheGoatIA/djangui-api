@@ -13,6 +13,9 @@ import { InvoiceService } from './invoiceService';
 import { FeatureFlagService } from './featureFlagService';
 import { FraudService } from './fraudService';
 import { NotificationService } from './notificationService';
+import { CurrencyService } from './currencyService';
+import PlanConfig from '../models/PlanConfig';
+import { computeNewEndDate, isSubscriptionEntitled, PaidPlan } from '../utils/subscription';
 
 export class PaymentService {
   /**
@@ -100,6 +103,34 @@ export class PaymentService {
   }
 
   /**
+   * Resolve the amount to charge for `plan`, server-side.
+   *
+   * The admin edits plan prices in the plans screen (PlanConfig), and that is also
+   * what the mobile app displays — so the charge must come from the same source,
+   * otherwise users are billed a different amount than the one they were shown.
+   * The hardcoded table is kept only as a fallback (plan missing/inactive/price <= 0).
+   */
+  static async resolvePlanPrice(
+    plan: PaidPlan,
+    countryCode?: string | null,
+  ): Promise<{ amount: number; currency: string }> {
+    const fallback =
+      plan === 'business'
+        ? this.getBusinessSubscriptionPrice(countryCode)
+        : this.getSubscriptionPrice(countryCode);
+    try {
+      const config = await PlanConfig.findOne({ slug: plan, isActive: true }).lean();
+      const configured = (config?.pricing?.monthly as any)?.[fallback.currency];
+      if (typeof configured === 'number' && Number.isFinite(configured) && configured > 0) {
+        return { amount: configured, currency: fallback.currency };
+      }
+    } catch (err: any) {
+      logger.warn(`Plan price lookup failed for ${plan}, using fallback: ${err.message}`);
+    }
+    return fallback;
+  }
+
+  /**
    * Create a Stripe Checkout Session for subscription or deposit
    */
   static async createStripeSession(
@@ -149,9 +180,7 @@ export class PaymentService {
     // client-supplied amount is what's actually charged and credited, which is safe.
     const { amount, currency } =
       type === 'subscription'
-        ? plan === 'business'
-          ? this.getBusinessSubscriptionPrice(user.country)
-          : this.getSubscriptionPrice(user.country)
+        ? await this.resolvePlanPrice(plan, user.country)
         : { amount: clientAmount, currency: user.currency || 'USD' };
 
     let session; // Declare session outside try block for wider scope
@@ -292,9 +321,7 @@ export class PaymentService {
     // Same rule as Stripe: subscription price is fixed server-side, never client-supplied.
     const { amount, currency } =
       type === 'subscription'
-        ? plan === 'business'
-          ? this.getBusinessSubscriptionPrice(user.country)
-          : this.getSubscriptionPrice(user.country)
+        ? await this.resolvePlanPrice(plan, user.country)
         : { amount: clientAmount, currency: user.currency || 'XAF' };
 
     const start = Date.now();
@@ -408,18 +435,35 @@ export class PaymentService {
           { session },
         );
       } else if (payment.type === 'subscription') {
-        const targetPlan =
-          (payment.metadata && payment.metadata.plan) ||
-          (payment.amount >= 4000 ? 'business' : 'premium');
+        // Never infer the tier from the amount (prices differ per currency, so a
+        // 12 EUR business payment used to be read as "premium"). Payments always
+        // carry metadata.plan; anything unexpected is a hard failure that rolls the
+        // whole transaction back (payment stays 'pending' and recoverable) rather
+        // than silently granting the wrong tier — or downgrading to 'free'.
+        const targetPlan = payment.metadata?.plan;
+        if (targetPlan !== 'premium' && targetPlan !== 'business') {
+          throw new AppError(
+            `Payment ${reference} has no valid subscription plan (got "${targetPlan}")`,
+            422,
+          );
+        }
         logger.info(`Upgrading user ${payment.userId} to ${targetPlan}...`);
 
+        const subscriber = await User.findById(payment.userId).session(session);
+        if (!subscriber) throw new AppError('User not found', 404);
+
+        const now = new Date();
         await User.findByIdAndUpdate(
           payment.userId,
           {
             'subscription.plan': targetPlan,
             'subscription.status': 'active',
-            'subscription.startDate': new Date(),
-            'subscription.endDate': new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            'subscription.startDate':
+              subscriber.subscription?.plan === targetPlan &&
+              isSubscriptionEntitled(subscriber.subscription)
+                ? subscriber.subscription?.startDate || now
+                : now,
+            'subscription.endDate': computeNewEndDate(subscriber.subscription, targetPlan),
           },
           { session },
         );
@@ -444,6 +488,15 @@ export class PaymentService {
       await InvoiceService.generateForTransaction(walletTransaction._id.toString());
     } else if (payment.type === 'subscription') {
       await InvoiceService.generateForPayment(payment._id.toString());
+
+      const planName =
+        payment.metadata?.plan === 'business' ? 'Super Premium (Business)' : 'Premium';
+      NotificationService.sendToUser(payment.userId.toString(), {
+        title: 'Abonnement activé 🌟',
+        body: `Votre abonnement Kauri ${planName} est actif. Merci pour votre confiance !`,
+        category: 'transactional',
+        data: { reference, type: 'subscription_success' },
+      }).catch((err: any) => logger.error(`Notification Error: ${err.message}`));
     }
 
     // Audit Log for payment completion — awaited (F21): this event backs the
@@ -502,7 +555,9 @@ export class PaymentService {
       } else if (payment.method === 'stripe') {
         // Verify with Stripe API
         const session = await stripe.checkout.sessions.retrieve(payment.externalReference!);
-        externalStatus = session.payment_status;
+        // A Checkout Session that expired unpaid is terminal: report it as such so the
+        // polling job can close the payment instead of re-checking it for 48 h.
+        externalStatus = session.status === 'expired' ? 'expired' : session.payment_status;
 
         if (session.payment_status === 'paid') {
           isPaid = true;
@@ -549,16 +604,18 @@ export class PaymentService {
     const user = await User.findById(userIdStr);
     if (!user) throw new AppError('User not found', 404);
 
-    const priceInfo =
-      plan === 'business'
-        ? this.getBusinessSubscriptionPrice(user.country)
-        : this.getSubscriptionPrice(user.country);
+    const priceInfo = await this.resolvePlanPrice(plan, user.country);
     const amount = priceInfo.amount;
     const currency = priceInfo.currency;
 
-    if (user.walletBalance < amount) {
+    // The wallet is denominated in the user's own currency, while the plan is
+    // priced in their country's billing currency — compare/debit in wallet currency.
+    const walletCurrency = (user.currency || currency).toUpperCase();
+    const walletAmount = CurrencyService.convert(amount, currency, walletCurrency);
+
+    if (user.walletBalance < walletAmount) {
       throw new AppError(
-        `Solde insuffisant dans votre portefeuille (${user.walletBalance.toLocaleString()} ${user.currency || 'XAF'} disponible, ${amount.toLocaleString()} ${currency} requis).`,
+        `Solde insuffisant dans votre portefeuille (${user.walletBalance.toLocaleString()} ${walletCurrency} disponible, ${walletAmount.toLocaleString()} ${walletCurrency} requis).`,
         400,
       );
     }
@@ -569,7 +626,7 @@ export class PaymentService {
       const walletTransaction = await WalletService.executeTransaction(
         {
           userId: userIdStr,
-          amount,
+          amount: walletAmount,
           type: 'withdrawal',
           description: `Abonnement Kauri ${plan === 'business' ? 'Super Premium (Business)' : 'Premium'} (Portefeuille)`,
           paymentMethod: 'wallet',
@@ -589,18 +646,25 @@ export class PaymentService {
             reference,
             status: 'completed',
             completedAt: new Date(),
+            metadata: { plan, walletAmount, walletCurrency },
           },
         ],
         { session },
       );
 
+      const current = await User.findById(userIdStr).session(session);
+      const now = new Date();
       const updatedUser = await User.findByIdAndUpdate(
         userIdStr,
         {
           'subscription.plan': plan,
           'subscription.status': 'active',
-          'subscription.startDate': new Date(),
-          'subscription.endDate': new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          'subscription.startDate':
+            current?.subscription?.plan === plan && isSubscriptionEntitled(current.subscription)
+              ? current.subscription?.startDate || now
+              : now,
+          'subscription.endDate': computeNewEndDate(current?.subscription, plan),
+          'subscription.autoRenew': false,
         },
         { new: true, session },
       );
@@ -624,7 +688,7 @@ export class PaymentService {
 
     NotificationService.sendToUser(userIdStr, {
       title: 'Abonnement Premium Activé 🌟',
-      body: `Félicitations ! Votre abonnement Kauri Premium (1 mois) a été payé avec succès depuis votre portefeuille (${amount} ${currency}).`,
+      body: `Félicitations ! Votre abonnement Kauri ${plan === 'business' ? 'Super Premium (Business)' : 'Premium'} (1 mois) a été payé avec succès depuis votre portefeuille (${amount} ${currency}).`,
       category: 'transactional',
       data: { reference, type: 'subscription_success' },
     }).catch((err: any) => logger.error(`Notification Error: ${err.message}`));
@@ -636,7 +700,7 @@ export class PaymentService {
     return {
       reference,
       status: 'completed',
-      message: 'Abonnement Kauri Premium activé avec succès !',
+      message: `Abonnement Kauri ${plan === 'business' ? 'Super Premium (Business)' : 'Premium'} activé avec succès !`,
       user: result.user,
     };
   }
@@ -645,15 +709,22 @@ export class PaymentService {
     const user = await User.findById(userId);
     if (!user) throw new AppError('User not found', 404);
 
-    if (user.subscription?.plan !== 'premium' || user.subscription?.status !== 'active') {
+    const plan = user.subscription?.plan;
+    if (
+      (plan !== 'premium' && plan !== 'business') ||
+      user.subscription?.status !== 'active' ||
+      !isSubscriptionEntitled(user.subscription)
+    ) {
       throw new AppError('No active premium subscription to cancel', 400);
     }
 
+    // Access is kept until endDate (see utils/subscription.ts); the expiration
+    // cron then moves the plan to 'expired'.
     user.subscription.status = 'cancelled';
     user.subscription.autoRenew = false;
     await user.save();
 
-    MonitoringService.recordChurn(user.subscription.plan, 'manual_cancel');
+    MonitoringService.recordChurn(plan, 'manual_cancel');
 
     // Notify Slack (user ID is enough to look the account up; no need for email/PII here)
     SlackService.sendFinance(

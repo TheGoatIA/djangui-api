@@ -98,6 +98,7 @@ router.get(
 // Actions destructives ou sensibles : admin seul
 router.patch('/users/:id', restrictTo('admin'), AdminController.updateUser);
 router.patch('/users/:id/status', restrictTo('admin'), AdminController.updateUserStatus);
+router.put('/users/:id/subscription', restrictTo('admin'), AdminController.setUserSubscription);
 router.post('/notifications/send', restrictTo('admin'), AdminController.sendPushNotification);
 router.post('/notifications/email', restrictTo('admin'), AdminController.sendEmail);
 router.post('/challenges', restrictTo('admin'), AdminController.createChallenge);

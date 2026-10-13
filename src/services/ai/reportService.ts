@@ -7,13 +7,14 @@ import TontineMember from '../../models/TontineMember';
 import { GeminiService } from './geminiService';
 import { PromptBuilder } from './promptBuilder';
 import { AppError } from '../../middleware/errorHandler';
+import { isSubscriptionEntitled } from '../../utils/subscription';
 
 export class ReportService {
   static async getMonthlyReport(userId: string, month: number, year: number) {
     const user = await User.findById(userId);
     if (!user) throw new AppError('User not found', 404);
 
-    if (user.subscription?.plan !== 'premium' || user.subscription?.status !== 'active') {
+    if (!isSubscriptionEntitled(user.subscription)) {
       throw new AppError('This is a premium feature.', 403);
     }
 

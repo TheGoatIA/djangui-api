@@ -11,10 +11,10 @@ Pour la logique derrière ces choix, voir [ARCHITECTURE.md](ARCHITECTURE.md). Po
 | Outil | Version | Nécessaire pour |
 | :-- | :-- | :-- |
 | Docker + Docker Compose | 24+ / v2 | Tous les modes de déploiement (recommandé) |
-| Node.js | 18, 20 ou 22 | Développement local sans Docker, ou build manuel |
+| Node.js | 22 ou 24 (LTS) | Développement local sans Docker, ou build manuel (Node 18/20 : fin de vie) |
 | Compte Google Gemini | — | Coach IA, OCR, analyse KYC (requis en production) |
 | Compte Stripe et/ou NotchPay | — | Au moins un moyen de paiement requis en production |
-| Firebase (Admin SDK) | — | Notifications push (optionnel, avertissement seulement si absent) |
+| Firebase (Admin SDK) | — | Connexion Google/Apple/téléphone et notifications push (**requis en production**) |
 
 ---
 
@@ -106,6 +106,15 @@ JAEGER_COLLECTOR_HTTP_PORT=14268
 JAEGER_COLLECTOR_GRPC_PORT=14250
 OTEL_PORT_GRPC=4317
 OTEL_PORT_HTTP=4318
+# Interface d'écoute des ports publiés (API, MinIO, Grafana, Prometheus, Jaeger, Graylog, console MinIO...).
+# Apache (sur l'hôte) joint ces services via localhost : aucun n'a besoin d'être exposé sur Internet.
+# 127.0.0.1 = joignable uniquement depuis l'hôte (reverse proxy / tunnel SSH). Ne pas mettre 0.0.0.0.
+INTERNAL_BIND_ADDR=127.0.0.1
+# OTLP/HTTP : 0.0.0.0 si l'app mobile exporte directement ses traces, sinon 127.0.0.1.
+OTEL_HTTP_BIND_ADDR=0.0.0.0
+# Versions épinglées (surcharger ici pour monter de version de façon contrôlée)
+JAEGER_VERSION=1.76.0
+OTEL_COLLECTOR_VERSION=0.162.0
 
 # --- Prometheus ---
 PROMETHEUS_PORT=9090
@@ -183,8 +192,8 @@ curl https://votre-domaine/api/health
 
 ### 5.1 `ci.yml` — Qualité du code (à chaque push/PR sur `main`/`dev`)
 Garde-fou de qualité générale, indépendant du déploiement (tourne aussi sur les Pull Requests, pas seulement les push) :
-1. **`security-audit`** — `npm audit --audit-level=high`, échoue le build sur vulnérabilité haute/critique.
-2. **`build-and-test`** — lint + build + tests sur Node 18.x, 20.x et 22.x en parallèle.
+1. **`security-audit`** — `npm audit --omit=dev --audit-level=high` (dépendances de production), échoue le build sur vulnérabilité haute/critique.
+2. **`build-and-test`** — `npm run lint` (échoue sur erreur), contrôle Prettier, build et **tests Jest** sur Node 22.x et 24.x (avec MongoDB et Redis en services).
 
 ### 5.1bis `build.yml` — Analyse statique SonarQube (à chaque push sur `dev`)
 Scan SonarQube (couverture, duplication, code smells, vulnérabilités), non bloquant par défaut.
@@ -235,6 +244,8 @@ Sans `ADMIN_PASSWORD`, le script génère un mot de passe aléatoire fort et l'a
 ## 7. Monitoring — mise en route
 
 1. Démarrer la stack (staging ou production, § 4) — Prometheus, Grafana, Alertmanager, Graylog et Jaeger démarrent avec l'API.
+> **Accès aux interfaces d'observabilité.** Depuis cette version, Grafana, Prometheus, Alertmanager, Jaeger, Graylog, la console MinIO et les ports internes OpenTelemetry sont publiés sur `127.0.0.1` uniquement (variable `INTERNAL_BIND_ADDR`, défaut `127.0.0.1`). Passez par le reverse proxy Apache (vhost → `127.0.0.1:<port>`) ou un tunnel SSH. Le port OTLP/HTTP 4318 reste lié à `OTEL_HTTP_BIND_ADDR` (défaut `0.0.0.0`, car l'app mobile peut y exporter directement) : mettez `OTEL_HTTP_BIND_ADDR=127.0.0.1` si l'app utilise le proxy de télémétrie de l'API.
+
 2. **Grafana** (`http://<host>:3001`, identifiants `GRAFANA_ADMIN_USER`/`GRAFANA_ADMIN_PASSWORD`) charge automatiquement le dashboard `grafana/dashboards/kauri-api.json` via le provisioning (`./grafana/provisioning`) — 121 panneaux couvrant l'intégralité des métriques exposées par `MonitoringService` (HTTP, DB, transactions, wallets, auth, KYC, fraude, webhooks, notifications, sécurité/compliance, jobs, IA, métier).
 3. **Prometheus** (`http://<host>:9090`) scrape `/metrics`, protégé par whitelist IP ou jeton bearer (`METRICS_TOKEN`) — voir `.env.example`.
 4. **Vérifiez impérativement que les webhooks Slack et le mot de passe SMTP sont de vraies valeurs**, pas les placeholders du compose (`https://hooks.slack.com/services/CHANGE/ME`, `changeme`). Avec un placeholder, Grafana/Alertmanager croient être configurés, tentent d'envoyer l'alerte, échouent silencieusement contre une URL invalide — **aucune alerte ne vous prévient que les alertes ne partent pas**. C'est le point le plus facile à oublier et le plus dangereux à oublier.
@@ -284,7 +295,12 @@ Répétez pour chacun des 5 webhooks. Un `ok` en réponse et un message qui appa
 1. **Proxy inverse & TLS** — **existe déjà sur le serveur actuel, mais hors de ce dépôt** : un Apache2 tournant directement sur l'hôte (pas en conteneur) fait office de reverse proxy pour tous les sous-domaines `*.kauri-app.com` (`api`, `admin`, `grafana`, `graylog`, `staging`, `storage`, `minio-staging`), avec certificats Let's Encrypt (`certbot`) et renouvellement automatique. **Ces vhosts (`/etc/apache2/sites-available/*.kauri-app.com*.conf`) ne sont pas versionnés** — un changement de config n'est ni revu, ni traçable, ni reproductible sur un nouveau serveur. À terme, envisager de les commiter (même dans un dossier séparé du dépôt applicatif) ou de migrer vers un reverse proxy conteneurisé piloté par ce dépôt.
 2. **Firewall — piège vérifié sur ce serveur** : `ufw` ne protège **pas** un port publié par Docker quand `docker-proxy` (mode userland, actif ici) écoute directement sur `0.0.0.0` — les règles `ufw`/`iptables INPUT` standard sont contournées par une redirection DNAT qui s'applique avant elles. C'est exactement ce qui a permis à Redis de production d'être joignable depuis internet malgré `ufw` actif (voir incident du 29/08/2026). **Ne publiez jamais un port Docker (`ports:`) pour un service qui n'a pas besoin d'être joignable depuis l'extérieur** — utilisez `expose:` (réseau Docker interne uniquement), comme c'est désormais le cas pour Redis et MongoDB dans `docker-compose.prod.yml`. Si un port doit être public, passez par le reverse proxy Apache (point 1), jamais par une publication Docker directe.
 3. **Secrets** — ce dépôt ne fournit pas d'intégration à un gestionnaire de secrets externe (Vault, AWS Secrets Manager). Les secrets vivent dans le `.env` du serveur, protégé uniquement par les permissions du système de fichiers — envisagez un vrai gestionnaire de secrets si votre menace le justifie.
-4. **`npm audit` désormais gaté en CI** (`ci.yml`) — un merge introduisant une dépendance vulnérable haute/critique échoue le build automatiquement.
+4. **Conteneur API non-root** — l'image s'exécute avec l'utilisateur `node` (uid 1000). Les dossiers montés depuis l'hôte doivent lui appartenir, sinon les uploads et sauvegardes échouent : `chown -R 1000:1000 uploads backups logs` avant le premier démarrage de cette image.
+5. **Variables désormais obligatoires en production** (le serveur refuse de démarrer sinon) : `REDIS_URL`, `ADMIN_URL`, `SWAGGER_USER`, `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, `MOBILE_CLIENT_API_KEY`, `FIREBASE_PROJECT_ID`/`FIREBASE_CLIENT_EMAIL`/`FIREBASE_PRIVATE_KEY`, plus `STRIPE_WEBHOOK_SECRET` / `NOTCHPAY_WEBHOOK_SECRET` dès que la passerelle correspondante est configurée.
+5bis. **Paiements sans webhook (mode actuel de la production).** `STRIPE_WEBHOOK_SECRET` et `NOTCHPAY_WEBHOOK_SECRET` ne sont plus bloquants au démarrage (simple avertissement). Tant qu'ils sont absents, les webhooks sont rejetés (400/401) et les paiements sont confirmés par **sondage actif du fournisseur** : `PaymentPollingService` interroge Stripe/NotchPay **chaque minute** pour tout paiement `pending` de moins de 48 h (puis au plus toutes les 10 min au-delà de 10 min d'âge) et le finalise via le même chemin idempotent que le webhook (aucun risque de double crédit). Délai typique de crédit : 1 à 2 minutes ; le mobile accélère en appelant `GET /payments/verify/:reference` au retour de paiement. La réconciliation 30 min (NotchPay : paiements, transferts, remboursements) reste active. Dès que les webhooks seront configurés, rien à changer : le sondage devient un filet de sécurité.
+6. **Origines CORS / CSRF** — `ADMIN_URL` et `CORS_ALLOWED_ORIGINS` (liste séparée par des virgules) sont ajoutées à la liste des origines autorisées. Toute requête mutante authentifiée uniquement par cookie doit venir d'une de ces origines (sinon 403).
+7. **Images non épinglées** — Jaeger et le collecteur OpenTelemetry sont épinglés (`JAEGER_VERSION`, `OTEL_COLLECTOR_VERSION`). MinIO/mc restent surchargeables via `MINIO_IMAGE` / `MINIO_MC_IMAGE` : épinglez-les sur un tag ou un digest précis dans le `.env` du serveur.
+8. **`npm audit` désormais gaté en CI** (`ci.yml`) — un merge introduisant une dépendance vulnérable haute/critique échoue le build automatiquement.
 
 ---
 

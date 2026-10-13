@@ -366,15 +366,7 @@ export interface INotification {
 // ─── Reseller Hub ─────────────────────────────────────────────────────────────
 
 export type ResellerServiceCategory =
-  | 'video'
-  | 'music'
-  | 'productivity'
-  | 'ai'
-  | 'gaming'
-  | 'vpn'
-  | 'design'
-  | 'education'
-  | 'other';
+  'video' | 'music' | 'productivity' | 'ai' | 'gaming' | 'vpn' | 'design' | 'education' | 'other';
 
 export type SlotStatus = 'active' | 'due_soon' | 'overdue' | 'blocked' | 'vacant';
 

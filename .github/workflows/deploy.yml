@@ -40,17 +40,17 @@ jobs:
     steps:
     - uses: actions/checkout@v7
 
-    - name: Use Node.js 20.x
+    - name: Use Node.js 22.x
       uses: actions/setup-node@v7
       with:
-        node-version: '20.x'
+        node-version: '22.x'
         cache: 'npm'
 
     - name: Install dependencies
       run: npm ci
 
     - name: Fail on high/critical vulnerabilities
-      run: npm audit --audit-level=high
+      run: npm audit --omit=dev --audit-level=high
 
     - name: Build
       run: npm run build
@@ -144,7 +144,7 @@ jobs:
         fi
 
     - name: Deploy (pull & restart — aucune action manuelle sur le serveur)
-      uses: appleboy/ssh-action@master
+      uses: appleboy/ssh-action@v1.2.0
       with:
         host: ${{ secrets.PROD_SERVER_IP }}
         username: ${{ secrets.PROD_USERNAME }}
@@ -159,7 +159,7 @@ jobs:
           export IMAGE_TAG="${{ steps.tag.outputs.tag }}"
           docker compose -f docker-compose.staging.yml pull api
           docker compose -f docker-compose.staging.yml up -d
-          docker image prune -a -f
+          docker image prune -f --filter "until=168h"
 
   deploy_production:
     name: 💎 Deploy to Production
@@ -180,7 +180,7 @@ jobs:
         fi
 
     - name: Deploy (pull & restart — aucune action manuelle sur le serveur)
-      uses: appleboy/ssh-action@master
+      uses: appleboy/ssh-action@v1.2.0
       with:
         host: ${{ secrets.PROD_SERVER_IP }}
         username: ${{ secrets.PROD_USERNAME }}
@@ -195,4 +195,4 @@ jobs:
           export IMAGE_TAG="${{ steps.tag.outputs.tag }}"
           docker compose -f docker-compose.prod.yml pull api
           docker compose -f docker-compose.prod.yml up -d
-          docker image prune -a -f
+          docker image prune -f --filter "until=168h"

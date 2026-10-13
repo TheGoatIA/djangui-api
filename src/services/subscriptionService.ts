@@ -193,9 +193,12 @@ export class SubscriptionService {
   static async processPremiumExpirations(): Promise<number> {
     const now = new Date();
     // Trouver les utilisateurs premium actifs dont l'abonnement est expiré
+    // Both paid tiers, and both 'active' and 'cancelled' (cancelled keeps access
+    // until endDate, then must land on 'expired' too). Previously only
+    // active 'premium' was handled, so 'business' never expired.
     const expiredUsers = await User.find({
-      'subscription.plan': 'premium',
-      'subscription.status': 'active',
+      'subscription.plan': { $in: ['premium', 'business'] },
+      'subscription.status': { $in: ['active', 'cancelled'] },
       'subscription.endDate': { $lte: now },
     });
 
@@ -210,8 +213,8 @@ export class SubscriptionService {
         const updated = await User.updateOne(
           {
             _id: user._id,
-            'subscription.plan': 'premium',
-            'subscription.status': 'active',
+            'subscription.plan': { $in: ['premium', 'business'] },
+            'subscription.status': { $in: ['active', 'cancelled'] },
             'subscription.endDate': { $lte: now },
           },
           { $set: { 'subscription.status': 'expired' } },
@@ -226,7 +229,7 @@ export class SubscriptionService {
           data: { type: 'PREMIUM_EXPIRATION' },
         });
 
-        MonitoringService.recordChurn('premium', 'auto_expiration');
+        MonitoringService.recordChurn(user.subscription?.plan || 'premium', 'auto_expiration');
         logger.info(`Premium status expired for user ${user._id}`);
         count++;
       } catch (error: any) {

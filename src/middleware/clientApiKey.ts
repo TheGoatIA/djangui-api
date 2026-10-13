@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { safeEqual } from '../utils/safeCompare';
 
 /**
  * Garde-fou léger pour les endpoints publics qui doivent rester accessibles
@@ -14,12 +15,17 @@ import { Request, Response, NextFunction } from 'express';
  */
 export function requireClientApiKey(req: Request, res: Response, next: NextFunction) {
   const expected = process.env.MOBILE_CLIENT_API_KEY;
-  // Si la clé n'est pas configurée côté serveur, ne pas bloquer silencieusement
-  // toute la télémétrie — mais ne pas non plus prétendre que le contrôle est actif.
-  if (!expected) return next();
+  if (!expected) {
+    // Fail CLOSED en production (server.ts refuse d'ailleurs de démarrer sans clé).
+    // Hors production, on laisse passer pour ne pas imposer la clé en local.
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(503).json({ success: false, message: 'Client key not configured' });
+    }
+    return next();
+  }
 
   const provided = req.headers['x-client-key'];
-  if (provided !== expected) {
+  if (typeof provided !== 'string' || !safeEqual(provided, expected)) {
     return res.status(401).json({ success: false, message: 'Invalid client key' });
   }
   next();

@@ -31,7 +31,7 @@ Kauri est une API REST pour la gestion de finances personnelles assistée par IA
 
 | Composant | Technologie | Rôle |
 | :-- | :-- | :-- |
-| **Backend** | Node.js 20 / TypeScript / Express | Logique métier & API REST |
+| **Backend** | Node.js 22 LTS / TypeScript / Express | Logique métier & API REST |
 | **Base de données** | MongoDB 7 (replica set) | Stockage persistant, transactions ACID |
 | **Cache & coordination** | Redis 7 | Rate limiting, idempotence, verrous distribués, liste noire JWT |
 | **Fichiers** | MinIO (S3-compatible) | Reçus, documents KYC, avatars, sauvegardes |
@@ -46,6 +46,8 @@ Le détail des décisions d'architecture (garde-fous financiers, anatomie d'une 
 ---
 
 ## Démarrage rapide
+
+Prérequis : **Node.js 22 LTS ou 24 LTS** (Node 20 est en fin de vie depuis avril 2026), Docker 24+.
 
 ```bash
 cp .env.example .env
@@ -69,7 +71,8 @@ Scripts disponibles :
 | `npm run build` | Compilation TypeScript vers `dist/` |
 | `npm start` | Lance le build compilé |
 | `npm test` | Suite de tests (Jest) |
-| `npm run lint` / `npm run format` | Vérification / formatage du code |
+| `npm run lint` | Vérification ESLint (échoue en cas d'erreur) |
+| `npm run format` | Réécrit les fichiers avec Prettier |
 | `npm run seed:admin` | Crée ou réinitialise le premier compte administrateur |
 | `npm run seed` | Initialise les feature flags par défaut |
 
@@ -79,11 +82,11 @@ Scripts disponibles :
 
 Le dashboard Grafana **"Kauri API — Production Dashboard"** (`grafana/dashboards/kauri-api.json`, chargé automatiquement au démarrage) couvre l'intégralité des 99 métriques Prometheus exposées, organisées en 16 sections : Overview/SLOs, HTTP, Runtime Node.js, Base de données, Transactions financières, Wallets & Économie, Utilisateurs & Authentification, KYC, Providers de paiement & Webhooks, Notifications, Sécurité & Compliance, Jobs, IA & Cache, Tontines/Objectifs/Défis, Investissement, Services externes.
 
-Accès (une fois la stack staging/production démarrée) :
-- **Grafana** — `http://localhost:3001`
-- **Prometheus** — `http://localhost:9090` (protégé, voir `.env.example`)
-- **Jaeger** — `http://localhost:16686`
-- **Graylog** — `http://localhost:9000`
+Accès (une fois la stack staging/production démarrée). Ces interfaces sont publiées **uniquement sur `127.0.0.1`** de l'hôte (variable `INTERNAL_BIND_ADDR`) : on y accède via le reverse proxy ou un tunnel SSH (`ssh -L 3001:127.0.0.1:3001 user@serveur`), jamais directement depuis Internet.
+- **Grafana** — `http://127.0.0.1:3001`
+- **Prometheus** — `http://127.0.0.1:9090`
+- **Jaeger** — `http://127.0.0.1:16686` (aucune authentification native — ne jamais l'exposer)
+- **Graylog** — `http://127.0.0.1:9000`
 
 Procédure de mise en route complète, y compris le piège des webhooks d'alerte laissés en placeholder, dans [DEPLOYMENT.md](DEPLOYMENT.md) § Monitoring.
 
@@ -96,6 +99,8 @@ Résumé des garanties principales — détail complet, y compris les résultats
 - **Idempotence** — header `Idempotency-Key` sur toutes les opérations financières, réclamé atomiquement (Redis `SET NX`).
 - **Atomicité** — toute mutation de solde s'exécute dans une transaction MongoDB.
 - **MFA (TOTP)** — sur les comptes admin/support.
+- **Sessions** — révoquées sur tous les appareils après une réinitialisation de mot de passe ; changement de mot de passe = déconnexion des autres appareils.
+- **Cookies admin** — httpOnly + `SameSite=Lax`, avec contrôle d'origine (anti-CSRF) sur toute requête mutante authentifiée par cookie.
 - **Chiffrement au repos** — AES-256-GCM authentifié pour les données sensibles.
 - **Détection de fraude** — score heuristique en temps réel, blocage automatique au-delà du seuil.
 - **Audit trail immuable** — actions à fort impact journalées de façon synchrone, rétention 5 ans.

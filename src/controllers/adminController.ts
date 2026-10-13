@@ -28,6 +28,7 @@ import Payment from '../models/Payment';
 import { PayoutService } from '../services/payoutService';
 import { KYCService } from '../services/kycService';
 import SupportTicket from '../models/SupportTicket';
+import { computeNewEndDate, isSubscriptionEntitled } from '../utils/subscription';
 
 export class AdminController {
   // --- AI ANALYTICS ---
@@ -1147,6 +1148,112 @@ export class AdminController {
           stats: volumeStats,
         },
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Grant, extend or revoke a user's paid plan from the admin dashboard.
+   *
+   * Body: { plan: 'free' | 'premium' | 'business',
+   *         durationDays?: number   // default 30, extends remaining time on the same plan
+   *         endDate?: ISO string    // explicit expiry, takes precedence over durationDays
+   *         reason?: string }       // kept in the audit trail
+   *
+   * This does not create a Payment (no money moved), so granted plans don't
+   * pollute revenue figures; the audit log is the record of who granted what.
+   */
+  static async setUserSubscription(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const { plan, durationDays, endDate, reason } = req.body || {};
+
+      if (!['free', 'premium', 'business'].includes(plan)) {
+        return next(new AppError("plan must be one of 'free', 'premium', 'business'", 400));
+      }
+
+      const user = await User.findById(id);
+      if (!user) return next(new AppError('No user found with that ID', 404));
+
+      const previous = {
+        plan: user.subscription?.plan,
+        status: user.subscription?.status,
+        endDate: user.subscription?.endDate,
+      };
+
+      const now = new Date();
+      let update: Record<string, any>;
+
+      if (plan === 'free') {
+        update = {
+          $set: {
+            'subscription.plan': 'free',
+            'subscription.status': 'active',
+            'subscription.autoRenew': false,
+          },
+          $unset: { 'subscription.endDate': '', 'subscription.startDate': '' },
+        };
+      } else {
+        let newEnd: Date;
+        if (endDate !== undefined && endDate !== null && endDate !== '') {
+          newEnd = new Date(endDate);
+          if (Number.isNaN(newEnd.getTime()) || newEnd <= now) {
+            return next(new AppError('endDate must be a valid date in the future', 400));
+          }
+        } else {
+          const days = durationDays === undefined ? 30 : Number(durationDays);
+          if (!Number.isFinite(days) || days < 1 || days > 3650) {
+            return next(new AppError('durationDays must be between 1 and 3650', 400));
+          }
+          newEnd = computeNewEndDate(user.subscription as any, plan, days, now);
+        }
+
+        const keepsStart =
+          user.subscription?.plan === plan && isSubscriptionEntitled(user.subscription as any);
+        update = {
+          $set: {
+            'subscription.plan': plan,
+            'subscription.status': 'active',
+            'subscription.startDate': keepsStart ? user.subscription?.startDate || now : now,
+            'subscription.endDate': newEnd,
+            'subscription.autoRenew': false,
+          },
+        };
+      }
+
+      const updated = await User.findByIdAndUpdate(id, update, { new: true });
+
+      await AuditService.recordSync(
+        {
+          userId: (req as any).user._id,
+          action: 'ADMIN_SET_SUBSCRIPTION',
+          resource: 'User',
+          resourceId: id,
+          oldValue: previous,
+          newValue: {
+            plan: updated?.subscription?.plan,
+            status: updated?.subscription?.status,
+            endDate: updated?.subscription?.endDate,
+            reason: reason || null,
+          },
+          status: 'success',
+        } as any,
+        req,
+        'admin',
+      );
+
+      if (plan !== 'free') {
+        const label = plan === 'business' ? 'Super Premium (Business)' : 'Premium';
+        NotificationService.sendToUser(id, {
+          title: 'Abonnement activé 🌟',
+          body: `Votre abonnement Kauri ${label} a été activé. Profitez de toutes les fonctionnalités !`,
+          category: 'transactional',
+          data: { type: 'subscription_success' },
+        }).catch((err: any) => logger.error(`Notification Error: ${err.message}`));
+      }
+
+      res.status(200).json({ status: 'success', data: { user: updated } });
     } catch (error) {
       next(error);
     }

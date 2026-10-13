@@ -22,6 +22,7 @@ import { SlackService } from './slackService';
 import { MonitoringService } from './monitoringService';
 import { ReconciliationService } from './reconciliationService';
 import { NotchPayReconciliationService } from './notchpayReconciliationService';
+import { PaymentPollingService } from './paymentPollingService';
 import { FinancialAlertService } from './financialAlertService';
 import { CurrencyService } from './currencyService';
 import UserActivity from '../models/UserActivity';
@@ -201,6 +202,16 @@ export class CronService {
       '0 4 * * *',
       this.runMonitored('global_reconciliation', async () => {
         await ReconciliationService.checkInternalIntegrity();
+      }),
+    );
+
+    // Every minute: confirm pending Stripe/NotchPay payments by asking the provider
+    // directly. This is what completes payments when provider webhooks are not
+    // configured (and a safety net when they are: completePayment is idempotent).
+    cron.schedule(
+      '* * * * *',
+      this.runMonitored('payment_polling', async () => {
+        await PaymentPollingService.pollPendingPayments();
       }),
     );
 
@@ -787,9 +798,15 @@ export class CronService {
    */
   private static async runOverdraftPrevention() {
     try {
+      const now = new Date();
       const premiumUsers = await User.find({
-        'subscription.plan': 'premium',
-        'subscription.status': 'active',
+        'subscription.plan': { $in: ['premium', 'business'] },
+        'subscription.status': { $in: ['active', 'cancelled'] },
+        $or: [
+          { 'subscription.endDate': { $gte: now } },
+          { 'subscription.endDate': { $exists: false }, 'subscription.status': 'active' },
+          { 'subscription.endDate': null, 'subscription.status': 'active' },
+        ],
         isActive: true,
       });
 

@@ -58,18 +58,23 @@ export class UploadController {
         return res.status(400).json({ success: false, message: 'No file uploaded' });
       }
 
-      // Upload vers MinIO
-      const avatarUrl = await StorageService.uploadFile(
-        req.file.path,
-        'kauri-uploads',
-        `avatars/${req.file.filename}`,
-      );
-
-      // Nettoyage local
+      // Upload vers MinIO — nettoyage local dans un `finally` : un échec du stockage
+      // ne doit pas laisser le fichier temporaire sur le disque.
+      let avatarUrl: string;
       try {
-        fs.unlinkSync(req.file.path);
-      } catch (e: any) {
-        logger.warn(`Failed to cleanup physical file at ${req.file.path}`, { error: e.message });
+        avatarUrl = await StorageService.uploadFile(
+          req.file.path,
+          'kauri-uploads',
+          `avatars/${req.file.filename}`,
+        );
+      } finally {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (e: any) {
+          logger.warn(`Failed to cleanup physical file at ${req.file.path}`, {
+            error: e.message,
+          });
+        }
       }
 
       await User.findByIdAndUpdate(req.user._id, { avatar: avatarUrl });
@@ -125,19 +130,23 @@ export class UploadController {
         return res.status(400).json({ success: false, message: 'No file uploaded' });
       }
 
-      // Upload vers MinIO (privé)
-      const documentUrl = await StorageService.uploadFile(
-        req.file.path,
-        'kauri-uploads',
-        `documents/${req.file.filename}`,
-        'private',
-      );
-
-      // Nettoyage local
+      // Upload vers MinIO (privé) — nettoyage local garanti, même en cas d'échec
+      let documentUrl: string;
       try {
-        fs.unlinkSync(req.file.path);
-      } catch (e: any) {
-        logger.warn(`Failed to cleanup physical file at ${req.file.path}`, { error: e.message });
+        documentUrl = await StorageService.uploadFile(
+          req.file.path,
+          'kauri-uploads',
+          `documents/${req.file.filename}`,
+          'private',
+        );
+      } finally {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (e: any) {
+          logger.warn(`Failed to cleanup physical file at ${req.file.path}`, {
+            error: e.message,
+          });
+        }
       }
 
       res.status(200).json({
