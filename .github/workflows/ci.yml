@@ -113,19 +113,17 @@ jobs:
 
       - name: Image Docker (build, non publiée)
         run: docker build -t kauri-api:ci .
+      # Trivy exécuté via son image Docker officielle (même version que la validation locale) :
+      # indépendant de l'installeur de binaire de l'action, qui échouait dans le runner.
       - name: Scan de l'image (Trivy — HIGH/CRITICAL corrigeables)
-        uses: aquasecurity/trivy-action@v0.33.1
-        with:
-          image-ref: kauri-api:ci
-          # Version du binaire Trivy épinglée = celle validée en local (0 HIGH/CRITICAL).
-          version: v0.58.1
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: '1'
-          vuln-type: os,library
-          # Les secrets sont couverts par gitleaks ; le scanner de secrets de Trivy signalait
-          # le placeholder 'sk_test_placeholder' de config/stripe.ts (faux positif).
-          scanners: vuln
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$HOME/.cache/trivy:/root/.cache/trivy" \
+            aquasec/trivy:0.58.1 image kauri-api:ci \
+            --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+            --vuln-type os,library --exit-code 1 --no-progress
+
 
   # ------------------------------------------------------------------------- Sonar
   sonar:
