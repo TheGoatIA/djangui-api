@@ -50,6 +50,26 @@ const errorHandler = (err: any, req: Request, res: Response, next: NextFunction)
     const message = fieldMapping[rawField] || 'Cette ressource ou valeur existe déjà.';
     err = new AppError(message, 409);
   }
+  // Client errors raised by the body parsers (malformed JSON, payload too large,
+  // unsupported charset...) are the CALLER's fault: answer 4xx, never a generic 500
+  // that also pollutes the logs/alerts with fake "critical" errors.
+  if (
+    !err.isOperational &&
+    err.expose === true &&
+    typeof err.type === 'string' &&
+    err.statusCode >= 400 &&
+    err.statusCode < 500
+  ) {
+    const clientMessages: Record<string, string> = {
+      'entity.parse.failed': 'Corps de requête JSON invalide.',
+      'entity.too.large': 'Corps de requête trop volumineux.',
+      'encoding.unsupported': 'Encodage de la requête non supporté.',
+      'charset.unsupported': 'Jeu de caractères non supporté.',
+      'request.aborted': 'Requête interrompue.',
+      'request.size.invalid': 'Taille de requête invalide.',
+    };
+    err = new AppError(clientMessages[err.type] || 'Requête invalide.', err.statusCode);
+  }
   // --------------------------------------------
 
   if (process.env.NODE_ENV === 'development') {
