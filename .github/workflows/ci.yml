@@ -114,9 +114,11 @@ jobs:
       - name: Image Docker (build, non publiée)
         run: docker build -t kauri-api:ci .
       - name: Scan de l'image (Trivy — HIGH/CRITICAL corrigeables)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.33.1
         with:
           image-ref: kauri-api:ci
+          # Version du binaire Trivy épinglée = celle validée en local (0 HIGH/CRITICAL).
+          version: v0.58.1
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: '1'
