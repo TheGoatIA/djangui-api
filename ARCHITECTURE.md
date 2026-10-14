@@ -8,13 +8,24 @@ Pour la posture sécurité (contrôles, politiques), voir [SECURITY.md](SECURITY
 
 ## 1. Vue d'ensemble de l'écosystème
 
-Kauri est composé de trois dépôts distincts qui communiquent exclusivement via l'API HTTP décrite ici :
+Kauri est composé de quatre dépôts distincts ; les clients communiquent exclusivement via l'API HTTP décrite ici :
 
 | Dépôt | Rôle | Stack |
 | :-- | :-- | :-- |
 | **djangui-api** (ce dépôt) | Backend — logique métier, persistance, intégrations | Node.js 22 LTS / TypeScript / Express |
 | **djangui-admin** | Dashboard d'administration | React / TypeScript |
-| **djangui-mobile** | Application cliente finale | Flutter / Dart |
+| **djangui-mobile** | Application cliente finale | Flutter 3.47.6 / Dart |
+| **kauri-website** | Site vitrine, pages légales, liens vérifiés (`assetlinks.json` est servi par l'API) | HTML statique / nginx |
+
+```mermaid
+flowchart LR
+  M[Mobile Flutter] -->|HTTPS · X-Client-Api-Key · JWT| API
+  A[Admin React] -->|HTTPS · cookie httpOnly · X-Client-Type web| API
+  W[Website] -.->|liens légaux, deep links| M
+  API[API Node.js] --> DB[(MongoDB RS)]
+  API --> R[(Redis)]
+  API --> EXT[Stripe · NotchPay · Gemini · Firebase]
+```
 
 Le backend est la seule source de vérité pour tout calcul financier — aucun solde, taux de change ou prix d'abonnement n'est jamais fait confiance venant du client (principe *zero-trust client*, voir SECURITY.md § 1).
 
@@ -99,8 +110,16 @@ Deux modes d'écriture, choisis délibérément selon la criticité :
 
 Rétention légale : 5 ans par défaut (`AUDIT_LOG_RETENTION_DAYS`), aligné sur les obligations AML/KYC typiques.
 
-### 4.6 Webhooks de paiement
+### 4.6 Webhooks de paiement et polling de secours
 Stripe et NotchPay signent leurs payloads ; la vérification se fait sur les octets bruts exacts (voir § 2). Un retrait échoué déclenche un remboursement automatique **dans une transition d'état atomique** (`findOneAndUpdate` avec garde `status: { $ne: 'failed' }`) — deux livraisons dupliquées du même webhook ne peuvent pas rembourser deux fois.
+
+**Sans webhook** : `PaymentPollingService` (planifié par `cronService`, chaque minute) interroge le fournisseur pour les paiements `pending` et appelle le même `completePayment` idempotent que les webhooks. Une erreur transitoire renvoie 5xx côté webhook pour que le fournisseur retente.
+
+### 4.7 Authentification & sessions
+- **Mobile** : tokens JWT dans le corps de réponse, stockés en stockage sécurisé.
+- **Admin web** (`X-Client-Type: web`) : tokens uniquement en cookies httpOnly `SameSite=Lax`, jamais dans le JSON ; garde d'origine (CSRF) sur les mutations.
+- Access 15 min / refresh 7 j, `jti` unique, refresh hashé en base, révocation de toutes les sessions au reset/changement de mot de passe.
+- Limiteurs : auth 30/15 min, flux e-mail 10/15 min, verrouillage de compte après 10 échecs, 2FA TOTP pour admin/support.
 
 ---
 
@@ -160,7 +179,8 @@ Points clés :
 - **API stateless** — aucune session en mémoire locale (tout est en Redis), donc scaling horizontal sans sticky sessions.
 - **MongoDB en replica set (`rs0`)** dès le docker-compose fourni, avec authentification par keyfile — condition requise par Mongoose pour les transactions ACID utilisées en § 4.1.
 - **MongoDB et Redis ne sont jamais exposés sur l'hôte** — accessibles uniquement depuis le réseau Docker interne (`expose`, pas `ports`).
-- **TLS n'est pas géré dans ce dépôt** — aucun reverse proxy (nginx/traefik/caddy) n'est fourni ; c'est une responsabilité d'infrastructure à ajouter en amont (voir DEPLOYMENT.md § Ce qui n'est pas dans ce dépôt).
+- **TLS n'est pas géré dans ce dépôt** — sur le VPS Kauri, un Apache hôte termine TLS (Let's Encrypt) et proxifie vers `127.0.0.1` ; les ports Docker publiés sont liés à `127.0.0.1` (`INTERNAL_BIND_ADDR`). Les projets compose `kauri-prod` et `kauri-staging` sont isolés ; les images viennent de `ghcr.io/thegoatia`.
+- **Pare-feu** : les ports publiés par Docker contournent ufw ; des règles `DOCKER-USER` (conntrack) filtrent l'extérieur (voir `scripts/ops/kauri-vps-fix.sh`).
 
 ---
 
@@ -176,7 +196,21 @@ Points clés :
 
 ---
 
-## 9. Pour aller plus loin
+## 9. Chaîne CI/CD et qualité
+
+```mermaid
+flowchart LR
+  DEV[push / PR] --> CI[ci.yml<br/>quality · test · security · sonar]
+  CI -->|branche dev| ST[deploy.yml → staging]
+  CI -->|branche main| PR[deploy.yml → production]
+  DB[Dependabot hebdo] --> DEV
+```
+
+`deploy.yml` appelle `ci.yml` (`workflow_call`) : aucun déploiement sans CI verte. Détail dans DEPLOYMENT.md § 11.
+
+---
+
+## 10. Pour aller plus loin
 
 - **Sécurité** — [SECURITY.md](SECURITY.md)
 - **Déploiement & variables d'environnement** — [DEPLOYMENT.md](DEPLOYMENT.md)

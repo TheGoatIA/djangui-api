@@ -7,7 +7,8 @@ Kauri est une API REST pour la gestion de finances personnelles assistée par IA
 - [SECURITY.md](SECURITY.md) — contrôles de sécurité, conformité, résultats d'audit
 - [DEPLOYMENT.md](DEPLOYMENT.md) — déploiement, variables d'environnement, CI/CD
 - [RUNBOOK.md](RUNBOOK.md) — procédures opérationnelles (rotation de secrets, sauvegardes, incidents)
-- [CONTRIBUTING.md](CONTRIBUTING.md) — standards de code et procédure de contribution
+- [CONTRIBUTING.md](CONTRIBUTING.md) — standards de code, tests, qualité et procédure de contribution
+- [CHANGELOG.md](CHANGELOG.md) — historique des changements
 - `/api-docs` — documentation Swagger interactive (protégée par Basic Auth)
 
 ---
@@ -22,7 +23,7 @@ Kauri est une API REST pour la gestion de finances personnelles assistée par IA
 - **KYC automatisé** — soumission de documents, analyse par IA (Gemini Vision) avec rapport de confiance, validation manuelle finale par un admin.
 - **Coach IA & OCR** — analyse conversationnelle des habitudes financières, scan de reçus par vision, génération d'avatar de profil par IA.
 - **Hub Revendeur** — gestion de slots, facturation d'abonnement automatisée, notifications programmées.
-- **Paiements** — Stripe (cartes) et NotchPay (Mobile Money), webhooks vérifiés par signature.
+- **Paiements** — Stripe (cartes) et NotchPay (Mobile Money), webhooks vérifiés par signature, **plus** un polling de secours (cron chaque minute, idempotent) qui finalise les paiements même si un webhook n'arrive jamais.
 - **Gamification** — points d'expérience, niveaux, badges liés aux défis complétés.
 
 ---
@@ -40,6 +41,15 @@ Kauri est une API REST pour la gestion de finances personnelles assistée par IA
 | **Observabilité** | Prometheus / Grafana | 99 métriques métier et techniques, dashboard de 121 panneaux |
 | **Logs** | Winston / Graylog | Logs structurés, rotation, alertes critiques Slack+email |
 | **Traçage** | OpenTelemetry / Jaeger | Traçage distribué des requêtes |
+
+### Écosystème Kauri
+
+| Dépôt | Rôle | Stack | Déploiement |
+| :-- | :-- | :-- | :-- |
+| **djangui-api** (ce dépôt) | API REST | Node 22 / TS / Express | GitHub Actions → GHCR → VPS (`dev` = staging, `main` = prod) |
+| **djangui-admin** | Dashboard d'administration | React / Vite / TS | GitHub Actions → GHCR → VPS |
+| **djangui-mobile** | Application Android / iOS | Flutter 3.47.6 | staging : GitHub ; production : Codemagic |
+| **kauri-website** | Site vitrine & pages légales | HTML statique / nginx | GitHub Actions → VPS (push sur `main` = prod) |
 
 Le détail des décisions d'architecture (garde-fous financiers, anatomie d'une requête, topologie de déploiement) est dans [ARCHITECTURE.md](ARCHITECTURE.md).
 
@@ -70,11 +80,34 @@ Scripts disponibles :
 | `npm run dev` | Serveur de développement avec rechargement à chaud |
 | `npm run build` | Compilation TypeScript vers `dist/` |
 | `npm start` | Lance le build compilé |
-| `npm test` | Suite de tests (Jest) |
+| `npm test` | Suite de tests (Jest) — nécessite MongoDB en replica set et Redis |
+| `npm run test:ci` | Tests + couverture avec seuils (utilisé par la CI) |
 | `npm run lint` | Vérification ESLint (échoue en cas d'erreur) |
 | `npm run format` | Réécrit les fichiers avec Prettier |
 | `npm run seed:admin` | Crée ou réinitialise le premier compte administrateur |
 | `npm run seed` | Initialise les feature flags par défaut |
+
+---
+
+## Qualité, tests et CI/CD
+
+Chaque Pull Request et chaque push sur `dev`/`main` exécute `.github/workflows/ci.yml` :
+
+```mermaid
+flowchart LR
+  PR[PR / push] --> Q[quality<br/>lint + tsc + format]
+  PR --> T[test<br/>Jest + MongoDB RS + Redis<br/>seuils de couverture]
+  PR --> S[security<br/>npm audit · OSV · Semgrep<br/>gitleaks · Trivy image]
+  T --> SO[sonar<br/>SonarQube + quality gate]
+  Q & T & S & SO --> D{dev / main ?}
+  D -->|dev| STG[deploy staging]
+  D -->|main| PRD[deploy production]
+```
+
+- **Tests** : 92 tests Jest (unitaires + intégration sécurité/paiements), seuils de couverture dans `jest.config.js`.
+- **Sécurité** : Semgrep (0 erreur tolérée), gitleaks (`.gitleaks.toml`), Trivy (0 HIGH/CRITICAL sur l'image), OSV-Scanner.
+- **SonarQube** : instance auto-hébergée (`sonar-project.properties`), quality gate bloquante.
+- **Dépendances** : Dependabot hebdomadaire sur `dev` (`.github/dependabot.yml`).
 
 ---
 
@@ -100,7 +133,10 @@ Résumé des garanties principales — détail complet, y compris les résultats
 - **Atomicité** — toute mutation de solde s'exécute dans une transaction MongoDB.
 - **MFA (TOTP)** — sur les comptes admin/support.
 - **Sessions** — révoquées sur tous les appareils après une réinitialisation de mot de passe ; changement de mot de passe = déconnexion des autres appareils.
-- **Cookies admin** — httpOnly + `SameSite=Lax`, avec contrôle d'origine (anti-CSRF) sur toute requête mutante authentifiée par cookie.
+- **Cookies admin** — httpOnly + `SameSite=Lax` ; avec `X-Client-Type: web` aucun token n'est renvoyé dans le JSON ; contrôle d'origine (anti-CSRF) sur toute requête mutante authentifiée par cookie.
+- **Limitation de débit** — auth 30/15 min, flux e-mail 10/15 min, verrouillage de compte après 10 échecs.
+- **Tokens** — access 15 min / refresh 7 jours, identifiant `jti` unique, révocation de session.
+- **Conteneur** — image Node 22 non-root, HEALTHCHECK, ports publiés sur `127.0.0.1` uniquement.
 - **Chiffrement au repos** — AES-256-GCM authentifié pour les données sensibles.
 - **Détection de fraude** — score heuristique en temps réel, blocage automatique au-delà du seuil.
 - **Audit trail immuable** — actions à fort impact journalées de façon synchrone, rétention 5 ans.
