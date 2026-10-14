@@ -314,3 +314,27 @@ Pour être direct sur les limites de ce guide : les points suivants sont des res
 - Tests de charge (aucun script k6/artillery fourni)
 - Statut légal (licence d'établissement de monnaie électronique / partenariat bancaire selon juridiction) et programme AML/KYC opérationnel au-delà du scoring automatique déjà en place côté code
 - **MongoDB de production reste publié sur l'hôte** (`0.0.0.0:15001`, protégé par mot de passe uniquement) tant que le conteneur n'a pas été recréé via `docker-compose.prod.yml` — corrigé automatiquement au premier déploiement via le nouveau pipeline CI/CD (§ 5.2), mais pas avant
+
+## 11. Qualité, tests & SonarQube
+
+Les contrôles ci-dessous tournent sur **chaque PR** (dont Dependabot, qui arrive sur `dev`) et, via `deploy.yml`, sur **chaque push `dev`/`main` avant build et déploiement** : rien n'est déployé si l'un échoue.
+
+| Contrôle | Où | Bloquant |
+| :-- | :-- | :-- |
+| ESLint (erreurs), Prettier, `tsc --noEmit` | job `quality` | oui |
+| Tests unitaires + **intégration sécurité** (`tests/integration/security.test.ts`) + **paiements** (replica set Mongo, `payments.test.ts`) | job `test` (Node 22 et 24) | oui |
+| Couverture : plancher global **et** par fichier critique (`jest.config.js`, `npm run test:ci`) | job `test` | oui |
+| `npm audit --omit=dev` (HIGH+) | job `security` | oui |
+| Secrets (gitleaks, `.gitleaks.toml`) | job `security` | oui |
+| SAST Semgrep (TypeScript/Node/Express/JWT, sévérité ERROR) | job `security` | oui |
+| Image Docker construite + scan Trivy (HIGH/CRITICAL corrigeables) | job `security` | oui |
+| SonarQube : analyse + **Quality Gate** (`sonar.qualitygate.wait`) | job `sonar` | oui (si secrets définis) |
+
+**Règles d'or** : les planchers de couverture ne se baissent jamais (on les relève quand on ajoute des tests) ; chaque correctif de sécurité s'accompagne d'un test de non-régression dans `tests/integration/security.test.ts`.
+
+### SonarQube (instance dédiée Kauri)
+- Dossier serveur : `/var/www/kauri/sonarqube` (`docker-compose.yml`, `.env` 600). Conteneurs `kauri-sonarqube` et `kauri-sonarqube-db`, port `127.0.0.1:19200` (jamais exposé), image `sonarqube:26.4.0.121862-community`, plugin **Flutter/Dart** monté depuis `extensions/plugins/`.
+- **Indépendante** de l'ancienne instance partagée `/var/www/sonarqube` (non modifiée).
+- URL publique : `https://sonar.kauri-app.com` (vhost Apache `sonar.kauri-app.com.conf` → `127.0.0.1:19200`). **Prérequis DNS** : enregistrement A `sonar` → IP du VPS, puis `certbot --apache -d sonar.kauri-app.com`.
+- Identifiants et jetons CI (un par dépôt) : `/root/kauri-sonarqube-credentials.txt` (600). À reporter dans les **secrets GitHub** de chaque dépôt : `SONAR_HOST_URL` et `SONAR_TOKEN` (jeton `ci-kauri-api` / `ci-kauri-admin` / `ci-kauri-mobile`).
+- Projets : `kauri-api`, `kauri-admin`, `kauri-mobile` (Quality Gate « Sonar way »).

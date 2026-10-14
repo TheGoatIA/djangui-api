@@ -9,3 +9,5 @@ mongodb.key
 
 tsconfig.tsbuildinfo
 scratch
+
+coverage

@@ -71,8 +71,16 @@ export class VaultCrypto {
 
     try {
       const key = this.deriveKey(saltId);
-      const decipher = crypto.createDecipheriv(this.ALGORITHM, key, Buffer.from(iv, 'hex'));
-      decipher.setAuthTag(Buffer.from(authTag, 'hex'));
+      // authTagLength FIXE : sans lui, GCM accepterait un tag tronqué (1 à 16 octets) et un
+      // attaquant pourrait forger un texte chiffré avec une probabilité de succès élevée.
+      const decipher = crypto.createDecipheriv(this.ALGORITHM, key, Buffer.from(iv, 'hex'), {
+        authTagLength: 16,
+      });
+      const tag = Buffer.from(authTag, 'hex');
+      if (tag.length !== 16) {
+        throw new Error('Invalid authentication tag length');
+      }
+      decipher.setAuthTag(tag);
 
       let decrypted = decipher.update(ciphertext, 'hex', 'utf8');
       decrypted += decipher.final('utf8');

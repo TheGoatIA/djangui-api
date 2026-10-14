@@ -10,6 +10,7 @@
     "seed": "ts-node scripts/seedFeatureFlags.ts",
     "seed:admin": "ts-node scripts/createAdmin.ts",
     "test": "jest",
+    "test:ci": "jest --ci --coverage",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.ts\""
   },

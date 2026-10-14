@@ -10,6 +10,28 @@ import { EmailService } from './emailService';
 import { SlackService } from './slackService';
 import { AuditService } from './auditService';
 import Country from '../models/Country';
+import Transaction from '../models/Transaction';
+import Payment from '../models/Payment';
+import TontineMember from '../models/TontineMember';
+import SharedSlot from '../models/SharedSlot';
+import SharedMasterAccount from '../models/SharedMasterAccount';
+import Subscription from '../models/Subscription';
+import Invoice from '../models/Invoice';
+import SupportTicket from '../models/SupportTicket';
+import Budget from '../models/Budget';
+import BudgetParticipant from '../models/BudgetParticipant';
+import SavingGoal from '../models/SavingGoal';
+import GoalParticipant from '../models/GoalParticipant';
+import Notification from '../models/Notification';
+import Investment from '../models/Investment';
+import Conversation from '../models/Conversation';
+import UserChallenge from '../models/UserChallenge';
+import HealthScoreHistory from '../models/HealthScoreHistory';
+import UserActivity from '../models/UserActivity';
+import SessionLog from '../models/SessionLog';
+import ConnectionLog from '../models/ConnectionLog';
+import CountryChangeRequest from '../models/CountryChangeRequest';
+import AIUsage from '../models/AIUsage';
 import redis from '../config/redis';
 import { hashToken } from '../utils/cryptoUtils';
 import {
@@ -970,28 +992,6 @@ export class AuthService {
     }
 
     // Cascade delete user data (RGPD right to erasure) while preserving AML financial records (F10, F20)
-    const { default: Transaction } = await import('../models/Transaction');
-    const { default: Payment } = await import('../models/Payment');
-    const { default: TontineMember } = await import('../models/TontineMember');
-    const { default: SharedSlot } = await import('../models/SharedSlot');
-    const { default: SharedMasterAccount } = await import('../models/SharedMasterAccount');
-    const { default: Subscription } = await import('../models/Subscription');
-    const { default: Invoice } = await import('../models/Invoice');
-    const { default: SupportTicket } = await import('../models/SupportTicket');
-    const { default: Budget } = await import('../models/Budget');
-    const { default: BudgetParticipant } = await import('../models/BudgetParticipant');
-    const { default: SavingGoal } = await import('../models/SavingGoal');
-    const { default: GoalParticipant } = await import('../models/GoalParticipant');
-    const { default: Notification } = await import('../models/Notification');
-    const { default: Investment } = await import('../models/Investment');
-    const { default: Conversation } = await import('../models/Conversation');
-    const { default: UserChallenge } = await import('../models/UserChallenge');
-    const { default: HealthScoreHistory } = await import('../models/HealthScoreHistory');
-    const { default: UserActivity } = await import('../models/UserActivity');
-    const { default: SessionLog } = await import('../models/SessionLog');
-    const { default: ConnectionLog } = await import('../models/ConnectionLog');
-    const { default: CountryChangeRequest } = await import('../models/CountryChangeRequest');
-    const { default: AIUsage } = await import('../models/AIUsage');
 
     await Promise.all([
       // Données personnelles non financières : effacées (RGPD art. 17)

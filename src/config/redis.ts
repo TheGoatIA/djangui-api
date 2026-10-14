@@ -51,6 +51,36 @@ if (process.env.NODE_ENV === 'test') {
       return had ? 1 : 0;
     }),
     exists: jest.fn(async (key: string) => (store.has(key) ? 1 : 0)),
+    // Counters / pipelines used by the login lockout (AuthService.login)
+    incr: jest.fn(async (key: string) => {
+      const n = Number(store.get(key) ?? 0) + 1;
+      store.set(key, String(n));
+      return n;
+    }),
+    expire: jest.fn(async () => 1),
+    multi: jest.fn(() => {
+      const ops: Array<() => Promise<unknown>> = [];
+      const chain: any = {
+        incr: (key: string) => {
+          ops.push(async () => {
+            const n = Number(store.get(key) ?? 0) + 1;
+            store.set(key, String(n));
+            return n;
+          });
+          return chain;
+        },
+        expire: () => {
+          ops.push(async () => 1);
+          return chain;
+        },
+        exec: async () => {
+          const out: unknown[] = [];
+          for (const op of ops) out.push([null, await op()]);
+          return out;
+        },
+      };
+      return chain;
+    }),
     info: jest.fn().mockResolvedValue(''),
     call: jest.fn().mockResolvedValue(null),
   };

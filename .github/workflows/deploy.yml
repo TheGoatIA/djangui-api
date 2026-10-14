@@ -23,45 +23,12 @@ permissions:
   packages: write
 
 jobs:
+  # Mêmes contrôles que sur les PRs (qualité, tests + couverture, sécurité, Sonar) :
+  # rien n'est construit ni déployé si l'un d'eux échoue.
   test:
-    name: 🧪 Run Tests
-    runs-on: ubuntu-latest
-
-    services:
-      mongodb:
-        image: mongo:7.0
-        ports:
-          - 27017:27017
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-
-    steps:
-    - uses: actions/checkout@v7
-
-    - name: Use Node.js 22.x
-      uses: actions/setup-node@v7
-      with:
-        node-version: '22.x'
-        cache: 'npm'
-
-    - name: Install dependencies
-      run: npm ci
-
-    - name: Fail on high/critical vulnerabilities
-      run: npm audit --omit=dev --audit-level=high
-
-    - name: Build
-      run: npm run build
-
-    - name: Run Unit Tests
-      env:
-        MONGODB_URI: mongodb://localhost:27017/kauri_test
-        REDIS_URL: redis://localhost:6379
-        JWT_ACCESS_SECRET: test_secret
-        NODE_ENV: test
-      run: npm run test
+    name: ✅ CI (qualité · tests · sécurité · Sonar)
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
 
   build-and-push:
     name: 🐳 Build & Push Docker Image

@@ -25,8 +25,18 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/docs ./docs
 COPY --from=builder /app/src/i18n ./dist/i18n
 
-# Installer PM2 Globalement pour gérer les clusters
-RUN npm install pm2 -g
+# PM2 (gestion du cluster) installé dans /opt/pm2, version ÉPINGLÉE, avec les dépendances
+# transitives vulnérables forcées vers leurs versions corrigées (overrides) : pm2@7.0.4 tire
+# encore basic-ftp 5.3.1 et js-yaml 4.3.1 (CVE HIGH corrigeables, relevées par Trivy).
+# npm/npx/yarn sont ensuite RETIRÉS : inutiles à l'exécution (pm2-runtime + node suffisent)
+# et leurs dépendances embarquées étaient une source de CVE de l'image.
+RUN mkdir -p /opt/pm2 && cd /opt/pm2 \
+    && echo '{"name":"pm2-env","private":true,"dependencies":{"pm2":"7.0.4"},"overrides":{"basic-ftp":"^6.2.1","js-yaml":"^4.3.2"}}' > package.json \
+    && npm install --omit=dev --no-audit --no-fund && npm cache clean --force \
+    && ln -s /opt/pm2/node_modules/.bin/pm2-runtime /usr/local/bin/pm2-runtime \
+    && ln -s /opt/pm2/node_modules/.bin/pm2 /usr/local/bin/pm2 \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
+              /opt/yarn-* /usr/local/bin/yarn /usr/local/bin/yarnpkg /root/.npm
 
 # Copier la configuration PM2
 COPY ecosystem.config.js .

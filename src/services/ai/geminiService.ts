@@ -238,13 +238,24 @@ export class GeminiService {
   static parseJSON(text: string): any {
     try {
       // 1. Try to find JSON in markdown code blocks
-      const markdownMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
-      if (markdownMatch) {
-        return JSON.parse(markdownMatch[1]);
+      // (sans regex : un motif `\s*([\s\S]*?)\s*` a un backtracking quadratique sur une réponse
+      // IA volumineuse ou pathologique — alerte ReDoS SonarQube)
+      const fenceStart = text.indexOf('```json');
+      if (fenceStart !== -1) {
+        const bodyStart = fenceStart + '```json'.length;
+        const fenceEnd = text.indexOf('```', bodyStart);
+        if (fenceEnd !== -1) {
+          return JSON.parse(text.slice(bodyStart, fenceEnd).trim());
+        }
       }
 
       // 2. Try to find anything between the first { and the last }
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      const firstBrace = text.indexOf('{');
+      const lastBrace = text.lastIndexOf('}');
+      const jsonMatch =
+        firstBrace !== -1 && lastBrace > firstBrace
+          ? [text.slice(firstBrace, lastBrace + 1)]
+          : null;
       if (!jsonMatch) {
         logger.warn(`AI Response has no JSON: "${text.substring(0, 500)}..."`);
         throw new Error('Invalid AI response format: No JSON object found');

@@ -1,0 +1,23 @@
+# Configuration gitleaks (scan d'secrets dans la CI) — étend les règles par défaut.
+title = "Kauri API gitleaks"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Valeurs factices / fixtures de test / artefacts locaux non versionnés"
+paths = [
+  '''(^|/)node_modules/''',
+  '''(^|/)dist/''',
+  '''(^|/)coverage/''',
+  '''(^|/)logs/''',
+  '''(^|/)\.env$''',                     # fichier local, jamais versionné (.gitignore)
+  '''\.env\.example(\.staging)?$''',     # gabarits : uniquement des placeholders
+  '''scripts/ops/test-normalize-env\.sh$''',  # fausse clé PEM de test
+  '''package-lock\.json$''',
+]
+regexes = [
+  '''sk_test_placeholder''',
+  '''sk_test_YOUR_KEY_HERE''',
+  '''YOUR_PRIVATE_KEY''',
+]

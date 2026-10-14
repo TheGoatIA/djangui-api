@@ -1,19 +1,53 @@
+# Dependabot — djangui-api
+# Toutes les mises à jour arrivent sur `dev` (jamais directement sur `main`), une fois
+# par semaine (lundi matin, heure du Cameroun), groupées pour limiter le bruit :
+# 1 PR « minor+patch » par écosystème, les montées MAJEURES restent des PRs séparées
+# (à relire une par une). La CI (tests, audit, Sonar) tourne sur chaque PR.
 version: 2
 updates:
-  - package-ecosystem: "npm"
-    directory: "/"
+  - package-ecosystem: 'npm'
+    directory: '/'
+    target-branch: 'dev'
     schedule:
-      interval: "weekly"
-    target-branch: "dev"
+      interval: 'weekly'
+      day: 'monday'
+      time: '06:00'
+      timezone: 'Africa/Douala'
     open-pull-requests-limit: 20
-    reviewers:
-      - "borisgauty" # Based on your registration name
-    labels:
-      - "dependencies"
-      - "security"
-  
-  - package-ecosystem: "github-actions"
-    directory: "/"
+    commit-message:
+      prefix: 'chore(deps)'
+      prefix-development: 'chore(deps-dev)'
+    groups:
+      production-minor-patch:
+        dependency-type: 'production'
+        update-types: ['minor', 'patch']
+      development-minor-patch:
+        dependency-type: 'development'
+        update-types: ['minor', 'patch']
+
+  - package-ecosystem: 'docker'
+    directory: '/'
+    target-branch: 'dev'
     schedule:
-      interval: "monthly"
-    target-branch: "dev"
+      interval: 'weekly'
+      day: 'monday'
+      time: '06:00'
+      timezone: 'Africa/Douala'
+    open-pull-requests-limit: 20
+    commit-message:
+      prefix: 'chore(docker)'
+
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    target-branch: 'dev'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '06:00'
+      timezone: 'Africa/Douala'
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: 'chore(ci)'
+    groups:
+      github-actions:
+        patterns: ['*']
