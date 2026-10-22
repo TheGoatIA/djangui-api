@@ -221,6 +221,12 @@ services:
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_SECURITY_ADMIN_USER=admin
+      # Lues par grafana/provisioning/alerting/contactpoints.yaml (${VAR})
+      - GRAFANA_SLACK_WEBHOOK_CRITICAL=${GRAFANA_SLACK_WEBHOOK_CRITICAL:-https://hooks.slack.com/services/CHANGE/ME}
+      - GRAFANA_SLACK_WEBHOOK_WARNINGS=${GRAFANA_SLACK_WEBHOOK_WARNINGS:-https://hooks.slack.com/services/CHANGE/ME}
+      - GRAFANA_SLACK_WEBHOOK_FINTECH=${GRAFANA_SLACK_WEBHOOK_FINTECH:-https://hooks.slack.com/services/CHANGE/ME}
+      - GRAFANA_SLACK_WEBHOOK_SECURITY=${GRAFANA_SLACK_WEBHOOK_SECURITY:-https://hooks.slack.com/services/CHANGE/ME}
+      - GRAFANA_ALERT_EMAIL_TO=${GRAFANA_ALERT_EMAIL_TO:-ops@kauri-app.com}
     restart: unless-stopped
     logging: *default-logging
     deploy:
