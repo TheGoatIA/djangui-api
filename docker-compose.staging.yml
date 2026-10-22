@@ -35,8 +35,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      otel-collector:
-        condition: service_started
     networks:
       - kauri-network
     volumes:
@@ -119,160 +117,13 @@ services:
           cpus: '0.5'
 
   # Centralized Logging (Graylog)
-  opensearch:
-    image: opensearchproject/opensearch:2.11.0
-    environment:
-      - cluster.name=opensearch
-      - node.name=opensearch
-      - discovery.type=single-node
-      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
-      - bootstrap.memory_lock=true
-      - DISABLE_INSTALL_DEMO_CONFIG=true
-      - DISABLE_SECURITY_PLUGIN=true
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-      nofile:
-        soft: 65536
-        hard: 65536
-    volumes:
-      - opensearch_data:/usr/share/opensearch/data
-    networks:
-      - kauri-network
-    restart: unless-stopped
-    logging: *default-logging
-    deploy:
-      resources:
-        limits:
-          memory: 2G
-          cpus: '1.0'
-        reservations:
-          memory: 1G
+  # Monitoring : pile d'observabilite centrale du VPS (/opt/observability).
+  # Elle est branchee sur le reseau kauri-network de ce projet et y repond sous les
+  # noms "graylog" (GELF UDP 12201) et "otel-collector" (OTLP 4317/4318) ; le
+  # Prometheus central collecte api:5000/metrics. Regles : alerts/rules.yaml.
+  # Interfaces : grafana.borisgauty.com (org Kauri), logs.borisgauty.com,
+  # traces.borisgauty.com, alerts.borisgauty.com.
 
-  graylog:
-    image: graylog/graylog:5.2
-    depends_on:
-      opensearch:
-        condition: service_started
-      mongodb:
-        condition: service_healthy
-    environment:
-      - GRAYLOG_NODE_ID_FILE=/usr/share/graylog/data/config/node-id
-      # Generate: pwgen -N 1 -s 96 (min 16 chars, must be unique per installation)
-      - GRAYLOG_PASSWORD_SECRET=${GRAYLOG_PASSWORD_SECRET}
-      # Generate: echo -n "yourpassword" | sha256sum
-      - GRAYLOG_ROOT_PASSWORD_SHA2=${GRAYLOG_ROOT_PASSWORD_SHA2}
-      - GRAYLOG_HTTP_BIND_ADDRESS=0.0.0.0:9000
-      - GRAYLOG_ELASTICSEARCH_HOSTS=http://opensearch:9200
-      - GRAYLOG_MONGODB_URI=mongodb://${MONGODB_USER:-admin}:${MONGODB_PASSWORD}@mongodb:27017/graylog?authSource=admin&replicaSet=rs0
-    ports:
-      - "${INTERNAL_BIND_ADDR:-127.0.0.1}:${GRAYLOG_HTTP_PORT:-9000}:9000"
-      - "${INTERNAL_BIND_ADDR:-127.0.0.1}:${GRAYLOG_GELF_PORT:-12201}:12201/udp"
-    networks:
-      - kauri-network
-    volumes:
-      - graylog_data:/usr/share/graylog/data
-    restart: unless-stopped
-    logging: *default-logging
-    deploy:
-      resources:
-        limits:
-          memory: 1.5G
-          cpus: '1.0'
-        reservations:
-          memory: 1G
-
-  # Monitoring (Prometheus & Grafana)
-  prometheus:
-    image: prom/prometheus:v2.48.0 # Version spécifique
-    ports:
-      - "${INTERNAL_BIND_ADDR:-127.0.0.1}:${PROMETHEUS_PORT:-9090}:9090"
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-      - ./alerts/rules.yaml:/etc/prometheus/alerts/rules.yaml
-      - ./metrics_token:/etc/prometheus/metrics_token:ro
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-    networks:
-      - kauri-network
-    restart: unless-stopped
-    logging: *default-logging
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.5'
-
-  grafana:
-    image: grafana/grafana:10.2.2 # Version spécifique
-    ports:
-      - "${INTERNAL_BIND_ADDR:-127.0.0.1}:${GRAFANA_PORT:-3001}:3000"
-    depends_on:
-      - prometheus
-    networks:
-      - kauri-network
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning
-      - ./grafana/dashboards:/etc/grafana/dashboards
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_SECURITY_ADMIN_USER=admin
-      # Lues par grafana/provisioning/alerting/contactpoints.yaml (${VAR})
-      - GRAFANA_SLACK_WEBHOOK_CRITICAL=${GRAFANA_SLACK_WEBHOOK_CRITICAL:-https://hooks.slack.com/services/CHANGE/ME}
-      - GRAFANA_SLACK_WEBHOOK_WARNINGS=${GRAFANA_SLACK_WEBHOOK_WARNINGS:-https://hooks.slack.com/services/CHANGE/ME}
-      - GRAFANA_SLACK_WEBHOOK_FINTECH=${GRAFANA_SLACK_WEBHOOK_FINTECH:-https://hooks.slack.com/services/CHANGE/ME}
-      - GRAFANA_SLACK_WEBHOOK_SECURITY=${GRAFANA_SLACK_WEBHOOK_SECURITY:-https://hooks.slack.com/services/CHANGE/ME}
-      - GRAFANA_ALERT_EMAIL_TO=${GRAFANA_ALERT_EMAIL_TO:-ops@kauri-app.com}
-    restart: unless-stopped
-    logging: *default-logging
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.5'
-
-  # OpenTelemetry
-  jaeger:
-    image: jaegertracing/all-in-one:${JAEGER_VERSION:-1.76.0}
-    ports:
-      - "${INTERNAL_BIND_ADDR:-127.0.0.1}:${JAEGER_PORT:-16686}:16686" # Web UI
-      - "${INTERNAL_BIND_ADDR:-127.0.0.1}:${JAEGER_COLLECTOR_HTTP_PORT:-14268}:14268" # Collector HTTP
-      - "${INTERNAL_BIND_ADDR:-127.0.0.1}:${JAEGER_COLLECTOR_GRPC_PORT:-14250}:14250" # Collector gRPC
-    networks:
-      - kauri-network
-    restart: unless-stopped
-    logging: *default-logging
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-          cpus: '0.5'
-
-  otel-collector:
-    image: otel/opentelemetry-collector:${OTEL_COLLECTOR_VERSION:-0.162.0}
-    command: [ "--config=/etc/otel-collector-config.yaml" ]
-    volumes:
-      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
-    ports:
-      - "${INTERNAL_BIND_ADDR:-127.0.0.1}:${OTEL_PORT_GRPC:-4317}:4317" # OTLP gRPC
-      - "${OTEL_HTTP_BIND_ADDR:-0.0.0.0}:${OTEL_PORT_HTTP:-4318}:4318" # OTLP HTTP
-    depends_on:
-      - jaeger
-    networks:
-      - kauri-network
-    restart: unless-stopped
-    logging: *default-logging
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-          cpus: '0.5'
-
-  # MinIO Object Storage
   minio:
     image: ${MINIO_IMAGE:-minio/minio:latest}
     ports:
@@ -324,18 +175,6 @@ volumes:
   mongodb_data:
     external: true
     name: kauri-staging_mongodb_data
-  opensearch_data:
-    external: true
-    name: kauri-staging_opensearch_data
-  graylog_data:
-    external: true
-    name: kauri-staging_graylog_data
-  grafana_data:
-    external: true
-    name: kauri-staging_grafana_data
-  prometheus_data:
-    external: true
-    name: kauri-staging_prometheus_data
   minio_data:
     external: true
     name: kauri-staging_minio_data
