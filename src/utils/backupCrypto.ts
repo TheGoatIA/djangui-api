@@ -18,9 +18,14 @@ const keyFrom = (secret: string) => {
   return crypto.createHash('sha256').update(secret).digest();
 };
 
+/** Longueur du tag d'authentification AES-GCM (128 bits), écrite en fin de fichier. */
+const TAG_LENGTH = 16;
+
 export async function encryptFile(src: string, dst: string, secret: string): Promise<void> {
   const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', keyFrom(secret), iv);
+  const cipher = crypto.createCipheriv('aes-256-gcm', keyFrom(secret), iv, {
+    authTagLength: TAG_LENGTH,
+  });
   fs.writeFileSync(dst, Buffer.concat([MAGIC, iv]));
   await pipeline(fs.createReadStream(src), cipher, fs.createWriteStream(dst, { flags: 'a' }));
   fs.appendFileSync(dst, cipher.getAuthTag());
@@ -36,7 +41,10 @@ export async function decryptFile(src: string, dst: string, secret: string): Pro
   fs.readSync(fd, tag, 0, 16, size - 16);
   fs.closeSync(fd);
   if (!head.subarray(0, 4).equals(MAGIC)) throw new Error('Not a Kauri encrypted backup');
-  const decipher = crypto.createDecipheriv('aes-256-gcm', keyFrom(secret), head.subarray(4, 16));
+  // Longueur de tag imposée : sans elle, un tag tronqué (falsifié) pourrait être accepté.
+  const decipher = crypto.createDecipheriv('aes-256-gcm', keyFrom(secret), head.subarray(4, 16), {
+    authTagLength: TAG_LENGTH,
+  });
   decipher.setAuthTag(tag);
   // Tampered/truncated file or wrong key → 'Unsupported state or unable to authenticate data'
   await pipeline(
