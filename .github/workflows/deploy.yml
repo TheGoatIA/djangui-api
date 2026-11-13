@@ -128,6 +128,18 @@ jobs:
           docker compose -f docker-compose.staging.yml up -d
           docker image prune -f --filter "until=168h"
 
+    - name: Notification Slack (#deployment)
+      if: always()
+      env:
+        SLACK_WEBHOOK: ${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}
+        STATUS: ${{ job.status }}
+        TAG: ${{ steps.tag.outputs.tag }}
+      run: |
+        if [ -z "$SLACK_WEBHOOK" ]; then echo "SLACK_DEPLOY_WEBHOOK_URL non défini : notification ignorée"; exit 0; fi
+        if [ "$STATUS" = "success" ]; then HEAD="✅ *Kauri API* — déploiement *STAGING* réussi"; else HEAD="❌ *Kauri API* — déploiement *STAGING* ÉCHOUÉ"; fi
+        MSG=$(printf '%s\n• Version : %s\n• Commit : %s (%s)\n• <%s|Voir le pipeline>' "$HEAD" "${TAG:-?}" "${GITHUB_SHA::7}" "$GITHUB_ACTOR" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID")
+        curl -s -X POST -H 'Content-type: application/json' --data "$(jq -n --arg t "$MSG" '{text:$t}')" "$SLACK_WEBHOOK" >/dev/null
+
   deploy_production:
     name: 💎 Deploy to Production
     needs: build-and-push
@@ -163,3 +175,15 @@ jobs:
           docker compose -f docker-compose.prod.yml pull api
           docker compose -f docker-compose.prod.yml up -d
           docker image prune -f --filter "until=168h"
+
+    - name: Notification Slack (#deployment)
+      if: always()
+      env:
+        SLACK_WEBHOOK: ${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}
+        STATUS: ${{ job.status }}
+        TAG: ${{ steps.tag.outputs.tag }}
+      run: |
+        if [ -z "$SLACK_WEBHOOK" ]; then echo "SLACK_DEPLOY_WEBHOOK_URL non défini : notification ignorée"; exit 0; fi
+        if [ "$STATUS" = "success" ]; then HEAD="✅ *Kauri API* — déploiement *PRODUCTION* réussi"; else HEAD="❌ *Kauri API* — déploiement *PRODUCTION* ÉCHOUÉ"; fi
+        MSG=$(printf '%s\n• Version : %s\n• Commit : %s (%s)\n• <%s|Voir le pipeline>' "$HEAD" "${TAG:-?}" "${GITHUB_SHA::7}" "$GITHUB_ACTOR" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID")
+        curl -s -X POST -H 'Content-type: application/json' --data "$(jq -n --arg t "$MSG" '{text:$t}')" "$SLACK_WEBHOOK" >/dev/null

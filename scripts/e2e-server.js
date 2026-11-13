@@ -12,7 +12,12 @@
  *   E2E_SKIP_SEED=1 node scripts/e2e-server.js            # keep current data
  */
 const { spawnSync, spawn } = require('child_process');
+const crypto = require('crypto');
 const path = require('path');
+
+/** Secret de test local : dérivé de son nom, stable d'un lancement à l'autre, jamais en clair. */
+const localSecret = (name) =>
+  crypto.createHash('sha256').update(`kauri-e2e-local:${name}`).digest('hex');
 
 const PORT = process.env.E2E_API_PORT || '5055';
 const PUBLIC_HOST = process.env.E2E_PUBLIC_HOST || '127.0.0.1';
@@ -28,10 +33,11 @@ const env = {
   MINIO_PUBLIC_URL: `http://${PUBLIC_HOST}:9037`,
   MINIO_ACCESS_KEY: 'kauri-test',
   MINIO_SECRET_KEY: 'kauri-test-secret',
-  // Throwaway values, valid only for this local test database.
-  JWT_ACCESS_SECRET: '61e92c38f510742b58ad0983896503f7335838e4eca8ff4a',
-  JWT_REFRESH_SECRET: 'bb008c0ca09d70f184ad84a9351a1b06ac294fa62e4a954a',
-  VAULT_ENCRYPTION_KEY: 'e2e_vault_key_0123456789abcdef0123456789abcdef',
+  // Valeurs jetables, valables seulement pour cette base de test locale : dérivées
+  // (identiques à chaque lancement) plutôt qu'écrites en clair dans le dépôt.
+  JWT_ACCESS_SECRET: localSecret('JWT_ACCESS_SECRET'),
+  JWT_REFRESH_SECRET: localSecret('JWT_REFRESH_SECRET'),
+  VAULT_ENCRYPTION_KEY: localSecret('VAULT_ENCRYPTION_KEY'),
   ADMIN_URL: 'http://localhost:5173',
   SERVER_URL: `http://${PUBLIC_HOST}:${PORT}`,
   JWT_ACCESS_EXPIRATION: '2h',
