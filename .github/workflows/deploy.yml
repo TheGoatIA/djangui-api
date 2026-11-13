@@ -6,11 +6,11 @@ name: CI/CD Pipeline (Staging & Production)
 # déploiement (ex: rollback vers un tag existant) sans nouveau push.
 on:
   push:
-    branches: [ "main", "dev" ]
+    branches: ['main', 'dev']
   workflow_dispatch:
     inputs:
       deploy_to:
-        description: "🚨 Environnement à déployer :"
+        description: '🚨 Environnement à déployer :'
         required: true
         default: 'production'
         type: choice
@@ -40,55 +40,55 @@ jobs:
     outputs:
       tag: ${{ steps.version.outputs.version }}
     steps:
-    - uses: actions/checkout@v7
-      with:
-        fetch-depth: 0
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
-    - name: Calculer la version de build (yyyyMMdd.N)
-      id: version
-      run: |
-        set -e
-        git fetch --tags --force
-        TODAY=$(date -u +%Y%m%d)
-        LAST_N=$(git tag --list "${TODAY}.*" | sed "s/^${TODAY}\.//" | sort -n | tail -1)
-        if [ -z "$LAST_N" ]; then NEXT_N=1; else NEXT_N=$((LAST_N + 1)); fi
-        echo "version=${TODAY}.${NEXT_N}" >> "$GITHUB_OUTPUT"
+      - name: Calculer la version de build (yyyyMMdd.N)
+        id: version
+        run: |
+          set -e
+          git fetch --tags --force
+          TODAY=$(date -u +%Y%m%d)
+          LAST_N=$(git tag --list "${TODAY}.*" | sed "s/^${TODAY}\.//" | sort -n | tail -1)
+          if [ -z "$LAST_N" ]; then NEXT_N=1; else NEXT_N=$((LAST_N + 1)); fi
+          echo "version=${TODAY}.${NEXT_N}" >> "$GITHUB_OUTPUT"
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-    - name: Login to GitHub Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Extract metadata (tags, labels) for Docker
-      id: meta
-      uses: docker/metadata-action@v6
-      with:
-        images: ghcr.io/${{ github.repository }}
-        tags: |
-          type=raw,value=${{ steps.version.outputs.version }}
-          type=sha,format=long
-          type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-          type=raw,value=staging-latest,enable=${{ github.ref == 'refs/heads/dev' }}
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=sha,format=long
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=staging-latest,enable=${{ github.ref == 'refs/heads/dev' }}
 
-    - name: Build and push
-      uses: docker/build-push-action@v6
-      with:
-        context: .
-        push: true
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-    - name: Tagger ce build dans Git (traçabilité image ↔ commit, sert aussi de compteur journalier)
-      run: |
-        git tag "${{ steps.version.outputs.version }}"
-        git push origin "${{ steps.version.outputs.version }}"
+      - name: Tagger ce build dans Git (traçabilité image ↔ commit, sert aussi de compteur journalier)
+        run: |
+          git tag "${{ steps.version.outputs.version }}"
+          git push origin "${{ steps.version.outputs.version }}"
 
   deploy_staging:
     name: 🚀 Deploy to Staging
@@ -99,46 +99,54 @@ jobs:
        (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_to == 'staging'))
     runs-on: ubuntu-latest
     steps:
-    - name: Determine image tag to deploy
-      id: tag
-      run: |
-        # Push normal : utilise le tag qui vient d'être construit.
-        # Déclenchement manuel (rejeu/rollback) : réutilise staging-latest.
-        if [ -n "${{ needs.build-and-push.outputs.tag }}" ]; then
-          echo "tag=${{ needs.build-and-push.outputs.tag }}" >> "$GITHUB_OUTPUT"
-        else
-          echo "tag=staging-latest" >> "$GITHUB_OUTPUT"
-        fi
+      - name: Determine image tag to deploy
+        id: tag
+        run: |
+          # Push normal : utilise le tag qui vient d'être construit.
+          # Déclenchement manuel (rejeu/rollback) : réutilise staging-latest.
+          if [ -n "${{ needs.build-and-push.outputs.tag }}" ]; then
+            echo "tag=${{ needs.build-and-push.outputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=staging-latest" >> "$GITHUB_OUTPUT"
+          fi
 
-    - name: Deploy (pull & restart — aucune action manuelle sur le serveur)
-      uses: appleboy/ssh-action@v1.2.0
-      with:
-        host: ${{ secrets.PROD_SERVER_IP }}
-        username: ${{ secrets.PROD_USERNAME }}
-        key: ${{ secrets.PROD_SSH_KEY }}
-        script: |
-          set -e
-          cd /var/www/kauri/staging-api
-          git fetch origin
-          git checkout -B dev origin/dev
-          git reset --hard origin/dev
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          export IMAGE_TAG="${{ steps.tag.outputs.tag }}"
-          docker compose -f docker-compose.staging.yml pull api
-          docker compose -f docker-compose.staging.yml up -d
-          docker image prune -f --filter "until=168h"
+      - name: Deploy (pull & restart — aucune action manuelle sur le serveur)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.PROD_SERVER_IP }}
+          username: ${{ secrets.PROD_USERNAME }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            set -e
+            cd /var/www/kauri/staging-api
+            git fetch origin
+            git checkout -B dev origin/dev
+            git reset --hard origin/dev
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            export IMAGE_TAG="${{ steps.tag.outputs.tag }}"
+            docker compose -f docker-compose.staging.yml pull api
+            docker compose -f docker-compose.staging.yml up -d
+            docker image prune -f --filter "until=168h"
 
-    - name: Notification Slack (#deployment)
-      if: always()
-      env:
-        SLACK_WEBHOOK: ${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}
-        STATUS: ${{ job.status }}
-        TAG: ${{ steps.tag.outputs.tag }}
-      run: |
-        if [ -z "$SLACK_WEBHOOK" ]; then echo "SLACK_DEPLOY_WEBHOOK_URL non défini : notification ignorée"; exit 0; fi
-        if [ "$STATUS" = "success" ]; then HEAD="✅ *Kauri API* — déploiement *STAGING* réussi"; else HEAD="❌ *Kauri API* — déploiement *STAGING* ÉCHOUÉ"; fi
-        MSG=$(printf '%s\n• Version : %s\n• Commit : %s (%s)\n• <%s|Voir le pipeline>' "$HEAD" "${TAG:-?}" "${GITHUB_SHA::7}" "$GITHUB_ACTOR" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID")
-        curl -s -X POST -H 'Content-type: application/json' --data "$(jq -n --arg t "$MSG" '{text:$t}')" "$SLACK_WEBHOOK" >/dev/null
+      - name: Script de notification (lecture seule)
+        if: always()
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+
+      - name: Notification Slack (#deployment)
+        if: always()
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}
+          STATUS: ${{ job.status }}
+          COMPONENT: API
+          ACTION: Déploiement
+          ENVIRONMENT: STAGING
+          VERSION: ${{ steps.tag.outputs.tag }}
+          LINK: https://staging.kauri-app.com/api/health
+          COMMIT_MSG: ${{ github.event.head_commit.message || github.event.workflow_run.head_commit.message }}
+        run: bash .github/scripts/notify-slack.sh
 
   deploy_production:
     name: 💎 Deploy to Production
@@ -149,41 +157,49 @@ jobs:
        (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_to == 'production'))
     runs-on: ubuntu-latest
     steps:
-    - name: Determine image tag to deploy
-      id: tag
-      run: |
-        if [ -n "${{ needs.build-and-push.outputs.tag }}" ]; then
-          echo "tag=${{ needs.build-and-push.outputs.tag }}" >> "$GITHUB_OUTPUT"
-        else
-          echo "tag=latest" >> "$GITHUB_OUTPUT"
-        fi
+      - name: Determine image tag to deploy
+        id: tag
+        run: |
+          if [ -n "${{ needs.build-and-push.outputs.tag }}" ]; then
+            echo "tag=${{ needs.build-and-push.outputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          fi
 
-    - name: Deploy (pull & restart — aucune action manuelle sur le serveur)
-      uses: appleboy/ssh-action@v1.2.0
-      with:
-        host: ${{ secrets.PROD_SERVER_IP }}
-        username: ${{ secrets.PROD_USERNAME }}
-        key: ${{ secrets.PROD_SSH_KEY }}
-        script: |
-          set -e
-          cd /var/www/kauri/api
-          git fetch origin
-          git checkout -B main origin/main
-          git reset --hard origin/main
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          export IMAGE_TAG="${{ steps.tag.outputs.tag }}"
-          docker compose -f docker-compose.prod.yml pull api
-          docker compose -f docker-compose.prod.yml up -d
-          docker image prune -f --filter "until=168h"
+      - name: Deploy (pull & restart — aucune action manuelle sur le serveur)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.PROD_SERVER_IP }}
+          username: ${{ secrets.PROD_USERNAME }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            set -e
+            cd /var/www/kauri/api
+            git fetch origin
+            git checkout -B main origin/main
+            git reset --hard origin/main
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            export IMAGE_TAG="${{ steps.tag.outputs.tag }}"
+            docker compose -f docker-compose.prod.yml pull api
+            docker compose -f docker-compose.prod.yml up -d
+            docker image prune -f --filter "until=168h"
 
-    - name: Notification Slack (#deployment)
-      if: always()
-      env:
-        SLACK_WEBHOOK: ${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}
-        STATUS: ${{ job.status }}
-        TAG: ${{ steps.tag.outputs.tag }}
-      run: |
-        if [ -z "$SLACK_WEBHOOK" ]; then echo "SLACK_DEPLOY_WEBHOOK_URL non défini : notification ignorée"; exit 0; fi
-        if [ "$STATUS" = "success" ]; then HEAD="✅ *Kauri API* — déploiement *PRODUCTION* réussi"; else HEAD="❌ *Kauri API* — déploiement *PRODUCTION* ÉCHOUÉ"; fi
-        MSG=$(printf '%s\n• Version : %s\n• Commit : %s (%s)\n• <%s|Voir le pipeline>' "$HEAD" "${TAG:-?}" "${GITHUB_SHA::7}" "$GITHUB_ACTOR" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID")
-        curl -s -X POST -H 'Content-type: application/json' --data "$(jq -n --arg t "$MSG" '{text:$t}')" "$SLACK_WEBHOOK" >/dev/null
+      - name: Script de notification (lecture seule)
+        if: always()
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+
+      - name: Notification Slack (#deployment)
+        if: always()
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}
+          STATUS: ${{ job.status }}
+          COMPONENT: API
+          ACTION: Déploiement
+          ENVIRONMENT: PRODUCTION
+          VERSION: ${{ steps.tag.outputs.tag }}
+          LINK: https://api.kauri-app.com/api/health
+          COMMIT_MSG: ${{ github.event.head_commit.message || github.event.workflow_run.head_commit.message }}
+        run: bash .github/scripts/notify-slack.sh
