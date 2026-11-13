@@ -1,19 +1,60 @@
+# Mises à jour de dépendances REGROUPÉES (au plus 2 PR par type et par semaine) :
+# chaque PR lance toute la CI, et des PR individuelles épuisaient le quota GitHub Actions.
+# Les alertes de sécurité restent traitées par Dependabot security updates.
 version: 2
 updates:
-  - package-ecosystem: "npm"
-    directory: "/"
+  - package-ecosystem: 'npm'
+    directory: '/'
+    target-branch: 'dev'
     schedule:
-      interval: "weekly"
-    target-branch: "dev"
-    open-pull-requests-limit: 20
-    reviewers:
-      - "borisgauty" # Based on your registration name
-    labels:
-      - "dependencies"
-      - "security"
-  
-  - package-ecosystem: "github-actions"
-    directory: "/"
+      interval: 'weekly'
+      day: 'monday'
+      time: '06:00'
+      timezone: 'Africa/Douala'
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: 'chore(deps)'
+      prefix-development: 'chore(deps-dev)'
+    groups:
+      npm-minor-patch:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+      npm-major:
+        patterns: ['*']
+        update-types: ['major']
+  - package-ecosystem: 'docker'
+    directory: '/'
+    target-branch: 'dev'
     schedule:
-      interval: "monthly"
-    target-branch: "dev"
+      interval: 'weekly'
+      day: 'monday'
+      time: '06:00'
+      timezone: 'Africa/Douala'
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: 'chore(docker)'
+    groups:
+      docker-minor-patch:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+      docker-major:
+        patterns: ['*']
+        update-types: ['major']
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    target-branch: 'dev'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '06:00'
+      timezone: 'Africa/Douala'
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: 'chore(ci)'
+    groups:
+      actions-minor-patch:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+      actions-major:
+        patterns: ['*']
+        update-types: ['major']
