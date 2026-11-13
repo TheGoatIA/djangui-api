@@ -1,8 +1,6 @@
-# Dependabot — djangui-api
-# Toutes les mises à jour arrivent sur `dev` (jamais directement sur `main`), une fois
-# par semaine (lundi matin, heure du Cameroun), groupées pour limiter le bruit :
-# 1 PR « minor+patch » par écosystème, les montées MAJEURES restent des PRs séparées
-# (à relire une par une). La CI (tests, audit, Sonar) tourne sur chaque PR.
+# Mises à jour de dépendances REGROUPÉES (au plus 2 PR par type et par semaine) :
+# chaque PR lance toute la CI, et des PR individuelles épuisaient le quota GitHub Actions.
+# Les alertes de sécurité restent traitées par Dependabot security updates.
 version: 2
 updates:
   - package-ecosystem: 'npm'
@@ -13,18 +11,17 @@ updates:
       day: 'monday'
       time: '06:00'
       timezone: 'Africa/Douala'
-    open-pull-requests-limit: 20
+    open-pull-requests-limit: 3
     commit-message:
       prefix: 'chore(deps)'
       prefix-development: 'chore(deps-dev)'
     groups:
-      production-minor-patch:
-        dependency-type: 'production'
+      npm-minor-patch:
+        patterns: ['*']
         update-types: ['minor', 'patch']
-      development-minor-patch:
-        dependency-type: 'development'
-        update-types: ['minor', 'patch']
-
+      npm-major:
+        patterns: ['*']
+        update-types: ['major']
   - package-ecosystem: 'docker'
     directory: '/'
     target-branch: 'dev'
@@ -33,10 +30,16 @@ updates:
       day: 'monday'
       time: '06:00'
       timezone: 'Africa/Douala'
-    open-pull-requests-limit: 20
+    open-pull-requests-limit: 3
     commit-message:
       prefix: 'chore(docker)'
-
+    groups:
+      docker-minor-patch:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+      docker-major:
+        patterns: ['*']
+        update-types: ['major']
   - package-ecosystem: 'github-actions'
     directory: '/'
     target-branch: 'dev'
@@ -45,9 +48,13 @@ updates:
       day: 'monday'
       time: '06:00'
       timezone: 'Africa/Douala'
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 3
     commit-message:
       prefix: 'chore(ci)'
     groups:
-      github-actions:
+      actions-minor-patch:
         patterns: ['*']
+        update-types: ['minor', 'patch']
+      actions-major:
+        patterns: ['*']
+        update-types: ['major']
