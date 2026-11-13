@@ -14,6 +14,7 @@ import UserChallenge from '../models/UserChallenge';
 import TontineMember from '../models/TontineMember';
 import TontineContribution from '../models/TontineContribution';
 import { AppError } from '../middleware/errorHandler';
+import { currentLanguage } from '../utils/requestContext';
 
 export type ReportPeriod = 'weekly' | 'monthly' | 'yearly';
 
@@ -28,6 +29,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   tontine_social_fund: 'Fonds social tontines',
   tontine_absence_fee: 'Pénalités absence tontines',
   tontine_payout: 'Cagnottes tontines reçues',
+  tontine_refund: 'Remboursements tontines',
   withdrawal: 'Retraits',
   deposit: 'Dépôts',
   challenge_reward: 'Récompenses défis',
@@ -38,8 +40,29 @@ const CATEGORY_LABELS: Record<string, string> = {
   saving_transfer: 'Épargne', // legacy fallback for transactions created before per-purpose categories existed
 };
 
-export function friendlyCategoryLabel(rawCategory: string): string {
-  return CATEGORY_LABELS[rawCategory] || rawCategory;
+const CATEGORY_LABELS_EN: Record<string, string> = {
+  tontine_contribution: 'Tontine contributions',
+  tontine_social_fund: 'Tontine social fund',
+  tontine_absence_fee: 'Tontine absence fees',
+  tontine_payout: 'Tontine payouts received',
+  tontine_refund: 'Tontine refunds',
+  withdrawal: 'Withdrawals',
+  deposit: 'Deposits',
+  challenge_reward: 'Challenge rewards',
+  goal_contribution: 'Savings goals',
+  challenge_stake: 'Challenge stakes',
+  investment_purchase: 'Investments',
+  investment_close: 'Investment closures',
+  saving_transfer: 'Savings',
+};
+
+/** Libellé lisible d'une catégorie interne, dans la langue de la requête. */
+export function friendlyCategoryLabel(
+  rawCategory: string,
+  lang: 'fr' | 'en' = currentLanguage(),
+): string {
+  const labels = lang === 'en' ? CATEGORY_LABELS_EN : CATEGORY_LABELS;
+  return labels[rawCategory] || rawCategory;
 }
 
 export class ReportService {

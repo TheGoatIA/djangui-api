@@ -150,14 +150,17 @@ services:
       timeout: 20s
       retries: 3
 
-  # MinIO Client (Auto-config buckets)
+  # MinIO Client (Auto-config buckets). Comme en production : kauri-uploads
+  # (KYC, reçus, vocaux) et kauri-invoices restent PRIVÉS (URL signées par
+  # l'API) ; « set none » retire l'accès public accordé par les anciennes
+  # versions de ce fichier. kauri-avatars est créé et ouvert en lecture par l'API.
   mc:
     image: ${MINIO_MC_IMAGE:-minio/mc:latest}
     depends_on:
       minio:
         condition: service_healthy
     entrypoint: >
-      /bin/sh -c " /usr/bin/mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-kauriadmin} ${MINIO_ROOT_PASSWORD:-kaurisecret}; /usr/bin/mc mb --ignore-existing local/kauri-uploads; /usr/bin/mc mb --ignore-existing local/kauri-invoices; /usr/bin/mc mb --ignore-existing local/kauri-backups; /usr/bin/mc anonymous set public local/kauri-uploads; /usr/bin/mc anonymous set public local/kauri-invoices; exit 0; "
+      /bin/sh -c " /usr/bin/mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-kauriadmin} ${MINIO_ROOT_PASSWORD:-kaurisecret}; /usr/bin/mc mb --ignore-existing local/kauri-uploads; /usr/bin/mc mb --ignore-existing local/kauri-invoices; /usr/bin/mc mb --ignore-existing local/kauri-backups; /usr/bin/mc anonymous set none local/kauri-uploads; /usr/bin/mc anonymous set none local/kauri-invoices; exit 0; "
     networks:
       - kauri-network
 

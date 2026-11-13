@@ -7,6 +7,7 @@ import { WalletService } from './walletService';
 import { NotificationService } from './notificationService';
 import { FraudService } from './fraudService';
 import { notchpayAdminApi } from '../config/notchpay';
+import { isSubscriptionEntitled } from '../utils/subscription';
 
 /**
  * Codes d'erreur réseau qui indiquent que la requête n'a JAMAIS atteint NotchPay.
@@ -20,6 +21,10 @@ const SAFE_TO_REFUND_CODES = new Set([
 ]);
 
 export class PayoutService {
+  static readonly MIN_WITHDRAWAL = 500;
+  /** Advertised max per withdrawal (net amount received; fees come on top). */
+  static readonly MAX_WITHDRAWAL = 50_000;
+
   /**
    * Initie un transfert d'argent (Retrait) via NotchPay.
    *
@@ -40,6 +45,27 @@ export class PayoutService {
       description?: string;
     },
   ) {
+    // The body value used to reach the fee arithmetic unchecked: a string "5000"
+    // made `amount + kauriFees` a string concatenation, decimals were sent to the
+    // operator as-is. XAF has no minor unit: only whole amounts are valid.
+    if (
+      typeof amount !== 'number' ||
+      !Number.isInteger(amount) ||
+      amount < PayoutService.MIN_WITHDRAWAL
+    ) {
+      throw new AppError(
+        `Montant de retrait invalide (nombre entier, minimum ${PayoutService.MIN_WITHDRAWAL} XAF).`,
+        400,
+      );
+    }
+
+    if (amount > PayoutService.MAX_WITHDRAWAL) {
+      throw new AppError(
+        `Montant maximum par retrait : ${PayoutService.MAX_WITHDRAWAL.toLocaleString('fr-FR')} XAF.`,
+        400,
+      );
+    }
+
     const user = await User.findById(userId);
     if (!user) throw new AppError('Utilisateur non trouvé', 404);
 
@@ -82,7 +108,9 @@ export class PayoutService {
     );
 
     // 3. Calcul des frais et débit du solde (ACID) + transaction en 'pending'
-    const kauriFeePercent = user.subscription?.plan === 'premium' ? 0.015 : 0.03;
+    // Reduced fee for EVERY entitled paid plan: checking `plan === 'premium'` charged
+    // Business (the higher tier) the full 3 %, and kept 1.5 % for an expired premium.
+    const kauriFeePercent = isSubscriptionEntitled(user.subscription as any) ? 0.015 : 0.03;
     const kauriFees = Math.max(100, amount * kauriFeePercent);
     const totalAmount = amount + kauriFees;
 
@@ -130,8 +158,16 @@ export class PayoutService {
 
       MonitoringService.recordPaymentGateway('notchpay', 'transfer', 'success');
 
-      // Marquer la transaction comme complétée maintenant que NotchPay a confirmé
-      await Transaction.findByIdAndUpdate(transactionId, { status: 'completed' });
+      const transferId =
+        response.data.transfer?.reference || response.data.transfer?.id || response.data.id;
+
+      // Marquer la transaction comme complétée maintenant que NotchPay a confirmé.
+      // NotchPay's own id (trf.…) is the ONLY reference its API resolves: it is
+      // what the reconciliation job and the webhooks need to find this transfer.
+      await Transaction.findByIdAndUpdate(transactionId, {
+        status: 'completed',
+        ...(transferId ? { externalReference: String(transferId) } : {}),
+      });
 
       NotificationService.sendToUser(userId, {
         title: 'Retrait Initié 💸',
@@ -140,8 +176,6 @@ export class PayoutService {
         data: { transactionRef: transactionRef, type: 'withdrawal' },
       }).catch((err: any) => logger.error(`Payout Success Notification Error: ${err.message}`));
 
-      const transferId =
-        response.data.transfer?.reference || response.data.transfer?.id || response.data.id;
       return {
         status: 'pending',
         transferId,
@@ -177,13 +211,13 @@ export class PayoutService {
         );
         NotificationService.sendToUser(userId, {
           title: 'Retrait Échoué ❌',
-          body: `Le retrait vers ${formattedPhone} a été refusé par l'opérateur (${errorMessage}). Votre solde a été rétabli.`,
+          body: `Le retrait vers ${formattedPhone} (${channel === 'cm.orange' ? 'Orange Money' : 'MTN MoMo'}) a été refusé par l'opérateur. Votre solde a été rétabli.`,
           category: 'important',
           data: { transactionRef: transactionRef, type: 'withdrawal_cancelled' },
         }).catch((err: any) => logger.error(`Payout Cancel Notification Error: ${err.message}`));
 
         throw new AppError(
-          `Le transfert a été refusé par l'opérateur : ${errorMessage}. Votre solde a été immédiatement rétabli.`,
+          `Le retrait vers ${channel === 'cm.orange' ? 'Orange Money' : 'MTN MoMo'} a été refusé par l'opérateur. Votre solde a été immédiatement rétabli. Réessayez plus tard ou utilisez un autre numéro.`,
           400,
         );
       }

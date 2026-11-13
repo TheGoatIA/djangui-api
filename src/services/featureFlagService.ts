@@ -72,7 +72,9 @@ export class FeatureFlagService {
     {
       name: 'Investissements',
       slug: 'feat_investments',
-      isEnabled: true,
+      // Disabled by default: there is no market-price feed yet — values are set
+      // by hand and paid out in real money on close.
+      isEnabled: false,
       description: 'Suivi des investissements',
     },
     {
@@ -134,12 +136,15 @@ export class FeatureFlagService {
 
   static async seed() {
     try {
-      for (const flag of this.flags) {
-        await FeatureFlag.findOneAndUpdate({ slug: flag.slug }, flag, {
-          upsert: true,
-          new: true,
-          setDefaultsOnInsert: true,
-        });
+      // `isEnabled` is only a DEFAULT for a flag that does not exist yet. It was
+      // written on every start: each deploy silently re-enabled every feature
+      // an admin had switched off in production.
+      for (const { isEnabled, ...meta } of this.flags as any[]) {
+        await FeatureFlag.findOneAndUpdate(
+          { slug: meta.slug },
+          { $set: meta, $setOnInsert: { isEnabled } },
+          { upsert: true, new: true, setDefaultsOnInsert: true },
+        );
       }
       logger.info('Feature Flags seeded successfully');
     } catch (error) {
@@ -220,6 +225,15 @@ export class FeatureFlagService {
     const { NotificationService } = await import('./notificationService');
 
     const previous = await this.isRealMoneyEnabled();
+
+    // First switch to real money: reset the simulation data (archived) BEFORE the
+    // setting flips. If the reset fails, this throws and real money stays OFF —
+    // never real money with unbacked simulation balances still withdrawable.
+    // Runs exactly once (Migration lock), never at startup (see server.ts).
+    if (enabled && !previous) {
+      const { MigrationService } = await import('./migrationService');
+      await MigrationService.runRealMoneyMigration();
+    }
 
     await SystemSetting.findOneAndUpdate(
       { key: REAL_MONEY_SETTING_KEY },

@@ -107,6 +107,17 @@ const sharedSlotSchema = new Schema<ISharedSlotDocument>(
   },
   {
     timestamps: true,
+    toJSON: {
+      // The PIN ciphertext/IV/tag never leave the server (same rule as the
+      // master-account vault); clients only learn whether a PIN is set.
+      transform: (_doc, ret: any) => {
+        ret.hasPin = Boolean(ret.encryptedPin);
+        delete ret.encryptedPin;
+        delete ret.pinIv;
+        delete ret.pinAuthTag;
+        return ret;
+      },
+    },
   },
 );
 

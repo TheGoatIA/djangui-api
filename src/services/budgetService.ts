@@ -1,12 +1,43 @@
 import crypto from 'crypto';
+import mongoose from 'mongoose';
 import Budget from '../models/Budget';
 import BudgetParticipant from '../models/BudgetParticipant';
 import SavingGoal from '../models/SavingGoal';
 import User from '../models/User';
+import Transaction from '../models/Transaction';
 import { AppError } from '../middleware/errorHandler';
 
+/**
+ * Normalises client categories: names trimmed and unique (case-insensitive),
+ * `spent` NEVER taken from the client — it only grows through real expenses
+ * (TransactionService.applyExpenseToBudget).
+ */
+function cleanCategories(categories: any[]): { name: string; allocated: number }[] {
+  const seen = new Set<string>();
+  return (categories || []).map((c) => {
+    const name = String(c.name).trim();
+    const key = name.toLowerCase();
+    if (!name) throw new AppError('Nom de catégorie vide', 400);
+    if (seen.has(key)) throw new AppError(`Catégorie en double : ${name}`, 400);
+    seen.add(key);
+    return { name, allocated: Number(c.allocated) };
+  });
+}
+
+const sumAllocated = (cats: { allocated: number }[]) =>
+  Math.round(cats.reduce((s, c) => s + c.allocated, 0) * 100) / 100;
+
 export class BudgetService {
-  static async createBudget(userId: string, data: any) {
+  static async createBudget(userId: string, rawData: any) {
+    const categories = cleanCategories(rawData.categories);
+    const data = {
+      period: rawData.period,
+      categories,
+      // Derived server-side (the app sends the same sum): a client total could
+      // otherwise disagree with its own categories.
+      totalAllocated: sumAllocated(categories),
+      linkedGoalId: rawData.linkedGoalId,
+    };
     const existingBudget = await Budget.findOne({
       userId,
       'period.month': data.period.month,
@@ -25,8 +56,47 @@ export class BudgetService {
     // this is what lets currencyMiddleware tell the amounts below are already
     // native to that currency instead of assuming XAF.
     const user = await User.findById(userId).select('currency').lean();
+
+    // Dépenses DÉJÀ faites sur la période : un budget créé en milieu de mois
+    // démarrait à 0 « dépensé » (seules les dépenses ultérieures étaient
+    // comptées) et affichait une marge fausse — constaté en E2E mobile (9 000
+    // dépensés en Alimentation, budget créé ensuite : « Dépensé : 0 »).
+    // Même règle de correspondance que applyExpenseToBudget (nom de catégorie,
+    // insensible à la casse).
+    const month = Number(data.period?.month);
+    const year = Number(data.period?.year);
+    let categoriesWithSpent: any[] = categories.map((c) => ({ ...c, spent: 0 }));
+    let totalSpent = 0;
+    let status: 'active' | 'exceeded' = 'active';
+    if (month >= 1 && month <= 12 && year > 2000) {
+      const start = new Date(year, month - 1, 1);
+      const end = new Date(year, month, 1);
+      const spentByCategory = await Transaction.aggregate([
+        {
+          $match: {
+            userId: new mongoose.Types.ObjectId(String(userId)),
+            type: 'expense',
+            date: { $gte: start, $lt: end },
+          },
+        },
+        { $group: { _id: { $toLower: '$category' }, amount: { $sum: '$amount' } } },
+      ]);
+      const byName = new Map(
+        spentByCategory.map((r: any) => [String(r._id), Number(r.amount) || 0]),
+      );
+      categoriesWithSpent = categories.map((c) => {
+        const spent = Math.round((byName.get(c.name.toLowerCase()) || 0) * 100) / 100;
+        if (c.allocated > 0 && spent >= c.allocated) status = 'exceeded';
+        return { ...c, spent };
+      });
+      totalSpent = Math.round(categoriesWithSpent.reduce((sum, c) => sum + c.spent, 0) * 100) / 100;
+    }
+
     const budget = await Budget.create({
       ...data,
+      categories: categoriesWithSpent,
+      totalSpent,
+      status,
       userId,
       currency: user?.currency || 'XAF',
     });
@@ -93,19 +163,31 @@ export class BudgetService {
       await BudgetService.assertOwnGoal(userId, data.linkedGoalId);
     }
 
-    // Le filtre {_id, userId} restreint déjà la mise à jour au seul propriétaire :
-    // un participant (dont l'userId ne correspond jamais à budget.userId) ne peut
-    // matcher ce document, donc jamais modifier catégories/montants alloués.
-    const budget = await Budget.findOneAndUpdate(
-      { _id: id, userId },
-      { $set: data },
-      { new: true, runValidators: true },
-    );
-
+    // Le filtre {_id, userId} restreint la mise à jour au seul propriétaire.
+    const budget = await Budget.findOne({ _id: id, userId });
     if (!budget) {
       throw new AppError('Budget not found', 404);
     }
 
+    if (data.categories) {
+      // `$set: { categories }` replaced the array with {name, allocated} only:
+      // every category's recorded `spent` silently went back to 0. Spending is
+      // now carried over by name.
+      const previous = new Map(
+        (budget.categories || []).map((c: any) => [String(c.name).toLowerCase(), c.spent || 0]),
+      );
+      const categories = cleanCategories(data.categories).map((c) => ({
+        ...c,
+        spent: previous.get(c.name.toLowerCase()) || 0,
+      }));
+      budget.categories = categories as any;
+      budget.totalAllocated = sumAllocated(categories);
+    }
+    if (data.status !== undefined) budget.status = data.status;
+    if (data.linkedGoalId !== undefined) budget.linkedGoalId = data.linkedGoalId;
+    // totalSpent is untouched: removing a category does not erase money spent.
+
+    await budget.save();
     return budget;
   }
 

@@ -9,6 +9,7 @@ import { StorageService } from './storageService';
 import { AppError } from '../middleware/errorHandler';
 import admin from '../config/firebase';
 import mongoose from 'mongoose';
+import { encryptFile, decryptFile } from '../utils/backupCrypto';
 
 // execFile (not exec) so arguments are passed directly to the process, never
 // interpolated into a shell string — the mongorestore call below takes a
@@ -16,6 +17,15 @@ import mongoose from 'mongoose';
 // let a crafted filename break out of its quoted argument and inject shell
 // commands.
 const execFilePromise = promisify(execFile);
+
+/**
+ * Dossier des sauvegardes dans le bucket Firebase. Staging et production
+ * partagent le même projet Firebase : sans préfixe distinct, leurs sauvegardes
+ * se mélangeaient (écrasement possible, nettoyage de l'une par l'autre, risque
+ * de restaurer en prod une base de staging). Staging : BACKUP_FIREBASE_PREFIX=backups-staging.
+ */
+export const firebaseBackupPrefix = () =>
+  (process.env.BACKUP_FIREBASE_PREFIX || 'backups').trim().replace(/^\/+|\/+$/g, '') || 'backups';
 
 export class DbBackupService {
   private static readonly BACKUP_DIR = process.env.BACKUP_PATH || './backups';
@@ -62,6 +72,19 @@ export class DbBackupService {
         logger.warn(`Uploads directory not found at ${this.UPLOADS_DIR}, skipping file backup.`);
       }
 
+      // 3bis. Encrypt before ANY upload (third-party Firebase Storage included):
+      // a dump holds password hashes, KYC data and all financial history.
+      const backupKey = process.env.BACKUP_ENCRYPTION_KEY;
+      if (backupKey) {
+        for (const p of [dbArchivePath, filesArchivePath]) {
+          if (!fs.existsSync(p)) continue;
+          await encryptFile(p, `${p}.enc`, backupKey);
+          fs.renameSync(`${p}.enc`, p); // same name, encrypted content (magic header KBK1)
+        }
+      } else if (process.env.NODE_ENV === 'production') {
+        logger.error('🚨 BACKUP_ENCRYPTION_KEY absent : sauvegardes envoyées NON chiffrées.');
+      }
+
       // 4. Collect DB stats
       const stats = await this.getDbStats();
 
@@ -87,13 +110,13 @@ export class DbBackupService {
       // 6. Upload to Firebase Storage (Secondary/Disaster Recovery Cloud)
       const dbFirebaseUrl = await this.uploadToFirebase(
         dbArchivePath,
-        `backups/database/${path.basename(dbArchivePath)}`,
+        `${firebaseBackupPrefix()}/database/${path.basename(dbArchivePath)}`,
       );
       let filesFirebaseUrl = '';
       if (fs.existsSync(filesArchivePath)) {
         filesFirebaseUrl = await this.uploadToFirebase(
           filesArchivePath,
-          `backups/files/${path.basename(filesArchivePath)}`,
+          `${firebaseBackupPrefix()}/files/${path.basename(filesArchivePath)}`,
         );
       }
 
@@ -157,8 +180,30 @@ export class DbBackupService {
       throw new AppError('Invalid backup filename', 400);
     }
 
+    // Local archives are deleted once uploaded (runBackup step 7): a restore
+    // could never find its file. Fetch it back from object storage when needed.
     if (!fs.existsSync(backupPath)) {
-      throw new Error(`Backup file not found: ${filename}`);
+      try {
+        if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+        const buf = await StorageService.downloadBuffer('kauri-backups', `database/${filename}`);
+        fs.writeFileSync(backupPath, buf);
+      } catch {
+        throw new AppError(`Backup file not found: ${filename}`, 404);
+      }
+    }
+
+    // Encrypted archive (KBK1 header) → decrypt to a temporary plain archive.
+    let archivePath = backupPath;
+    const head = Buffer.alloc(4);
+    const fd = fs.openSync(backupPath, 'r');
+    fs.readSync(fd, head, 0, 4, 0);
+    fs.closeSync(fd);
+    if (head.toString() === 'KBK1') {
+      const key = process.env.BACKUP_ENCRYPTION_KEY;
+      if (!key)
+        throw new AppError('BACKUP_ENCRYPTION_KEY requise pour restaurer cette sauvegarde', 500);
+      archivePath = `${backupPath}.plain`;
+      await decryptFile(backupPath, archivePath, key);
     }
 
     try {
@@ -172,7 +217,14 @@ export class DbBackupService {
       // --drop is used to clear existing collections before restore. execFile
       // (not exec) passes these as discrete arguments — no shell involved, so
       // there's nothing for a crafted filename to break out into.
-      await execFilePromise(toolsPath, ['--uri', uri, '--archive', backupPath, '--gzip', '--drop']);
+      await execFilePromise(toolsPath, [
+        '--uri',
+        uri,
+        '--archive',
+        archivePath,
+        '--gzip',
+        '--drop',
+      ]);
 
       logger.info(`Database restored successfully from ${filename}`);
 
@@ -181,8 +233,10 @@ export class DbBackupService {
         `⚠️ *DB RESTORE SUCCESS*\n*File*: ${filename}\n*Status*: Database has been replaced by backup.`,
       );
 
+      if (archivePath !== backupPath) fs.rmSync(archivePath, { force: true });
       return { success: true, file: filename };
     } catch (error: any) {
+      if (archivePath !== backupPath) fs.rmSync(archivePath, { force: true });
       logger.error(`Database restore failed: ${error.message}`);
       await SlackService.sendAlert(
         `🚨 *DB RESTORE FAILED*\n*File*: ${filename}\n*Error*: ${error.message}`,
@@ -227,7 +281,7 @@ export class DbBackupService {
       if (!process.env.FIREBASE_STORAGE_BUCKET) return;
 
       const bucket = admin.storage().bucket();
-      const [files] = await bucket.getFiles({ prefix: 'backups/' });
+      const [files] = await bucket.getFiles({ prefix: `${firebaseBackupPrefix()}/` });
       const now = Date.now();
       const expirationMs = days * 24 * 60 * 60 * 1000;
 

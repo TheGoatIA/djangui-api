@@ -36,6 +36,37 @@ export class KYCService {
       );
     }
 
+    // Required fields (a missing documentType crashed with a 500 further down).
+    const str = (v: unknown, min: number, max: number) =>
+      typeof v === 'string' && v.trim().length >= min && v.trim().length <= max;
+    if (!str(data.documentType, 2, 40)) throw new AppError('Type de document invalide', 400);
+    if (!str(data.documentNumber, 3, 40)) throw new AppError('Numéro de document invalide', 400);
+    if (!str(data.fullName, 2, 100)) throw new AppError('Nom complet invalide', 400);
+    if (data.documentExpiryDate !== undefined && data.documentExpiryDate !== null) {
+      const expiry = new Date(data.documentExpiryDate as any);
+      if (Number.isNaN(expiry.getTime())) throw new AppError("Date d'expiration invalide", 400);
+      if (expiry < new Date()) throw new AppError('Ce document est expiré', 400);
+    }
+
+    // Every image must be one of the submitter's OWN uploads (POST /upload/document
+    // stores them under documents/<userId>/). Any stored URL used to be accepted:
+    // pointing at another user's identity document — or at any object of any
+    // bucket (backups…) — was enough for it to be reviewed as this user's KYC.
+    const ownPrefix = `documents/${userId}/`;
+    const assertOwnDocument = (url: unknown, label: string, required: boolean) => {
+      if (url === undefined || url === null || url === '') {
+        if (required) throw new AppError(`${label} manquant`, 400);
+        return;
+      }
+      const parsed = typeof url === 'string' ? StorageService.parseStoredUrl(url) : null;
+      if (!parsed || parsed.bucket !== 'kauri-uploads' || !parsed.key.startsWith(ownPrefix)) {
+        throw new AppError(`${label} invalide : utilisez un document que vous avez téléversé`, 400);
+      }
+    };
+    assertOwnDocument(data.documentImageUrl, "Image du document d'identité", true);
+    assertOwnDocument(data.documentBackImageUrl, 'Verso du document', false);
+    assertOwnDocument(data.selfieImageUrl, 'Selfie', true);
+
     // Whitelist des champs autorisés pour éviter l'injection de champs sensibles
     const allowedFields: (keyof typeof data)[] = [
       'documentType',
@@ -84,7 +115,7 @@ export class KYCService {
 
     // 2. Notification Slack Admin : "Nouvelle soumission"
     await SlackService.sendNotification(
-      `📑 *Nouvelle soumission KYC*\n*Utilisateur*: ${user.firstName} ${user.lastName} (${user.email})\n*Document*: ${data.documentType.toUpperCase()}\n*Action*: Analyse IA lancée...`,
+      `📑 *Nouvelle soumission KYC*\n*Utilisateur*: ${user._id}\n*Document*: ${data.documentType.toUpperCase()}\n*Action*: Analyse IA lancée...`,
       false,
     );
 

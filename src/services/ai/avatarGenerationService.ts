@@ -124,7 +124,7 @@ export class AvatarGenerationService {
       const destinationKey = `avatars/ai-${userId}-${Date.now()}.${ext}`;
       const avatarUrl = await StorageService.uploadBuffer(
         buffer,
-        'kauri-uploads',
+        'kauri-avatars', // public avatars bucket (displayable without signature)
         destinationKey,
         mimeType,
       );
@@ -168,7 +168,7 @@ export class AvatarGenerationService {
     const stored = typeof avatarUrl === 'string' ? StorageService.parseStoredUrl(avatarUrl) : null;
     if (
       !stored ||
-      stored.bucket !== 'kauri-uploads' ||
+      stored.bucket !== 'kauri-avatars' ||
       !stored.key.startsWith(`avatars/ai-${userId}-`)
     ) {
       throw new AppError('Avatar invalide ou expiré. Générez-en un nouveau.', 400);

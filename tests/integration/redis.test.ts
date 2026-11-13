@@ -1,6 +1,6 @@
 import redis from '../../src/config/redis';
 
-describe.skip('Redis Integration', () => {
+describe('Redis Integration', () => {
   afterAll(async () => {
     // Gracefully close the redis connection after tests
     await redis.quit();

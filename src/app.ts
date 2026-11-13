@@ -10,6 +10,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import errorHandler from './middleware/errorHandler';
 import { requestLogger } from './middleware/requestLogger';
+import { localizeErrors } from './middleware/localizeErrors';
+import { requestContext } from './utils/requestContext';
 import { MonitoringService } from './services/monitoringService';
 import routes from './routes';
 import swaggerUi from 'swagger-ui-express';
@@ -18,6 +20,7 @@ import mongoose from 'mongoose';
 import crypto from 'node:crypto';
 import { AuthController } from './controllers/authController';
 import { requireClientApiKey } from './middleware/clientApiKey';
+import { rejectNoSqlInjection } from './middleware/noSqlInjection';
 import { safeEqual } from './utils/safeCompare';
 
 // Rate limiting using Redis
@@ -111,6 +114,9 @@ app.use(
 
 app.use(MonitoringService.metricsMiddleware.bind(MonitoringService));
 app.use(requestLogger);
+// Messages d'erreur dans la langue de l'utilisateur (fr par défaut) — voir utils/errorI18n.ts
+app.use(requestContext);
+app.use(localizeErrors);
 // Per-request CSP nonce so the one legitimate inline <script> left on this app
 // (the reset-password deep-link redirect, see AuthController.renderResetPasswordPage)
 // can run without `'unsafe-inline'` in script-src — 'unsafe-inline' disables CSP's
@@ -191,6 +197,15 @@ app.use(
 );
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+
+// Reject MongoDB operator injection / prototype pollution in every body and query
+// string. Provider webhooks are exempt: they are authenticated by signature and a
+// rejected delivery would leave a real payment unconfirmed.
+app.use((req, res, next) =>
+  /\/webhooks\/(stripe|notchpay)/.test(req.originalUrl)
+    ? next()
+    : rejectNoSqlInjection(req, res, next),
+);
 
 // CSRF defence for cookie-authenticated browser sessions (admin dashboard).
 // SameSite=Lax alone is not enough: every *.kauri-app.com subdomain is same-site.

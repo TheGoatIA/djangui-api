@@ -54,6 +54,21 @@ const validateEnvironment = () => {
 
   // ── Vérifications production uniquement (bloquantes) ──
   if (process.env.NODE_ENV === 'production') {
+    // Backups: the only off-server copy is Firebase Storage (MinIO runs on the
+    // same VPS as the database).
+    if (!process.env.FIREBASE_STORAGE_BUCKET) {
+      console.error('🚨 FIREBASE_STORAGE_BUCKET manquant : AUCUNE sauvegarde hors du serveur.');
+    }
+    if (!process.env.BACKUP_ENCRYPTION_KEY || process.env.BACKUP_ENCRYPTION_KEY.length < 32) {
+      console.error('🚨 BACKUP_ENCRYPTION_KEY absente/trop courte : sauvegardes non chiffrées.');
+    }
+    // Webhook secrets: not blocking (the rest of the app must keep running),
+    // but payment initialisation is refused without them (PaymentService).
+    for (const k of ['NOTCHPAY_WEBHOOK_SECRET', 'STRIPE_WEBHOOK_SECRET']) {
+      if (!process.env[k]) {
+        console.error(`🚨 ${k} manquant : les paiements correspondants sont DÉSACTIVÉS.`);
+      }
+    }
     // Swagger
     const swaggerPassword = process.env.SWAGGER_PASSWORD;
     if (!swaggerPassword || swaggerPassword === 'kauri2026' || swaggerPassword.length < 12) {
@@ -230,7 +245,16 @@ const startServer = async () => {
     // Run migrations
     logger.info('Step 2.5: Running migrations...');
     await MigrationService.runInitialFintechMigration();
-    await MigrationService.runRealMoneyMigration();
+    // runRealMoneyMigration is NOT a startup migration: it wipes simulation data
+    // and must only run when an admin actually switches the platform to real
+    // money (FeatureFlagService.setRealMoneyMode). Run at startup, it reset
+    // every user's goals/challenges/tontines on the next deploy while real
+    // money was still off.
+    await MigrationService.runTontineRotationMigration();
+    await MigrationService.runDisableInvestmentsMigration();
+    await MigrationService.runDedupeActiveChallengesMigration();
+    await MigrationService.runChallengeTranslationsMigration();
+    await MigrationService.runLocalUploadsMigration();
     logger.info('Step 2.5: Migrations completed');
 
     // Initialize Monitoring (Prometheus)

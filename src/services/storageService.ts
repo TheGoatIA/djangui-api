@@ -158,6 +158,29 @@ export class StorageService {
   }
 
   /**
+   * Turns a URL stored in the database (`${PUBLIC_URL}/${bucket}/${key}`, as
+   * returned by uploadFile/uploadBuffer) into a short-lived signed URL. Works
+   * for private objects and, transparently, for legacy public ones. Anything
+   * that is not one of our object URLs is returned unchanged.
+   */
+  static async signStoredUrl(
+    stored?: string | null,
+    expiresIn = 3600,
+  ): Promise<string | undefined> {
+    if (!stored) return stored ?? undefined;
+    const prefixes = [this.PUBLIC_URL, this.ENDPOINT].map((p) => p.replace(/\/+$/, '') + '/');
+    const prefix = prefixes.find((p) => stored.startsWith(p));
+    if (!prefix) return stored;
+    const [bucket, ...rest] = stored.slice(prefix.length).split('/');
+    if (!bucket || rest.length === 0) return stored;
+    try {
+      return await this.getSignedUrl(bucket, decodeURIComponent(rest.join('/')), expiresIn);
+    } catch {
+      return stored;
+    }
+  }
+
+  /**
    * Generate a signed URL for a file
    */
   static async getSignedUrl(

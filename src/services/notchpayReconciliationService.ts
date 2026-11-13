@@ -147,9 +147,14 @@ export class NotchPayReconciliationService {
     // only ever set by the transfer.complete webhook; its absence past the
     // grace window means the transfer is either still genuinely in flight, or
     // ITS webhook (success or failure) never arrived.
+    // Wallet withdrawals are stored as type 'expense' + category 'withdrawal'
+    // (WalletService) — querying type 'withdrawal' never matched a single one.
+    // 'pending' is included: that is exactly the state an ambiguous NotchPay
+    // error (5xx, timeout after send) leaves a withdrawal in.
     const unconfirmedTransfers = await Transaction.find({
-      type: 'withdrawal',
-      status: 'completed',
+      category: 'withdrawal',
+      paymentMethod: 'wallet',
+      status: { $in: ['completed', 'pending'] },
       'metadata.notchpayConfirmedAt': { $exists: false },
       'metadata.reconciledAt': { $exists: false },
       createdAt: { $gte: lookbackCutoff, $lte: graceCutoff },
@@ -158,59 +163,93 @@ export class NotchPayReconciliationService {
     for (const tx of unconfirmedTransfers) {
       results.transfersChecked++;
       try {
-        const response = await notchpayAdminApi.get(`/transfers/${tx.reference}`);
-        const status = response.data?.transfer?.status || response.data?.status;
-
-        if (['complete', 'completed', 'success'].includes(status)) {
-          await Transaction.updateOne(
-            { _id: tx._id },
-            {
-              $set: {
-                'metadata.notchpayConfirmedAt': new Date().toISOString(),
-                'metadata.notchpayStatus': 'confirmed',
-                'metadata.reconciledAt': new Date().toISOString(),
-              },
-            },
-          );
-          results.transfersConfirmed++;
-        } else if (['failed', 'declined', 'cancelled', 'canceled'].includes(status)) {
-          // Same atomic-claim-then-refund pattern as the transfer.failed
-          // webhook handler (webhookController.ts) — the $ne guard means that
-          // if the real webhook arrives before or after this job runs, only
-          // one of the two can ever actually issue the refund.
-          const claimed = await Transaction.findOneAndUpdate(
-            { _id: tx._id, status: { $ne: 'failed' } },
-            {
-              $set: {
-                status: 'failed',
-                'metadata.failureReason': `Réconciliation: NotchPay indique "${status}"`,
-                'metadata.failedAt': new Date().toISOString(),
-                'metadata.reconciledAt': new Date().toISOString(),
-              },
-            },
-            { new: false },
-          );
-          if (claimed) {
-            await WalletService.executeTransaction({
-              userId: claimed.userId.toString(),
-              amount: claimed.amount + (claimed.fees || 0),
-              type: 'deposit',
-              description: 'Remboursement transfert échoué (détecté par réconciliation NotchPay)',
-              paymentMethod: 'wallet',
-              metadata: { originalReference: tx.reference, source: 'reconciliation' },
-            });
-            results.transfersRefunded++;
-            logger.warn(
-              `[Reconciliation] Transfer ${tx.reference} failed on NotchPay but no webhook ever arrived — auto-refunded.`,
-            );
-          }
-        }
-        // Still pending on NotchPay's side too — left for the next run.
+        const outcome = await NotchPayReconciliationService.checkTransfer(tx);
+        if (outcome === 'confirmed') results.transfersConfirmed++;
+        if (outcome === 'refunded') results.transfersRefunded++;
       } catch (err: any) {
         const msg = `Transfer ${tx.reference}: ${err.message}`;
         results.errors.push(msg);
         logger.error(`[Reconciliation] ${msg}`);
       }
     }
+  }
+
+  /**
+   * Asks NotchPay for the REAL state of one withdrawal and settles it:
+   * complete → confirmed; failed → refunded (amount + fees) exactly once;
+   * otherwise left untouched. Never re-sends money. Used by the reconciliation
+   * job and by the admin "verify with operator" action (4-eyes approved).
+   */
+  static async checkTransfer(tx: any): Promise<'confirmed' | 'refunded' | 'pending' | 'unchanged'> {
+    // NotchPay only resolves ITS id (trf.…): GET /transfers/<our ref> is a 404
+    // (verified on the sandbox). The id is stored at payout time.
+    const response = await notchpayAdminApi.get(
+      `/transfers/${tx.externalReference || tx.reference}`,
+    );
+    const status = response.data?.transfer?.status || response.data?.status;
+
+    if (['complete', 'completed', 'success'].includes(status)) {
+      // Guard: a withdrawal already marked failed has been REFUNDED — never flip
+      // it back to completed (the user would keep the refund AND the transfer).
+      const r = await Transaction.updateOne(
+        { _id: tx._id, status: { $ne: 'failed' } },
+        {
+          $set: {
+            status: 'completed',
+            'metadata.notchpayConfirmedAt': new Date().toISOString(),
+            'metadata.notchpayStatus': 'confirmed',
+            'metadata.reconciledAt': new Date().toISOString(),
+          },
+        },
+      );
+      if (r.modifiedCount === 0 && tx.status === 'failed') {
+        logger.error(
+          `[Reconciliation] 🚨 Transfer ${tx.reference} is COMPLETE on NotchPay but was already refunded — manual review required.`,
+        );
+        SlackService.sendAlert(
+          `🚨 Retrait \`${tx.reference}\` : NotchPay indique "complete" alors qu'il a déjà été remboursé. Vérification manuelle requise.`,
+        ).catch(() => undefined);
+        return 'unchanged';
+      }
+      return 'confirmed';
+    }
+
+    if (['failed', 'declined', 'cancelled', 'canceled'].includes(status)) {
+      // Claim + refund in ONE transaction (same pattern as the transfer.failed
+      // webhook): whichever of the two runs first refunds, the other no-ops.
+      const claimed = await WalletService.runInTransaction(async (session) => {
+        const won = await Transaction.findOneAndUpdate(
+          { _id: tx._id, status: { $ne: 'failed' } },
+          {
+            $set: {
+              status: 'failed',
+              'metadata.failureReason': `Réconciliation: NotchPay indique "${status}"`,
+              'metadata.failedAt': new Date().toISOString(),
+              'metadata.reconciledAt': new Date().toISOString(),
+            },
+          },
+          { new: false, session },
+        );
+        if (!won) return false;
+        await WalletService.executeTransaction(
+          {
+            userId: won.userId.toString(),
+            amount: won.amount + (won.fees || 0),
+            type: 'deposit',
+            description: 'Remboursement transfert échoué (détecté par réconciliation NotchPay)',
+            paymentMethod: 'wallet',
+            metadata: { originalReference: tx.reference, source: 'reconciliation' },
+          },
+          { session },
+        );
+        return true;
+      });
+      if (claimed) {
+        logger.warn(`[Reconciliation] Transfer ${tx.reference} failed on NotchPay — refunded.`);
+        return 'refunded';
+      }
+      return 'unchanged';
+    }
+    return 'pending';
   }
 }

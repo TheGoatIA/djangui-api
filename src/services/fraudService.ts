@@ -12,6 +12,9 @@ export interface FraudAssessment {
 }
 
 export class FraudService {
+  /** Deposit initiations per hour above which deposits are blocked outright. */
+  static readonly DEPOSIT_HARD_BLOCK_ATTEMPTS = 10;
+
   /**
    * Évalue le niveau de risque d'une transaction financière, d'un retrait ou
    * d'un dépôt. Règles heuristiques :
@@ -29,6 +32,7 @@ export class FraudService {
     currency: string = 'XAF',
   ): Promise<FraudAssessment> {
     let score = 0;
+    let hardBlock = false;
     const reasons: string[] = [];
     const triggeredRules: string[] = [];
 
@@ -108,10 +112,19 @@ export class FraudService {
           );
           triggeredRules.push('rapid_deposits');
         }
+        // Deposit rules alone could never reach the block threshold (max 35+25 = 60):
+        // they only ever flagged. 10+ initiations in one hour matches no legitimate
+        // usage (a user retrying a failed Mobile Money prompt stays well below) and
+        // is the signature of card/number testing or structuring under AML caps.
+        if (recentDepositAttempts >= FraudService.DEPOSIT_HARD_BLOCK_ATTEMPTS) {
+          hardBlock = true;
+          reasons.push('Seuil de blocage des tentatives de dépôt atteint');
+          triggeredRules.push('deposit_burst_block');
+        }
       }
 
-      const isSuspicious = score >= 50;
-      const block = score >= 70;
+      const isSuspicious = score >= 50 || hardBlock;
+      const block = score >= 70 || hardBlock;
 
       if (isSuspicious) {
         logger.warn(

@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { TontineService } from '../services/tontineService';
-import { TontineAIService } from '../services/ai/tontineAIService';
+import { TontineAIService, TontineAIUnavailableError } from '../services/ai/tontineAIService';
 import { NotificationService } from '../services/notificationService';
 import TontineContribution from '../models/TontineContribution';
 import Tontine from '../models/Tontine';
@@ -111,17 +111,32 @@ export class TontineController {
 
       // Le membre doit exister avant même l'analyse IA (évite de payer un appel IA
       // pour un utilisateur qui n'appartient de toute façon pas à cette tontine).
-      const member = await TontineMember.findOne({ tontineId, userId: (req as any).user.id });
+      const member = await TontineMember.findOne({
+        tontineId,
+        userId: (req as any).user.id,
+        invitationStatus: 'accepted',
+      });
       if (!member) throw new AppError("Vous n'êtes pas membre de cette tontine", 403);
 
-      // 1. Analyse IA
-      const analysis = await TontineAIService.analyzeReceipt(file.path, tontine.currency);
+      // 1. Analyse IA — si l'IA est INDISPONIBLE (panne, quota, clé absente),
+      // la cotisation n'est plus refusée : elle part en validation manuelle du
+      // créateur (qui voit le reçu), avec le montant attendu et aiAnalysis.unavailable.
+      // Avant, une panne Gemini bloquait TOUTES les cotisations (constaté en E2E).
+      let analysis: Awaited<ReturnType<typeof TontineAIService.analyzeReceipt>> | null = null;
+      try {
+        analysis = await TontineAIService.analyzeReceipt(file.path, tontine.currency);
+      } catch (err) {
+        if (!(err instanceof TontineAIUnavailableError)) throw err;
+      }
 
       // 2. Vérification Anti-Fraude (Doublon) — par référence détectée ET par empreinte
       // du fichier, car un reçu illisible retombe sur une référence "UNKNOWN_<timestamp>"
       // qui ne collisionne jamais et laisserait le même reçu réutilisable à l'infini.
       const imageHash = TontineAIService.hashReceiptFile(file.path);
-      const isDuplicate = await TontineAIService.isDuplicate(analysis.transactionRef, imageHash);
+      const isDuplicate = await TontineAIService.isDuplicate(
+        analysis?.transactionRef ?? `UNREAD_${imageHash}`,
+        imageHash,
+      );
       if (isDuplicate) {
         throw new AppError('Ce reçu a déjà été utilisé pour une autre cotisation.', 400);
       }
@@ -136,7 +151,7 @@ export class TontineController {
       // validation : un versement de vraie monnaie déclenchera plus tard un vrai
       // versement du gagnant du tour (voir rotateTurn), donc accepter un montant
       // insuffisant serait exploitable même en mode "ia_plus_manual".
-      if (analysis.amount < memberInfo.convertedAmount) {
+      if (analysis && analysis.amount < memberInfo.convertedAmount) {
         throw new AppError(
           `Montant insuffisant. Attendu: ${memberInfo.convertedAmount} ${memberInfo.currency}, Détecté: ${analysis.amount} ${analysis.currency}`,
           400,
@@ -144,7 +159,8 @@ export class TontineController {
       }
 
       // Validation temporelle de la date du reçu par l'IA
-      const isDateValid = TontineAIService.isDateValid(analysis.date, tontine.startDate);
+      const isDateValid =
+        !analysis || TontineAIService.isDateValid(analysis.date, tontine.startDate);
       if (!isDateValid) {
         throw new AppError(
           'La date de ce reçu est antérieure au début de ce tour de tontine.',
@@ -155,7 +171,14 @@ export class TontineController {
       // 4. Téléversement vers MinIO
       const bucket = 'kauri-uploads';
       const destinationKey = `tontines/${tontineId}/${file.filename}`;
-      const minioUrl = await StorageService.uploadFile(file.path, bucket, destinationKey);
+      // Private: a receipt shows names, phone numbers and amounts. It is only
+      // ever served through short-lived signed URLs (TontineService.withSignedUrls).
+      const minioUrl = await StorageService.uploadFile(
+        file.path,
+        bucket,
+        destinationKey,
+        'private',
+      );
 
       // Nettoyage local immédiat
       try {
@@ -172,19 +195,29 @@ export class TontineController {
         tontineId,
         memberId: member._id,
         turnIndex: tontine.currentTurn,
-        amountPaid: analysis.amount,
+        amountPaid: analysis ? analysis.amount : memberInfo.convertedAmount,
         currency: tontine.currency,
         proofImage: minioUrl,
         proofImageHash: imageHash,
-        transactionRef: analysis.transactionRef,
-        aiAnalysis: {
-          detectedAmount: analysis.amount,
-          detectedDate: analysis.date,
-          detectedBeneficiary: analysis.beneficiaryName,
-          detectedRef: analysis.transactionRef,
-          confidence: analysis.confidence,
-        },
+        transactionRef: analysis?.transactionRef ?? `UNREAD_${imageHash}`,
+        aiAnalysis: analysis
+          ? {
+              detectedAmount: analysis.amount,
+              detectedDate: analysis.date,
+              detectedBeneficiary: analysis.beneficiaryName,
+              detectedRef: analysis.transactionRef,
+              confidence: analysis.confidence,
+            }
+          : {
+              // Aucune lecture automatique : le créateur vérifie le reçu lui-même.
+              detectedAmount: 0,
+              detectedRef: `UNREAD_${imageHash}`,
+              detectedBeneficiary: 'Analyse IA indisponible',
+              confidence: 0,
+            },
         lateFeesApplied: memberInfo.lateFee,
+        // Paid outside the app: tracked, never paid out from a wallet.
+        source: 'receipt',
         validationStatus: 'manual_pending',
       });
 
@@ -209,7 +242,7 @@ export class TontineController {
         status: 'success',
         message:
           'Cotisation reçue, en attente de validation manuelle par le créateur de la tontine.',
-        data: contribution,
+        data: (await TontineService.withSignedUrls([contribution], 'proofImage'))[0],
       });
     } catch (error) {
       next(error);
@@ -361,7 +394,8 @@ export class TontineController {
       if (file) {
         const bucket = 'kauri-uploads';
         const destinationKey = `tontines/${tontineId}/voice/${file.filename}`;
-        audioUrl = await StorageService.uploadFile(file.path, bucket, destinationKey);
+        // Private group conversation: served through signed URLs only.
+        audioUrl = await StorageService.uploadFile(file.path, bucket, destinationKey, 'private');
         try {
           fs.unlinkSync(file.path);
         } catch (e) {}
@@ -378,7 +412,10 @@ export class TontineController {
         audioUrl,
         audioDuration,
       );
-      res.status(201).json({ status: 'success', data: message });
+      res.status(201).json({
+        status: 'success',
+        data: (await TontineService.withSignedUrls([message], 'audioUrl'))[0],
+      });
     } catch (error) {
       next(error);
     }
@@ -444,15 +481,26 @@ export class TontineController {
    */
   static async createVote(req: Request, res: Response, next: NextFunction) {
     try {
-      const { question, options, durationHours } = req.body;
+      const { question, options, durationHours, kind } = req.body;
       const vote = await TontineService.createVote(
         req.params.id,
         (req as any).user.id,
         question,
         options,
         durationHours,
+        kind,
       );
       res.status(201).json({ status: 'success', data: vote });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** Lister les votes d'une tontine (membres) */
+  static async listVotes(req: Request, res: Response, next: NextFunction) {
+    try {
+      const votes = await TontineService.listVotes(req.params.id, (req as any).user.id);
+      res.json({ status: 'success', data: votes });
     } catch (error) {
       next(error);
     }
@@ -516,6 +564,20 @@ export class TontineController {
         enabled,
       );
       res.json({ status: 'success', data: member });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** Clôture administrative d'une tontine en cours (litige, fraude, support). */
+  static async adminClose(req: Request, res: Response, next: NextFunction) {
+    try {
+      const tontine = await TontineService.adminCloseTontine(
+        req.params.id,
+        (req as any).user.id,
+        req.body?.reason,
+      );
+      res.json({ status: 'success', data: tontine });
     } catch (error) {
       next(error);
     }

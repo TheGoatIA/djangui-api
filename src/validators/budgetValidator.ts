@@ -3,7 +3,14 @@ import Joi from 'joi';
 export const createBudgetSchema = Joi.object({
   period: Joi.object({
     type: Joi.string().valid('monthly', 'yearly').required(),
-    month: Joi.number().min(1).max(12).optional(),
+    // Required for a monthly budget: without it the "already exists" lookup
+    // filtered on month: undefined (dropped by Mongoose) and matched ANY budget
+    // of the year.
+    month: Joi.number().integer().min(1).max(12).when('type', {
+      is: 'monthly',
+      then: Joi.required(),
+      otherwise: Joi.optional(),
+    }),
     year: Joi.number().required(),
   }).required(),
   categories: Joi.array()

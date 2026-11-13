@@ -18,7 +18,52 @@ import { MonitoringService } from './monitoringService';
 const roundAmount = (n: number): number => Math.round(n * 100) / 100;
 
 export class TransactionService {
-  static async createTransaction(userId: string, data: any) {
+  /**
+   * Fields a USER-ENTERED transaction may carry (manual form, CSV/JSON import,
+   * SMS parsing — regex or Gemini). Everything else is dropped, and
+   * paymentMethod is forced to 'cash': a user entry is bookkeeping only and can
+   * never move real money. Previously the SMS/AI path spread the raw Gemini JSON
+   * (`...result`) into createTransaction, so a crafted SMS (prompt injection)
+   * yielding {type:'income', paymentMethod:'notchpay'} credited walletBalance —
+   * money created out of nothing. Real money only moves through WalletService.
+   */
+  private static readonly USER_ENTRY_FIELDS = [
+    'amount',
+    'type',
+    'category',
+    'subcategory',
+    'description',
+    'merchant',
+    'location',
+    'date',
+    'tags',
+    'isRecurring',
+    'recurringFrequency',
+    'receipt',
+    'linkedGoalId',
+    'isAutoCategorized',
+    'categorizationConfidence',
+  ];
+
+  private static sanitizeUserEntry(raw: any) {
+    const data: any = {};
+    for (const key of this.USER_ENTRY_FIELDS) {
+      if (raw && raw[key] !== undefined) data[key] = raw[key];
+    }
+    if (data.type !== 'income' && data.type !== 'expense') {
+      throw new AppError('Type de transaction invalide', 400);
+    }
+    const amount = Number(data.amount);
+    if (!Number.isFinite(amount) || amount < 0 || amount > 1_000_000_000_000) {
+      throw new AppError('Montant invalide', 400);
+    }
+    data.amount = amount;
+    data.paymentMethod = 'cash';
+    return data;
+  }
+
+  static async createTransaction(userId: string, rawData: any) {
+    const data = this.sanitizeUserEntry(rawData);
     const session = await mongoose.startSession();
     session.startTransaction();
 
@@ -69,6 +114,8 @@ export class TransactionService {
       // 'withdrawal' sont réservées aux écritures système créées par WalletService
       // (paiements, tontines, retraits) — les accepter ici permettrait de fabriquer du
       // solde réel sans jamais passer par Stripe/NotchPay ou un vrai débit du wallet.
+      // Always false since sanitizeUserEntry forces paymentMethod 'cash' — kept as a
+      // second line of defence should a future caller bypass the sanitizer.
       const isDigitalIncome =
         data.type === 'income' && ['stripe', 'notchpay', 'wallet'].includes(data.paymentMethod);
       const isWalletExpense = data.type === 'expense' && data.paymentMethod === 'wallet';
@@ -317,8 +364,12 @@ export class TransactionService {
       throw new AppError('Transaction not found', 404);
     }
 
-    // Sécurité Fintech : Interdiction de supprimer des transactions réelles (Wallet, NotchPay, Stripe)
-    if (transaction.paymentMethod !== 'cash') {
+    // Sécurité Fintech : Interdiction de supprimer des transactions réelles (Wallet, NotchPay, Stripe).
+    // Same rule as update: an entry WITHOUT paymentMethod is a user entry (every
+    // WalletService movement always sets one). The previous `!== 'cash'` refused
+    // every manual expense created by the app (which sends no paymentMethod):
+    // users could edit but never delete their own entries.
+    if (transaction.paymentMethod && transaction.paymentMethod !== 'cash') {
       throw new AppError(
         "Les transactions financières réelles ne peuvent pas être supprimées pour des raisons d'audit et d'intégrité.",
         403,

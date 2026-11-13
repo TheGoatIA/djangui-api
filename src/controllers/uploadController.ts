@@ -21,10 +21,13 @@ export class UploadController {
         const ocrResult = await OCRService.scanReceipt(req.file.path);
 
         // Upload vers MinIO
+        // Private: a purchase receipt is personal data. `filePath` stays the
+        // stored object reference; `previewUrl` is a short-lived signed link.
         const minioUrl = await StorageService.uploadFile(
           req.file.path,
           'kauri-uploads',
-          `receipts/${req.file.filename}`,
+          `receipts/${req.user._id}/${req.file.filename}`,
+          'private',
         );
 
         res.status(200).json({
@@ -33,6 +36,7 @@ export class UploadController {
             ...ocrResult,
             fileName: req.file.filename,
             filePath: minioUrl,
+            previewUrl: await StorageService.signStoredUrl(minioUrl),
           },
         });
       } finally {
@@ -64,7 +68,11 @@ export class UploadController {
       try {
         avatarUrl = await StorageService.uploadFile(
           req.file.path,
-          'kauri-uploads',
+          // Avatars go to the PUBLIC avatars bucket (public-read policy, see
+          // StorageService.ensureBucketExists). In kauri-uploads — not public on
+          // MinIO, which ignores per-object ACLs — the stored URL was not
+          // displayable without a signature.
+          'kauri-avatars',
           `avatars/${req.file.filename}`,
         );
       } finally {
@@ -136,7 +144,9 @@ export class UploadController {
         documentUrl = await StorageService.uploadFile(
           req.file.path,
           'kauri-uploads',
-          `documents/${req.file.filename}`,
+          // Per-user prefix: KYCService.submitDocuments only accepts documents
+          // from the submitter's OWN folder.
+          `documents/${req.user._id}/${req.file.filename}`,
           'private',
         );
       } finally {

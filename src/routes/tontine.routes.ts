@@ -60,12 +60,20 @@ router.delete('/:id/members/:memberId', TontineController.removeMember);
 router.patch('/:id/members/:memberId/auto-debit/toggle', TontineController.toggleAutoDebit);
 
 // Gouvernance (Votes)
+router.get('/:id/votes', TontineController.listVotes);
 router.post('/:id/votes', TontineController.createVote);
 router.post('/:id/votes/:voteId', TontineController.castVote);
 
 // --- Routes Admin ---
-router.get('/admin/stats', restrictTo('admin'), TontineController.getAdminStats);
-router.get('/admin/all', restrictTo('admin'), TontineController.getAllTontines);
-router.get('/admin/all/:id', restrictTo('admin'), TontineController.getAdminTontineDetails);
+// Read-only aggregates: support consults the Tontines screen too.
+router.get('/admin/stats', restrictTo('admin', 'support'), TontineController.getAdminStats);
+router.get('/admin/all', restrictTo('admin', 'support'), TontineController.getAllTontines);
+// Read-only (support consults tontine details from the dashboard).
+router.get(
+  '/admin/all/:id',
+  restrictTo('admin', 'support'),
+  TontineController.getAdminTontineDetails,
+);
+router.post('/admin/:id/close', restrictTo('admin'), TontineController.adminClose);
 
 export default router;

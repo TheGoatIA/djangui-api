@@ -8,6 +8,9 @@ export interface ITontineVote extends Document {
   voters: mongoose.Schema.Types.ObjectId[];
   expiresAt: Date;
   status: 'open' | 'closed';
+  /** 'closure' = members decide whether an ACTIVE tontine stops mid-cycle. */
+  kind: 'general' | 'closure';
+  outcome?: 'approved' | 'rejected';
 }
 
 const TontineVoteSchema: Schema = new Schema(
@@ -24,6 +27,8 @@ const TontineVoteSchema: Schema = new Schema(
     voters: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     expiresAt: { type: Date, required: true },
     status: { type: String, enum: ['open', 'closed'], default: 'open' },
+    kind: { type: String, enum: ['general', 'closure'], default: 'general' },
+    outcome: { type: String, enum: ['approved', 'rejected'] },
   },
   { timestamps: true },
 );

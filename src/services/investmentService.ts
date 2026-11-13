@@ -1,7 +1,6 @@
 import mongoose from 'mongoose';
 import Investment, { IInvestmentDocument } from '../models/Investment';
 import User from '../models/User';
-import Transaction from '../models/Transaction';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import { MonitoringService } from './monitoringService';
@@ -23,9 +22,15 @@ export class InvestmentService {
   ) {
     const { title, type, initialAmount, currency } = data;
 
-    if (!title || typeof title !== 'string') {
-      throw new AppError('Le titre est requis', 400);
+    if (!title || typeof title !== 'string' || !title.trim() || title.length > 100) {
+      throw new AppError('Le titre est requis (100 caractères max)', 400);
     }
+    // The amount is debited from the wallet in the USER's currency: recording
+    // the investment in a client-chosen currency (EUR) and crediting that same
+    // number back to the XAF wallet on close mixed currencies.
+    void currency;
+    const user = await User.findById(userId).select('currency').lean();
+    const walletCurrency = user?.currency || 'XAF';
     if (!type || !['crypto', 'stock', 'real_estate', 'other'].includes(type)) {
       throw new AppError("Type d'investissement invalide", 400);
     }
@@ -55,7 +60,7 @@ export class InvestmentService {
             type,
             initialAmount,
             currentValue: initialAmount,
-            currency: currency || 'XAF',
+            currency: walletCurrency,
             history: [{ value: initialAmount, date: new Date() }],
           },
         ],
@@ -131,80 +136,74 @@ export class InvestmentService {
    * same session prevents a retry or duplicate request from crediting twice).
    */
   static async closeInvestment(userId: string, investmentId: string, requestedValue?: number) {
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
-    try {
-      const investment = await Investment.findOne({ _id: investmentId, userId }).session(session);
-      if (!investment) {
-        throw new AppError('Investment not found', 404);
-      }
-      if (investment.status === 'closed') {
-        throw new AppError('Investment is already closed', 400);
-      }
-
-      if (typeof requestedValue === 'number' && requestedValue !== investment.currentValue) {
-        logger.warn(
-          `[FINTECH] closeInvestment: client-supplied value ${requestedValue} ignored for investment ${investmentId}; using server value ${investment.currentValue}`,
-        );
-      }
-
-      const closingValue = investment.currentValue;
-
-      investment.status = 'closed';
-      investment.lastUpdated = new Date();
-      investment.history.push({ value: closingValue, date: new Date() });
-      await investment.save({ session });
-
-      await User.findByIdAndUpdate(userId, { $inc: { walletBalance: closingValue } }, { session });
-
-      await Transaction.create(
-        [
-          {
-            userId,
-            amount: closingValue,
-            currency: investment.currency || 'XAF',
-            type: 'income',
-            category: 'investment_close',
-            description: `Clôture investissement: ${investment.title}`,
-            status: 'completed',
-            reference: `INV-CLOSE-${investmentId}`,
-          },
-        ],
-        { session },
-      );
-
-      await AuditService.record({
-        userId: userId as any,
-        action: 'INVESTMENT_CLOSE',
-        resource: 'INVESTMENT',
-        resourceId: investmentId,
-        status: 'success',
-        metadata: { amount: closingValue, investmentType: investment.type },
-      });
-
-      await session.commitTransaction();
-      logger.info(
-        `[FINTECH] Investment ${investmentId} closed for user ${userId}. Credited: ${closingValue}`,
-      );
-
-      return investment;
-    } catch (error: any) {
-      await session.abortTransaction();
-      logger.error(
-        `[FINTECH] closeInvestment FAILED for investment ${investmentId} (user ${userId}): ${error.message}`,
-      );
-      throw error;
-    } finally {
-      session.endSession();
-    }
+    const result = await WalletService.runInTransaction(async (session) =>
+      InvestmentService.settle(userId, investmentId, session, requestedValue),
+    );
+    (result.transaction as any)
+      ?._postCommit?.()
+      .catch((err: any) => logger.error(`Post-commit hook error: ${err.message}`));
+    logger.info(
+      `[FINTECH] Investment ${investmentId} closed for user ${userId}. Credited: ${result.closingValue}`,
+    );
+    return result.investment;
   }
 
   /**
-   * Delete an investment. If it's still active (not yet closed via closeInvestment),
-   * its initialAmount was genuinely debited from the wallet at creation — refund it
-   * in the same transaction as the deletion so deleting an investment can't be used
-   * to make the locked funds disappear.
+   * Shared by close and delete: atomically flips the investment to 'closed'
+   * (the status guard IS the update filter, so concurrent requests can credit
+   * at most once) and credits the wallet with the server's current value.
+   */
+  private static async settle(
+    userId: string,
+    investmentId: string,
+    session: mongoose.ClientSession,
+    requestedValue?: number,
+  ) {
+    const existing = await Investment.findOne({ _id: investmentId, userId }).session(session);
+    if (!existing) throw new AppError('Investment not found', 404);
+
+    const investment = await Investment.findOneAndUpdate(
+      { _id: investmentId, userId, status: { $ne: 'closed' } },
+      {
+        $set: { status: 'closed', lastUpdated: new Date() },
+        $push: { history: { value: existing.currentValue, date: new Date() } },
+      },
+      { new: true, session },
+    );
+    if (!investment) throw new AppError('Investment is already closed', 400);
+
+    if (typeof requestedValue === 'number' && requestedValue !== investment.currentValue) {
+      logger.warn(
+        `[FINTECH] closeInvestment: client-supplied value ${requestedValue} ignored for investment ${investmentId}; using server value ${investment.currentValue}`,
+      );
+    }
+
+    const closingValue = investment.currentValue;
+    let transaction: any = null;
+    if (closingValue > 0) {
+      // Internal credit through the wallet ledger (audited, notified) instead
+      // of a bare $inc on the balance.
+      transaction = await WalletService.executeTransaction(
+        {
+          userId,
+          amount: closingValue,
+          type: 'deposit',
+          category: 'investment_close',
+          description: `Clôture investissement: ${investment.title}`,
+          paymentMethod: 'wallet',
+          reference: `INV-CLOSE-${investmentId}`,
+          metadata: { investmentId, investmentType: investment.type },
+        },
+        { session },
+      );
+    }
+    return { investment, transaction, closingValue };
+  }
+
+  /**
+   * Delete an investment. An ACTIVE one is settled first at its CURRENT value,
+   * exactly like a close: refunding the initial amount let a user dodge any
+   * loss (a 10 000 position worth 5 000 deleted for a 10 000 refund).
    */
   static async deleteInvestment(id: string, userId: string) {
     const result = await WalletService.runInTransaction(async (session) => {
@@ -212,22 +211,10 @@ export class InvestmentService {
       if (!investment) {
         throw new AppError('Investment not found', 404);
       }
-
       let transaction: any = null;
       if (investment.status !== 'closed') {
-        transaction = await WalletService.executeTransaction(
-          {
-            userId,
-            amount: investment.initialAmount,
-            type: 'deposit',
-            description: `Remboursement (Suppression Investissement) : ${investment.title}`,
-            paymentMethod: 'wallet',
-            metadata: { investmentId: id, action: 'investment_delete_refund' },
-          },
-          { session },
-        );
+        ({ transaction } = await InvestmentService.settle(userId, id, session));
       }
-
       await Investment.findOneAndDelete({ _id: id, userId }, { session });
       return transaction;
     });

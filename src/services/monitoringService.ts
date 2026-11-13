@@ -778,7 +778,14 @@ export class MonitoringService {
 
   static recordTransaction(type: string, status: string, currency: string, amount: number) {
     this.transactionTotal.labels(type, status, currency).inc();
-    this.transactionAmount.labels(type, status, currency).inc(amount);
+    // A Prometheus counter throws on a negative/NaN increment. This is called
+    // from WalletService's error path with the REJECTED amount (e.g. -100): the
+    // metric exception replaced the intended 400 "Montant invalide" with a 500.
+    // Metrics must never change an API response.
+    const n = Number(amount);
+    if (Number.isFinite(n) && n > 0) {
+      this.transactionAmount.labels(type, status, currency).inc(n);
+    }
   }
 
   static recordUserSignup(method: string, country: string) {

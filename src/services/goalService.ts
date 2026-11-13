@@ -276,17 +276,50 @@ export class GoalService {
   // l'objectif (nom, montant cible, échéance, règles) reste une décision du
   // créateur seul.
   static async updateGoal(id: string, userId: string, data: any) {
-    const goal = await SavingGoal.findOneAndUpdate(
-      { _id: id, userId },
-      { $set: data },
-      { new: true, runValidators: true },
-    );
-
+    // Load + save (not findOneAndUpdate): `progress` is derived in the
+    // pre('save') hook, which an update query never runs — changing the target
+    // left the displayed progress stale (e.g. 50 % on a goal already reached).
+    const goal = await SavingGoal.findOne({ _id: id, userId });
     if (!goal) {
       throw new AppError('Goal not found', 404);
     }
-
+    goal.set(data);
+    await goal.save();
     return goal;
+  }
+
+  /** A goal whose target is reached is redeemable without early-withdrawal penalty. */
+  private static isReached(goal: any): boolean {
+    return goal.status === 'completed' || goal.currentAmount >= goal.targetAmount;
+  }
+
+  /**
+   * How much of the pot belongs to each contributor: participants own what
+   * they put in (they can never redeem); the owner owns the rest. If the owner
+   * already redeemed into other people's money, participants are scaled down
+   * proportionally to what is left.
+   */
+  private static shares(goal: any): Map<string, number> {
+    const ownerId = goal.userId.toString();
+    const others = new Map<string, number>();
+    for (const c of goal.contributions || []) {
+      const uid = c.userId?.toString();
+      if (!uid || uid === ownerId) continue;
+      // A participant's refund (leave / removal) is recorded as a 'redemption'
+      // of THEIR entry: it reduces what they own in the pot.
+      const delta = c.type === 'redemption' ? -c.amount : c.amount;
+      others.set(uid, roundAmount(Math.max(0, (others.get(uid) || 0) + delta)));
+    }
+    const othersTotal = [...others.values()].reduce((a, b) => a + b, 0);
+    const shares = new Map<string, number>();
+    if (othersTotal > goal.currentAmount) {
+      const ratio = othersTotal > 0 ? goal.currentAmount / othersTotal : 0;
+      for (const [uid, v] of others) shares.set(uid, roundAmount(v * ratio));
+    } else {
+      for (const [uid, v] of others) shares.set(uid, v);
+      shares.set(ownerId, roundAmount(goal.currentAmount - othersTotal));
+    }
+    return shares;
   }
 
   // Réservé au propriétaire : la suppression rembourse le solde restant sur
@@ -299,42 +332,99 @@ export class GoalService {
         throw new AppError('Goal not found', 404);
       }
 
-      // Si l'objectif contient de l'argent, on rembourse avant de supprimer,
-      // dans la même transaction que la suppression du document.
-      let transaction: any = null;
+      // Refund before deleting, in the same transaction. Each contributor gets
+      // THEIR share back: refunding the whole pot to the owner handed them the
+      // money every participant had put into a shared goal.
+      const transactions: any[] = [];
       if (goal.currentAmount > 0) {
-        let fees = 0;
-        // Pénalité de 0.5% si retrait avant la deadline (si elle existe)
-        if (goal.deadline && new Date() < new Date(goal.deadline) && goal.status !== 'completed') {
-          fees = roundAmount(goal.currentAmount * 0.005);
+        const early =
+          goal.deadline && new Date() < new Date(goal.deadline) && !GoalService.isReached(goal);
+        for (const [uid, share] of GoalService.shares(goal)) {
+          if (share <= 0) continue;
+          // Pénalité de 0.5% si retrait avant la deadline (objectif non atteint)
+          const fees = early ? roundAmount(share * 0.005) : 0;
+          transactions.push(
+            await WalletService.executeTransaction(
+              {
+                userId: uid,
+                amount: share,
+                fees,
+                type: 'deposit',
+                description: `Remboursement (Suppression Objectif) : ${goal.name}`,
+                paymentMethod: 'wallet',
+                metadata: { goalId: id, action: 'delete_refund', penaltyApplied: fees > 0 },
+              },
+              { session },
+            ),
+          );
         }
-
-        transaction = await WalletService.executeTransaction(
-          {
-            userId,
-            amount: goal.currentAmount,
-            fees,
-            type: 'deposit',
-            description: `Remboursement (Suppression Objectif) : ${goal.name}`,
-            paymentMethod: 'wallet',
-            metadata: { goalId: id, action: 'delete_refund', penaltyApplied: fees > 0 },
-          },
-          { session },
-        );
       }
 
       await SavingGoal.findByIdAndDelete(id, { session });
       // Ne pas laisser de participants orphelins pointant vers un objectif supprimé.
       await GoalParticipant.deleteMany({ goalId: id }, { session });
-      return { goal, transaction };
+      return { goal, transactions };
     });
 
-    result.transaction
-      ?._postCommit?.()
-      .catch((err: any) => logger.error(`Post-commit hook error: ${err.message}`));
+    for (const tx of result.transactions) {
+      tx?._postCommit?.().catch((err: any) =>
+        logger.error(`Post-commit hook error: ${err.message}`),
+      );
+    }
 
     MonitoringService.recordGoalEvent('delete', result.goal.type || 'unknown');
     return true;
+  }
+
+  /**
+   * Admin deletion (moderation/support). Every contributor gets THEIR share
+   * back, WITHOUT penalty (not their decision). The admin route used to
+   * findByIdAndDelete the goal: the money users had moved into it vanished.
+   */
+  static async adminDeleteGoal(id: string, adminId: string) {
+    const result = await WalletService.runInTransaction(async (session) => {
+      const goal = await SavingGoal.findById(id).session(session);
+      if (!goal) throw new AppError('Goal not found', 404);
+      const refunds: { userId: string; amount: number }[] = [];
+      const transactions: any[] = [];
+      if (goal.currentAmount > 0) {
+        for (const [uid, share] of GoalService.shares(goal)) {
+          if (share <= 0) continue;
+          refunds.push({ userId: uid, amount: share });
+          transactions.push(
+            await WalletService.executeTransaction(
+              {
+                userId: uid,
+                amount: share,
+                type: 'deposit',
+                description: `Remboursement (objectif supprimé par le support) : ${goal.name}`,
+                paymentMethod: 'wallet',
+                metadata: { goalId: id, action: 'admin_delete_refund' },
+              },
+              { session },
+            ),
+          );
+        }
+      }
+      await SavingGoal.deleteOne({ _id: id }, { session });
+      await GoalParticipant.deleteMany({ goalId: id }, { session });
+      return { goal, refunds, transactions };
+    });
+    for (const tx of result.transactions) {
+      tx?._postCommit?.().catch((err: any) =>
+        logger.error(`Post-commit hook error: ${err.message}`),
+      );
+    }
+    const { AuditService } = await import('./auditService');
+    await AuditService.recordSync({
+      userId: adminId as any,
+      action: 'GOAL_ADMIN_DELETE',
+      resource: 'SavingGoal',
+      resourceId: id,
+      status: 'success',
+      metadata: { owner: String(result.goal.userId), refunds: result.refunds },
+    });
+    return result.refunds;
   }
 
   /**
@@ -348,7 +438,20 @@ export class GoalService {
         throw new AppError('Objectif non trouvé', 404);
       }
 
-      const redeemAmount = amount || goal.currentAmount;
+      // The owner redeems THEIR share only: participants' contributions are
+      // theirs (refunded when they leave or the goal is deleted). On a goal
+      // without participants, the share is the whole balance.
+      const ownShare = GoalService.shares(goal).get(goal.userId.toString()) ?? 0;
+      const redeemAmount = amount ?? ownShare;
+      if (typeof redeemAmount !== 'number' || !Number.isFinite(redeemAmount)) {
+        throw new AppError('Montant invalide', 400);
+      }
+      if (redeemAmount > ownShare && redeemAmount <= goal.currentAmount) {
+        throw new AppError(
+          `Vous ne pouvez récupérer que votre part (${ownShare}) : le reste a été versé par les autres participants.`,
+          400,
+        );
+      }
       if (redeemAmount <= 0) {
         throw new AppError('Le montant à récupérer doit être supérieur à zéro', 400);
       }
@@ -357,9 +460,10 @@ export class GoalService {
         throw new AppError("Montant supérieur au solde actuel de l'objectif", 400);
       }
 
-      // Check for early withdrawal penalty (0.5%)
+      // Early withdrawal penalty (0.5%) — not when the target is already reached:
+      // reaching the goal ahead of schedule is a success, not an early withdrawal.
       let fees = 0;
-      if (goal.deadline && new Date() < new Date(goal.deadline)) {
+      if (goal.deadline && new Date() < new Date(goal.deadline) && !GoalService.isReached(goal)) {
         fees = roundAmount(redeemAmount * 0.005); // 0.5% penalty
       }
 
@@ -473,35 +577,85 @@ export class GoalService {
       .lean();
   }
 
+  /**
+   * Refunds a participant's own share and marks them 'removed', atomically.
+   * Their money used to stay in the pot — redeemable by the owner — when they
+   * left or were removed. Voluntary early leave pays the usual 0.5 % early
+   * withdrawal penalty; being removed by the owner does not.
+   */
+  private static async exitParticipant(
+    goalId: string,
+    participantFilter: Record<string, unknown>,
+    applyPenalty: boolean,
+  ) {
+    const result = await WalletService.runInTransaction(async (session) => {
+      const participant = await GoalParticipant.findOneAndUpdate(
+        { goalId, invitationStatus: 'accepted', ...participantFilter },
+        { invitationStatus: 'removed' },
+        { new: true, session },
+      );
+      if (!participant) return null;
+
+      const goal = await SavingGoal.findById(goalId).session(session);
+      if (!goal) return { participant, goal: null, tx: null };
+
+      const uid = participant.userId.toString();
+      const share = GoalService.shares(goal).get(uid) ?? 0;
+      let tx: any = null;
+      if (share > 0) {
+        const early =
+          applyPenalty &&
+          goal.deadline &&
+          new Date() < new Date(goal.deadline) &&
+          !GoalService.isReached(goal);
+        const fees = early ? roundAmount(share * 0.005) : 0;
+        tx = await WalletService.executeTransaction(
+          {
+            userId: uid,
+            amount: share,
+            fees,
+            type: 'deposit',
+            description: `Remboursement de votre part : ${goal.name}`,
+            paymentMethod: 'wallet',
+            metadata: { goalId, action: applyPenalty ? 'leave_refund' : 'removal_refund' },
+          },
+          { session },
+        );
+        goal.currentAmount = roundAmount(goal.currentAmount - share);
+        goal.contributions.push({
+          userId: uid as any,
+          amount: share,
+          date: new Date(),
+          type: 'redemption',
+        });
+        await goal.save({ session });
+      }
+      return { participant, goal, tx };
+    });
+    result?.tx
+      ?._postCommit?.()
+      .catch((err: any) => logger.error(`Post-commit hook error: ${err.message}`));
+    return result;
+  }
+
   static async removeParticipant(goalId: string, ownerId: string, participantId: string) {
     const goal = await SavingGoal.findOne({ _id: goalId, userId: ownerId })
       .select('_id type')
       .lean();
     if (!goal) throw new AppError('Objectif non trouvé ou non autorisé', 404);
 
-    const participant = await GoalParticipant.findOneAndUpdate(
-      { _id: participantId, goalId },
-      { invitationStatus: 'removed' },
-      { new: true },
-    );
-    if (!participant) throw new AppError('Participant non trouvé', 404);
+    const done = await GoalService.exitParticipant(goalId, { _id: participantId }, false);
+    if (!done) throw new AppError('Participant non trouvé', 404);
 
     MonitoringService.recordGoalEvent('remove_participant', goal.type || 'unknown');
-
     return true;
   }
 
   static async leaveGoal(goalId: string, userId: string) {
-    const participant = await GoalParticipant.findOneAndUpdate(
-      { goalId, userId, invitationStatus: 'accepted' },
-      { invitationStatus: 'removed' },
-      { new: true },
-    );
-    if (!participant) throw new AppError('Vous ne participez pas à cet objectif', 404);
+    const done = await GoalService.exitParticipant(goalId, { userId }, true);
+    if (!done) throw new AppError('Vous ne participez pas à cet objectif', 404);
 
-    const goal = await SavingGoal.findById(goalId).select('type').lean();
-    MonitoringService.recordGoalEvent('leave', goal?.type || 'unknown');
-
+    MonitoringService.recordGoalEvent('leave', done.goal?.type || 'unknown');
     return true;
   }
 }

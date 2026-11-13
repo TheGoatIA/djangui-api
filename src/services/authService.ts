@@ -144,7 +144,8 @@ export class AuthService {
 
     // Notify Slack
     SlackService.sendNotification(
-      `👤 *New User Registered*\n*Email*: ${newUser.email}\n*Country*: ${newUser.country}\n*Currency*: ${newUser.currency}`,
+      // User ID only — Slack is not scoped as a store for user PII (see login).
+      `👤 *New User Registered*\n*User ID*: ${newUser._id}\n*Country*: ${newUser.country}\n*Currency*: ${newUser.currency}`,
     );
 
     const platform = userData.deviceInfo?.platform || 'unknown';
@@ -1077,6 +1078,8 @@ export class AuthService {
 
     user.sessions = [];
     user.refreshToken = undefined;
+    // Also kill every device's still-valid access token (15 min otherwise).
+    user.authInvalidatedAt = new Date(Date.now() - 1000);
     await (user as any).save({ validateBeforeSave: false });
 
     AuditService.record({

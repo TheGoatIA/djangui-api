@@ -1,3 +1,4 @@
+import { escapeRegex } from '../utils/escapeRegex';
 import { notchpayAdminApi } from '../config/notchpay';
 import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
@@ -112,7 +113,7 @@ export class AdminController {
   static async getAIUsageLogs(req: Request, res: Response, next: NextFunction) {
     try {
       const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 20;
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
       const skip = (page - 1) * limit;
 
       const logs = await AIUsage.find()
@@ -454,22 +455,32 @@ export class AdminController {
   // 3b. Create Client Log (from Frontend/Mobile)
   static async createLog(req: Request, res: Response, next: NextFunction) {
     try {
-      const { level, message, context, stack, metadata } = req.body;
-
-      if (!message) {
+      const { level, message, context, stack, metadata } = req.body || {};
+      if (typeof message !== 'string' || !message.trim()) {
         return next(new AppError('Log message is required', 400));
       }
-
-      const logMethod = (logger as any)[level] || logger.info;
-      logMethod.call(logger, {
-        message: `[CLIENT] ${message}`,
-        level: level || 'info',
-        context: context || 'ClientLog',
-        stack,
-        ...metadata,
+      // `(logger as any)[level]` called ANY logger method chosen by the client:
+      // level "close"/"end" shut the server's logging down in one request.
+      // Only real log levels, bounded sizes, and no CR/LF (forged log lines).
+      const LEVELS = ['error', 'warn', 'info', 'debug'] as const;
+      const safeLevel = (LEVELS as readonly string[]).includes(level) ? level : 'info';
+      const clean = (v: unknown, max: number) =>
+        typeof v === 'string' ? v.replace(/[\r\n]+/g, ' ').slice(0, max) : undefined;
+      let meta: Record<string, unknown> = {};
+      if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+        const json = JSON.stringify(metadata);
+        meta =
+          json.length <= 4000
+            ? { clientMetadata: JSON.parse(json) }
+            : { clientMetadataTruncated: true };
+      }
+      (logger as any)[safeLevel]({
+        message: `[CLIENT] ${clean(message, 2000)}`,
+        context: clean(context, 100) || 'ClientLog',
+        stack: clean(stack, 8000),
+        ...meta,
         userId: (req as any).user?._id,
       });
-
       res.status(201).json({
         status: 'success',
         message: 'Log recorded successfully',
@@ -867,10 +878,13 @@ export class AdminController {
 
   static async getAllUsers(req: Request, res: Response, next: NextFunction) {
     try {
-      const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 10;
+      // Bounded paging: an unbounded `limit` dumped the whole users collection.
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 10));
       const skip = (page - 1) * limit;
-      const search = req.query.search as string;
+      // Escaped (and length-capped): a raw pattern let a crafted regex stall MongoDB (ReDoS).
+      const search =
+        typeof req.query.search === 'string' ? escapeRegex(req.query.search.slice(0, 100)) : '';
 
       const query: any = {};
       if (search) {
@@ -908,9 +922,31 @@ export class AdminController {
       const { id } = req.params;
       const { isActive, status } = req.body;
 
+      // `status` used to be stored unvalidated and had NO effect on access
+      // (protect only checks isActive) while the user was told "account
+      // suspended". Now validated, and kept consistent with isActive.
+      if (status !== undefined && !['active', 'suspended', 'blocked'].includes(status)) {
+        return next(new AppError("status doit valoir 'active', 'suspended' ou 'blocked'", 400));
+      }
+      if (isActive !== undefined && typeof isActive !== 'boolean') {
+        return next(new AppError('isActive doit être un booléen', 400));
+      }
       const updatePayload: any = {};
-      if (isActive !== undefined) updatePayload.isActive = isActive;
-      if (status) updatePayload.status = status;
+      if (status) {
+        updatePayload.status = status;
+        updatePayload.isActive = status === 'active';
+      }
+      if (isActive !== undefined) {
+        updatePayload.isActive = isActive;
+        if (!status) updatePayload.status = isActive ? 'active' : 'suspended';
+      }
+      // Suspension takes effect NOW: every issued access token is rejected
+      // (protect also rejects inactive users, refresh too).
+      if (updatePayload.isActive === false) {
+        updatePayload.authInvalidatedAt = new Date(Date.now() - 1000);
+        updatePayload.sessions = [];
+        updatePayload.refreshToken = undefined;
+      }
 
       const user = await User.findByIdAndUpdate(id, updatePayload, { new: true });
 
@@ -1464,7 +1500,7 @@ export class AdminController {
   static async getAllBudgets(req: Request, res: Response, next: NextFunction) {
     try {
       const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 20;
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
       const skip = (page - 1) * limit;
 
       const queryObj: any = {};
@@ -1542,6 +1578,8 @@ export class AdminController {
   private static readonly ALLOWED_CHALLENGE_FIELDS = [
     'title',
     'description',
+    'titleEn',
+    'descriptionEn',
     'type',
     'difficulty',
     'targetAmount',
@@ -1646,7 +1684,7 @@ export class AdminController {
   static async getAllTransactions(req: Request, res: Response, next: NextFunction) {
     try {
       const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 20;
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
       const skip = (page - 1) * limit;
 
       const queryObj = { ...req.query };
@@ -1881,7 +1919,7 @@ export class AdminController {
   static async getAuditLogs(req: Request, res: Response, next: NextFunction) {
     try {
       const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 20;
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
 
       const query: any = {};
       if (req.query.userId) query.userId = req.query.userId;
@@ -1903,7 +1941,7 @@ export class AdminController {
   static async getAllGoals(req: Request, res: Response, next: NextFunction) {
     try {
       const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 20;
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
       const skip = (page - 1) * limit;
 
       const goals = await import('../models/SavingGoal').then((m) =>
@@ -1932,11 +1970,11 @@ export class AdminController {
 
   static async deleteGoal(req: Request, res: Response, next: NextFunction) {
     try {
-      const goal = await import('../models/SavingGoal').then((m) =>
-        m.default.findByIdAndDelete(req.params.id),
-      );
-      if (!goal) return next(new AppError('No goal found with that ID', 404));
-      res.status(204).json({ status: 'success', data: null });
+      // Refunds every contributor (no penalty) + audit — see GoalService.adminDeleteGoal.
+      // The goal used to be findByIdAndDelete'd: the money in it vanished.
+      const { GoalService } = await import('../services/goalService');
+      const refunds = await GoalService.adminDeleteGoal(req.params.id, (req as any).user._id);
+      res.status(200).json({ status: 'success', data: { refunds } });
     } catch (error) {
       next(error);
     }
@@ -2016,7 +2054,7 @@ export class AdminController {
   static async getConnectionLogs(req: Request, res: Response, next: NextFunction) {
     try {
       const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 20;
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
       const skip = (page - 1) * limit;
 
       const ConnectionLog = await import('../models/ConnectionLog').then((m) => m.default);
@@ -2053,7 +2091,13 @@ export class AdminController {
       'security.backupCodeHashes': 0,
       refreshToken: 0,
       'sessions.refreshToken': 0,
+      passwordResetToken: 0,
+      emailVerificationToken: 0,
     },
+    // Reseller vault (customers' service credentials) and slot PINs: encrypted,
+    // but an export is a file that leaves the server — never include them.
+    sharedmasteraccounts: { vault: 0 },
+    sharedslots: { encryptedPin: 0, pinIv: 0, pinAuthTag: 0 },
   };
 
   static async exportDatabase(req: Request, res: Response, next: NextFunction) {
@@ -2103,7 +2147,7 @@ export class AdminController {
   static async getAllTontines(req: Request, res: Response, next: NextFunction) {
     try {
       const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 20;
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
       const skip = (page - 1) * limit;
 
       const queryObj: any = { ...req.query };
@@ -2158,34 +2202,75 @@ export class AdminController {
 
   static async updateTontine(req: Request, res: Response, next: NextFunction) {
     try {
-      const ALLOWED_ADMIN_TONTINE = [
-        'name',
-        'description',
-        'category',
-        'status',
-        'rules',
-        'sanctions',
-        'socialFund',
+      const current = await Tontine.findById(req.params.id);
+      if (!current) return next(new AppError('No tontine found with that ID', 404));
+      const body = req.body || {};
+
+      // Money-defining fields are frozen once the cycle runs (members already
+      // paid on these terms), exactly like for the creator. socialFund's
+      // collected total is never writable. Closing goes through
+      // POST /tontines/admin/:id/close (reason + audit), not a status write.
+      const FROZEN = [
         'contributionAmount',
         'currency',
         'totalParts',
         'frequency',
-        'rulesAcceptedByAll',
-        'autoRenew',
+        'socialFund',
         'startDate',
       ];
+      if (current.status !== 'pending' && FROZEN.some((k) => k in body)) {
+        return next(
+          new AppError(
+            'Montant, parts, devise, fréquence et fonds social sont figés une fois la tontine démarrée',
+            400,
+          ),
+        );
+      }
       const safeData: any = {};
-      for (const key of ALLOWED_ADMIN_TONTINE) {
-        if (key in req.body) safeData[key] = req.body[key];
+      for (const key of ['name', 'rulesAcceptedByAll', 'autoRenew', 'sanctions', ...FROZEN]) {
+        if (key in body) safeData[key] = body[key];
+      }
+      if (safeData.socialFund) {
+        safeData.socialFund = {
+          enabled: Boolean(safeData.socialFund.enabled),
+          amount: Number(safeData.socialFund.amount) || 0,
+          totalCollected: current.socialFund?.totalCollected || 0,
+        };
+      }
+      if ('status' in body) {
+        const allowed: Record<string, string[]> = {
+          active: ['suspended'],
+          suspended: ['active'],
+          suspended_premium_required: ['active', 'suspended'],
+        };
+        if (!(allowed[current.status] || []).includes(body.status)) {
+          return next(
+            new AppError(
+              `Transition de statut interdite (${current.status} → ${body.status}). Utilisez la clôture administrative pour terminer une tontine.`,
+              400,
+            ),
+          );
+        }
+        safeData.status = body.status;
       }
 
       const tontine = await Tontine.findByIdAndUpdate(req.params.id, safeData, {
         new: true,
         runValidators: true,
       });
-
-      if (!tontine) return next(new AppError('No tontine found with that ID', 404));
-
+      await AuditService.recordSync(
+        {
+          userId: (req as any).user._id,
+          action: 'TONTINE_ADMIN_UPDATE',
+          resource: 'Tontine',
+          resourceId: req.params.id,
+          oldValue: { status: current.status },
+          newValue: safeData,
+          status: 'success',
+        },
+        req,
+        'admin',
+      );
       res.status(200).json({ status: 'success', data: tontine });
     } catch (error) {
       next(error);
@@ -2196,7 +2281,7 @@ export class AdminController {
   static async getAllSubscriptions(req: Request, res: Response, next: NextFunction) {
     try {
       const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 20;
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
       const skip = (page - 1) * limit;
 
       const queryObj: any = { ...req.query };
@@ -2413,7 +2498,7 @@ export class AdminController {
   static async getKycPendingUsers(req: Request, res: Response, next: NextFunction) {
     try {
       const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 20;
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
       const skip = (page - 1) * limit;
       const status = (req.query.status as string) || 'pending';
       const search = ((req.query.search as string) || '').trim();
@@ -2539,9 +2624,26 @@ export class AdminController {
       if (documentType !== undefined) kycData.documentType = documentType;
       if (documentExpiryDate !== undefined) kycData.documentExpiryDate = documentExpiryDate;
       if (rejectionReason !== undefined) kycData.rejectionReason = rejectionReason;
+      const previousLevel = user.kycLevel;
       if (kycLevel !== undefined) user.kycLevel = kycLevel;
 
       await user.save();
+
+      // This route can change kycLevel (e.g. to 'verified') — every KYC decision
+      // must leave an audit trail, exactly like validate/reject do.
+      await AuditService.recordSync(
+        {
+          userId: (req as any).user._id,
+          action: 'KYC_EDIT',
+          resource: 'USER',
+          resourceId: userId,
+          oldValue: { kycLevel: previousLevel },
+          newValue: { kycLevel: user.kycLevel, fullName, documentNumber, documentType },
+          status: 'success',
+        },
+        req,
+        'admin',
+      );
 
       res.status(200).json({
         success: true,
@@ -2607,7 +2709,7 @@ export class AdminController {
   static async getWalletLedger(req: Request, res: Response, next: NextFunction) {
     try {
       const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 20;
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
       const skip = (page - 1) * limit;
 
       const filter: any = {};
@@ -2641,7 +2743,7 @@ export class AdminController {
     try {
       const { userId } = req.params;
       const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 20;
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
       const skip = (page - 1) * limit;
 
       const [transactions, total, user] = await Promise.all([
@@ -2668,28 +2770,61 @@ export class AdminController {
   }
 
   // --- PAYOUTS ---
+  //
+  // Withdrawals are wallet Transactions (category 'withdrawal', see
+  // PayoutService) — NOT Payment documents. This module used to read
+  // `Payment { type: 'withdrawal' }`, which nothing ever creates: the admin
+  // list was always empty and "approve retry" only flipped a status.
+  // A retry NEVER re-sends money (double-payout risk): once approved by a
+  // SECOND admin it asks NotchPay for the real transfer state and settles it
+  // (confirmed, or refunded exactly once) — NotchPayReconciliationService.checkTransfer.
+
+  private static readonly WITHDRAWAL_FILTER = { category: 'withdrawal', paymentMethod: 'wallet' };
+
+  private static toPayoutItem(tx: any) {
+    return {
+      _id: tx._id,
+      userId: tx.userId,
+      amount: tx.amount,
+      fees: tx.fees || 0,
+      currency: tx.currency,
+      method: tx.metadata?.provider || 'mobile_money',
+      phone: tx.metadata?.phone,
+      status: tx.status,
+      reference: tx.reference,
+      operatorReference: tx.externalReference,
+      failureReason: tx.metadata?.failureReason,
+      createdAt: tx.createdAt,
+      retryApproval: tx.metadata?.retryApproval,
+    };
+  }
+
   static async getPayouts(req: Request, res: Response, next: NextFunction) {
     try {
-      const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 20;
-      const skip = (page - 1) * limit;
-
-      const filter: any = { type: 'withdrawal' };
-      if (typeof req.query.status === 'string') filter.status = req.query.status;
-
-      const [payouts, total] = await Promise.all([
-        Payment.find(filter)
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
+      const filter: any = { ...AdminController.WITHDRAWAL_FILTER };
+      if (
+        typeof req.query.status === 'string' &&
+        ['pending', 'completed', 'failed'].includes(req.query.status)
+      ) {
+        filter.status = req.query.status;
+      }
+      const [rows, total] = await Promise.all([
+        Transaction.find(filter)
           .populate('userId', 'firstName lastName email country')
           .sort({ createdAt: -1 })
-          .skip(skip)
+          .skip((page - 1) * limit)
           .limit(limit)
           .lean(),
-        Payment.countDocuments(filter),
+        Transaction.countDocuments(filter),
       ]);
-
       res.status(200).json({
         success: true,
-        data: { payouts, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } },
+        data: {
+          payouts: rows.map(AdminController.toPayoutItem),
+          pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+        },
       });
     } catch (error) {
       next(error);
@@ -2698,114 +2833,101 @@ export class AdminController {
 
   static async getPayoutDetails(req: Request, res: Response, next: NextFunction) {
     try {
-      const { id } = req.params;
-      const payout = await Payment.findById(id)
+      const tx = await Transaction.findOne({
+        _id: req.params.id,
+        ...AdminController.WITHDRAWAL_FILTER,
+      })
         .populate('userId', 'firstName lastName email country kycLevel')
         .lean();
-      if (!payout) throw new AppError('Retrait non trouvé', 404);
-
-      res.status(200).json({ success: true, data: payout });
+      if (!tx) throw new AppError('Retrait non trouvé', 404);
+      res.status(200).json({ success: true, data: AdminController.toPayoutItem(tx) });
     } catch (error) {
       next(error);
     }
   }
 
-  // Étape 1/2 du contrôle à deux mains : un admin DEMANDE la relance. Ne
-  // touche pas encore au statut réel du paiement — une relance effective
-  // nécessite l'approbation d'un second admin via approvePayoutRetry.
+  /** Step 1 (admin A): request an operator verification of a pending/failed withdrawal. */
   static async retryPayout(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
       const requesterId = (req as any).user._id;
-
-      // Atomic guard against two simultaneous retry requests on the same
-      // payout — same reasoning as approvePayoutRetry/rejectPayoutRetry.
-      const payout = await Payment.findOneAndUpdate(
+      const tx = await Transaction.findOneAndUpdate(
         {
           _id: id,
-          type: 'withdrawal',
-          $or: [
-            { 'retryApproval.status': { $exists: false } },
-            { 'retryApproval.status': { $ne: 'pending_approval' } },
-          ],
+          ...AdminController.WITHDRAWAL_FILTER,
+          status: { $in: ['pending', 'failed'] },
+          'metadata.retryApproval.status': { $ne: 'pending_approval' },
         },
         {
-          retryApproval: {
-            status: 'pending_approval',
-            requestedBy: requesterId,
-            requestedAt: new Date(),
+          $set: {
+            'metadata.retryApproval': {
+              status: 'pending_approval',
+              requestedBy: requesterId,
+              requestedAt: new Date(),
+            },
           },
         },
         { new: true },
       );
-
-      if (!payout) {
-        const existing = await Payment.findById(id);
+      if (!tx) {
+        const existing = await Transaction.findOne({
+          _id: id,
+          ...AdminController.WITHDRAWAL_FILTER,
+        });
         if (!existing) throw new AppError('Retrait non trouvé', 404);
-        if (existing.type !== 'withdrawal')
-          throw new AppError("Ce paiement n'est pas un retrait", 400);
+        if (existing.status === 'completed')
+          throw new AppError('Ce retrait est déjà confirmé', 400);
         throw new AppError("Une demande de relance est déjà en attente d'approbation", 400);
       }
-
       await AuditService.recordSync(
         {
           userId: requesterId,
           action: 'PAYOUT_RETRY_REQUESTED',
-          resource: 'Payment',
+          resource: 'Transaction',
           resourceId: id,
-          metadata: { reference: payout.reference },
+          metadata: { reference: tx.reference },
           status: 'success',
         },
         req,
         'admin',
       );
-
       res.status(200).json({
         success: true,
         message:
-          "Demande de relance enregistrée — en attente de l'approbation d'un second administrateur",
+          "Demande de vérification enregistrée — en attente de l'approbation d'un second administrateur",
       });
     } catch (error) {
       next(error);
     }
   }
 
-  // Étape 2/2 : un SECOND admin (jamais celui qui a demandé la relance)
-  // approuve — c'est seulement à ce moment que le statut repasse à
-  // 'pending' et déclenche réellement une nouvelle tentative de transfert.
+  /** Step 2 (admin B ≠ A): approve → verify with NotchPay and settle. Never re-sends money. */
   static async approvePayoutRetry(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
       const approverId = (req as any).user._id;
-
-      // findById-then-save left a check-then-act gap: two concurrent
-      // approvals (or an approve racing a reject) could both read
-      // 'pending_approval' before either write landed, and the second
-      // .save() would silently overwrite the first. The status/requester
-      // guard now lives in the filter of a single atomic findOneAndUpdate,
-      // so only one concurrent request can ever match and succeed — the
-      // other gets back `null` and a normal "nothing pending" error.
-      const payout = await Payment.findOneAndUpdate(
+      const tx = await Transaction.findOneAndUpdate(
         {
           _id: id,
-          'retryApproval.status': 'pending_approval',
-          'retryApproval.requestedBy': { $ne: approverId },
+          ...AdminController.WITHDRAWAL_FILTER,
+          'metadata.retryApproval.status': 'pending_approval',
+          'metadata.retryApproval.requestedBy': { $ne: approverId },
         },
         {
-          status: 'pending',
-          'retryApproval.status': 'approved',
-          'retryApproval.approvedBy': approverId,
-          'retryApproval.approvedAt': new Date(),
+          $set: {
+            'metadata.retryApproval.status': 'approved',
+            'metadata.retryApproval.approvedBy': approverId,
+            'metadata.retryApproval.approvedAt': new Date(),
+          },
         },
         { new: true },
       );
-
-      if (!payout) {
-        // Distinguish "nothing pending" from "you requested this yourself"
-        // only for the error message — the atomic filter above is what
-        // actually enforces both, so this read can't be raced to bypass it.
-        const existing = await Payment.findById(id).select('retryApproval');
-        if (existing?.retryApproval?.status === 'pending_approval') {
+      if (!tx) {
+        const existing = await Transaction.findOne({
+          _id: id,
+          ...AdminController.WITHDRAWAL_FILTER,
+        });
+        if (existing?.metadata?.retryApproval?.status === 'pending_approval') {
           throw new AppError(
             'Un administrateur ne peut pas approuver sa propre demande de relance',
             403,
@@ -2814,25 +2936,44 @@ export class AdminController {
         throw new AppError('Aucune demande de relance en attente pour ce retrait', 400);
       }
 
+      const { NotchPayReconciliationService } =
+        await import('../services/notchpayReconciliationService');
+      let outcome: string;
+      try {
+        outcome = await NotchPayReconciliationService.checkTransfer(tx);
+      } catch (err: any) {
+        outcome = 'operator_unreachable';
+        logger.error(`[PAYOUT] Operator verification failed for ${tx.reference}: ${err.message}`);
+      }
+      await Transaction.updateOne(
+        { _id: id },
+        { $set: { 'metadata.retryApproval.outcome': outcome } },
+      );
+
       await AuditService.recordSync(
         {
           userId: approverId,
           action: 'PAYOUT_RETRY_APPROVED',
-          resource: 'Payment',
+          resource: 'Transaction',
           resourceId: id,
           metadata: {
-            reference: payout.reference,
-            requestedBy: payout.retryApproval?.requestedBy,
+            reference: tx.reference,
+            requestedBy: tx.metadata?.retryApproval?.requestedBy,
+            outcome,
           },
           status: 'success',
         },
         req,
         'admin',
       );
-
-      res
-        .status(200)
-        .json({ success: true, message: 'Relance approuvée — statut réinitialisé à pending' });
+      const messages: Record<string, string> = {
+        confirmed: 'Transfert confirmé par NotchPay.',
+        refunded: "Transfert échoué chez l'opérateur — utilisateur remboursé.",
+        pending: "Transfert toujours en cours chez l'opérateur — aucune action.",
+        unchanged: 'Aucun changement (déjà traité).',
+        operator_unreachable: 'NotchPay injoignable — réessayez plus tard.',
+      };
+      res.status(200).json({ success: true, outcome, message: messages[outcome] });
     } catch (error) {
       next(error);
     }
@@ -2841,41 +2982,38 @@ export class AdminController {
   static async rejectPayoutRetry(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const { reason } = req.body;
+      const reason =
+        typeof req.body?.reason === 'string' ? req.body.reason.slice(0, 500) : undefined;
       const approverId = (req as any).user._id;
-
-      // Same atomicity concern as approvePayoutRetry — see comment there.
-      const payout = await Payment.findOneAndUpdate(
-        { _id: id, 'retryApproval.status': 'pending_approval' },
+      const tx = await Transaction.findOneAndUpdate(
         {
-          'retryApproval.status': 'rejected',
-          'retryApproval.approvedBy': approverId,
-          'retryApproval.approvedAt': new Date(),
-          'retryApproval.reason': reason,
+          _id: id,
+          ...AdminController.WITHDRAWAL_FILTER,
+          'metadata.retryApproval.status': 'pending_approval',
+        },
+        {
+          $set: {
+            'metadata.retryApproval.status': 'rejected',
+            'metadata.retryApproval.approvedBy': approverId,
+            'metadata.retryApproval.approvedAt': new Date(),
+            'metadata.retryApproval.reason': reason,
+          },
         },
         { new: true },
       );
-      if (!payout) {
-        throw new AppError('Aucune demande de relance en attente pour ce retrait', 400);
-      }
-
+      if (!tx) throw new AppError('Aucune demande de relance en attente pour ce retrait', 400);
       await AuditService.recordSync(
         {
           userId: approverId,
           action: 'PAYOUT_RETRY_REJECTED',
-          resource: 'Payment',
+          resource: 'Transaction',
           resourceId: id,
-          metadata: {
-            reference: payout.reference,
-            requestedBy: payout.retryApproval?.requestedBy,
-            reason,
-          },
+          metadata: { reference: tx.reference, reason },
           status: 'success',
         },
         req,
         'admin',
       );
-
       res.status(200).json({ success: true, message: 'Demande de relance rejetée' });
     } catch (error) {
       next(error);

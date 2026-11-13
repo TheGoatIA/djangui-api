@@ -1,0 +1,56 @@
+# Infrastructure ÉPHÉMÈRE pour les tests d'intégration / E2E de l'API.
+#   npm run test:infra:up    → démarre Mongo (replica set) + stockage S3
+#   npm run test:local       → lance toute la suite contre cette infra
+#   npm run test:infra:down  → détruit tout (aucun volume persistant)
+#
+# Ports volontairement décalés (27037 / 9037 / 6397) pour ne jamais entrer en conflit
+# avec une base de dev ou d'un autre projet sur le poste.
+services:
+  mongo-test:
+    image: mongo:7.0
+    command: ['--replSet', 'rs0', '--bind_ip_all']
+    ports:
+      - '27037:27017'
+    tmpfs:
+      - /data/db
+    healthcheck:
+      # Initialise le replica set au premier passage (transactions ACID requises
+      # par wallet / paiements / tontines), puis vérifie que le nœud est PRIMARY.
+      test:
+        [
+          'CMD-SHELL',
+          "mongosh --quiet --eval \"try { rs.status().ok } catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'127.0.0.1:27017'}]}).ok }\" && mongosh --quiet --eval 'db.hello().isWritablePrimary' | grep -q true",
+        ]
+      interval: 3s
+      timeout: 10s
+      retries: 30
+      start_period: 5s
+
+  # Stockage objet compatible S3 (remplace MinIO, dont les images Docker ne sont
+  # plus publiées). L'API parle S3 via @aws-sdk : le moteur est transparent.
+  s3-test:
+    image: chrislusf/seaweedfs:3.97
+    command: ['server', '-dir=/data', '-s3', '-s3.port=8333', '-ip.bind=0.0.0.0']
+    ports:
+      - '9037:8333'
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -O /dev/null http://127.0.0.1:8333/status || exit 1']
+      interval: 3s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+  # Redis RÉEL (rate-limit, blacklist JWT, verrous de login, idempotence, caches).
+  # Chaque worker Jest utilise sa propre base logique (redis://…/<worker>).
+  redis-test:
+    image: redis:7-alpine
+    command: ['redis-server', '--save', '', '--appendonly', 'no', '--databases', '16']
+    ports:
+      - '6397:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 3s
+      timeout: 3s
+      retries: 20

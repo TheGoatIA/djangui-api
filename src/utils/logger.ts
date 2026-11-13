@@ -200,11 +200,15 @@ if (process.env.NODE_ENV === 'production') {
   transports.push(new CriticalAlertTransport({ level: 'error' }) as any);
 }
 
+// Under Jest the logs drown the test report and pollute logs/*.log with test
+// noise: silence every transport unless TEST_LOGS=1 is set for debugging.
+const silentInTests = process.env.NODE_ENV === 'test' && !process.env.TEST_LOGS;
+
 const logger = winston.createLogger({
   level: level(),
   levels,
   format: winston.format.combine(contextFormat(), winston.format.errors({ stack: true })),
-  transports,
+  transports: silentInTests ? [new winston.transports.Console({ silent: true })] : transports,
 });
 
 export default logger;

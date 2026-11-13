@@ -9,6 +9,13 @@ export interface ITontineContribution extends Document {
   proofImage?: string;
   proofImageHash?: string;
   transactionRef?: string;
+  /**
+   * Where the money is. 'wallet' = debited from the member's Kauri wallet (real
+   * money held by Kauri). 'receipt' = paid OUTSIDE the app, only proven by an
+   * uploaded receipt: Kauri never received it, so it must never be paid out
+   * from a wallet (see TontineService.rotateTurn).
+   */
+  source?: 'wallet' | 'receipt';
   validationStatus: 'pending' | 'ai_validated' | 'manual_pending' | 'completed' | 'rejected';
   rejectionReason?: string;
   aiAnalysis?: {
@@ -38,6 +45,7 @@ const tontineContributionSchema = new Schema<ITontineContribution>(
     // `.create()` and the duplicate check could never actually match anything.
     proofImageHash: { type: String, index: true },
     transactionRef: { type: String, index: true }, // For duplicate detection
+    source: { type: String, enum: ['wallet', 'receipt'] },
     validationStatus: {
       type: String,
       enum: ['pending', 'ai_validated', 'manual_pending', 'completed', 'rejected'],

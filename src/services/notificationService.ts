@@ -52,9 +52,12 @@ export class NotificationService {
       const frequency = user.preferences?.notificationFrequency || 'medium';
       let shouldPush = true;
 
-      if (category === 'important' && frequency === 'low') {
-        shouldPush = false;
-      } else if (category === 'informational' && frequency !== 'high') {
+      // Matches the app labels: High = "toutes les actus", Medium = "essentiel",
+      // Low = "critique uniquement". transactional & important (withdrawal
+      // failed & refunded, account suspended, KYC decision, tontine closed…)
+      // are the critical ones: ALWAYS pushed — they used to be dropped at Low.
+      // Informational (chat, tips) only at High. History is always recorded.
+      if (category === 'informational' && frequency !== 'high') {
         shouldPush = false;
       }
 

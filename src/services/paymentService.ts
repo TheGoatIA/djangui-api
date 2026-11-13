@@ -46,6 +46,31 @@ export class PaymentService {
   ];
 
   /**
+   * Fail closed: never start a payment whose confirmation can't be received.
+   * Without the provider's webhook secret every webhook is rejected (signature
+   * check) — the customer would be charged and never credited. Found empty on
+   * the production server (2026-11-10).
+   */
+  private static assertWebhookSecret(provider: 'stripe' | 'notchpay') {
+    const secret =
+      provider === 'stripe'
+        ? process.env.STRIPE_WEBHOOK_SECRET
+        : process.env.NOTCHPAY_WEBHOOK_SECRET;
+    if (!secret || !secret.trim()) {
+      logger.error(
+        `[PAYMENT] ${provider.toUpperCase()}_WEBHOOK_SECRET is not configured — payment initialisation refused.`,
+      );
+      throw new AppError(
+        'Le paiement est momentanément indisponible. Veuillez réessayer plus tard.',
+        503,
+      );
+    }
+  }
+
+  /** Smallest wallet top-up (NotchPay Mobile Money, XAF). */
+  static readonly MIN_DEPOSIT = 100;
+
+  /**
    * Format amount for Stripe/NotchPay based on currency
    */
   private static formatAmount(amount: number, currency: string): number {
@@ -172,6 +197,7 @@ export class PaymentService {
       );
     }
 
+    this.assertWebhookSecret('stripe');
     const reference = `STP-${uuidv4().split('-')[0].toUpperCase()}`;
 
     // For subscriptions, the price is a fixed, server-determined amount based on the
@@ -187,6 +213,13 @@ export class PaymentService {
     const start = Date.now();
     try {
       session = await stripe.checkout.sessions.create({
+        // Stripe Managed Payments is ON by default for new accounts (verified on
+        // this project's test account): Stripe then becomes merchant of record,
+        // rejects `payment_method_types` and requires a product tax code — every
+        // checkout failed with a 500. Kauri is designed to stay the merchant, so it
+        // is explicitly disabled per session. Switching to Managed Payments is a
+        // legal/tax decision, not a code default.
+        managed_payments: { enabled: false },
         payment_method_types: ['card'],
         line_items: [
           {
@@ -209,6 +242,9 @@ export class PaymentService {
         customer_email: user.email,
         client_reference_id: userIdStr,
         metadata: {
+          // Le compte Stripe est partagé avec d'autres apps : ce marqueur permet au
+          // webhook Kauri d'ignorer à coup sûr leurs paiements (et inversement).
+          app: 'kauri',
           userId: userIdStr,
           type,
           reference,
@@ -302,6 +338,25 @@ export class PaymentService {
     // withdrawals were checked) — velocity and deposit-clustering rules now
     // apply here too. See FraudService for the exact heuristics.
     if (type === 'deposit') {
+      const depositCurrency = (user.currency || 'XAF').toUpperCase();
+      // XAF/XOF have no minor unit: NotchPay is sent Math.round(amount) while the
+      // wallet was credited the raw amount — a 100.4 XAF deposit charged 100 and
+      // credited 100.4, minting the difference. Only whole amounts are accepted.
+      if (
+        this.ZERO_DECIMAL_CURRENCIES.includes(depositCurrency) &&
+        !Number.isInteger(clientAmount)
+      ) {
+        throw new AppError(`Le montant doit être un nombre entier de ${depositCurrency}.`, 400);
+      }
+      if (clientAmount < PaymentService.MIN_DEPOSIT) {
+        throw new AppError(
+          `Montant minimum de recharge : ${PaymentService.MIN_DEPOSIT} ${depositCurrency}.`,
+          400,
+        );
+      }
+      // Must be refused before charging: see WalletService.assertCreditAllowed.
+      WalletService.assertCreditAllowed(user, clientAmount);
+
       const fraud = await FraudService.assess(
         userIdStr,
         clientAmount,
@@ -316,6 +371,7 @@ export class PaymentService {
       }
     }
 
+    this.assertWebhookSecret('notchpay');
     const reference = `NTP-${uuidv4().split('-')[0].toUpperCase()}`;
 
     // Same rule as Stripe: subscription price is fixed server-side, never client-supplied.

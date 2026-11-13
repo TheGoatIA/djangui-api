@@ -42,6 +42,16 @@ export class FeatureFlagController {
       // admin-editable allowlist this same value is read from server-side.
       (featuresMap as any).real_money_countries = await FeatureFlagService.getRealMoneyCountries();
 
+      // L'app doit voir le MÊME état « argent réel » que celui que le serveur
+      // applique (isRealMoneyEnabled : réglage système real_money_mode, puis le
+      // drapeau). Exposer le seul drapeau laissait l'app en « mode simulation »
+      // pendant que le serveur acceptait les dépôts, ou l'inverse, dès que le
+      // mode était basculé via le réglage système (constaté en E2E).
+      featuresMap.feat_real_money = {
+        ...(featuresMap.feat_real_money || { minAppVersion: '1.0.0' }),
+        isEnabled: await FeatureFlagService.isRealMoneyEnabled(),
+      };
+
       // Save to cache
       await RedisService.set(FEATURES_CACHE_KEY, featuresMap, CACHE_TTL);
 

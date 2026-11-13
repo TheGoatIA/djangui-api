@@ -14,6 +14,14 @@ export interface TontineOCRResult {
   rawText?: string;
 }
 
+/** L'analyse IA du reçu n'a pas pu être effectuée (service indisponible). */
+export class TontineAIUnavailableError extends Error {
+  constructor(detail: string) {
+    super(`Analyse IA indisponible : ${detail}`);
+    this.name = 'TontineAIUnavailableError';
+  }
+}
+
 export class TontineAIService {
   /**
    * Analyse un reçu de paiement (screenshot SMS ou reçu bancaire)
@@ -63,7 +71,10 @@ export class TontineAIService {
       };
     } catch (error: any) {
       logger.error(`Tontine AI analysis failed: ${error.message}`);
-      throw new Error("L'IA n'a pas pu lire ce reçu. Assure-toi que l'image est claire.");
+      // Panne / quota / clé manquante côté IA : ce n'est PAS la faute du membre.
+      // Le contrôleur bascule alors en validation 100 % manuelle par le créateur
+      // (qui voit le reçu) au lieu de bloquer toutes les cotisations.
+      throw new TontineAIUnavailableError(error.message);
     }
   }
 

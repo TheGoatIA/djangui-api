@@ -20,7 +20,7 @@ export function hashToken(token: string): string {
  * (key order, number formatting, unicode escaping can differ), which silently
  * rejects legitimate webhook deliveries. See app.ts's express.json `verify` hook,
  * which captures `req.rawBody` for this route.
- * @param signature The signature from X-Notchpay-Signature header
+ * @param signature The signature from the X-Notch-Signature header
  * @param secret The webhook secret from the NotchPay dashboard
  */
 export function verifyNotchPaySignature(

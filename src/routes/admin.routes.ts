@@ -121,7 +121,9 @@ router.patch('/subscriptions/:id', restrictTo('admin'), AdminController.updateSu
 router.get('/db/export', restrictTo('admin'), AdminController.exportDatabase);
 router.get('/db/backup', restrictTo('admin'), AdminController.backupDatabase);
 router.post('/db/restore/:filename', restrictTo('admin'), AdminController.restoreDatabase);
-router.post('/logs', restrictTo('admin'), AdminController.createLog);
+// Client-side error/telemetry logs of the dashboard: every back-office role
+// (support's own UI errors used to be rejected with a 403).
+router.post('/logs', restrictTo('admin', 'support'), AdminController.createLog);
 router.patch(
   '/support/tickets/:id/status',
   restrictTo('admin', 'support'),

@@ -21,10 +21,12 @@ export class OCRController {
         const result = await OCRService.scanReceipt(filePath);
 
         // Upload vers MinIO
+        // Private (personal data): imageUrl = stored reference, previewUrl = signed link.
         const minioUrl = await StorageService.uploadFile(
           filePath,
           'kauri-uploads',
-          `receipts/${req.file.filename}`,
+          `receipts/${(req as any).user._id}/${req.file.filename}`,
+          'private',
         );
 
         res.status(200).json({
@@ -32,6 +34,7 @@ export class OCRController {
           data: {
             ...result,
             imageUrl: minioUrl,
+            previewUrl: await StorageService.signStoredUrl(minioUrl),
           },
         });
       } finally {

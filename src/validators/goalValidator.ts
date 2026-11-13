@@ -75,7 +75,9 @@ export const updateGoalSchema = Joi.object({
   targetAmount: Joi.number().greater(0).max(1_000_000_000_000).optional(),
   deadline: notInThePast.optional(),
   priority: Joi.string().valid('high', 'medium', 'low').optional(),
-  status: Joi.string().valid('active', 'completed', 'cancelled', 'paused').optional(),
+  // 'completed' is NOT client-settable: deleting a "completed" goal skips the
+  // early-withdrawal penalty, so self-declaring completion bypassed it.
+  status: Joi.string().valid('active', 'cancelled', 'paused').optional(),
 });
 
 export const joinGoalSchema = Joi.object({

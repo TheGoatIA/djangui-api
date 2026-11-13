@@ -87,6 +87,16 @@ export class ResellerAnalyticsService {
       'Notes',
     ];
 
+    // Every free-text cell is quoted with inner quotes doubled (RFC 4180) and
+    // neutralised against spreadsheet formula injection (=, +, -, @, tab, CR):
+    // a client named  =HYPERLINK(...)  or containing a quote broke the file /
+    // ran a formula in the reseller's Excel.
+    const cell = (v: unknown) => {
+      let t = v === undefined || v === null ? '' : String(v);
+      if (/^[=+\-@\t\r]/.test(t)) t = `'${t}`;
+      return `"${t.replace(/"/g, '""')}"`;
+    };
+
     const rows = payments.map((p: any) => {
       const resellerLabel = resellerId
         ? null
@@ -95,18 +105,18 @@ export class ResellerAnalyticsService {
           'N/A';
 
       return [
-        ...(resellerLabel === null ? [] : [`"${resellerLabel}"`]),
+        ...(resellerLabel === null ? [] : [cell(resellerLabel)]),
         new Date(p.paidAt).toISOString().split('T')[0],
-        `"${p.masterAccountId?.serviceName || 'N/A'}"`,
-        `"${p.slotId?.profileName || 'N/A'}"`,
-        `"${p.slotId?.client?.fullName || 'N/A'}"`,
-        `"${p.slotId?.client?.phone || 'N/A'}"`,
+        cell(p.masterAccountId?.serviceName || 'N/A'),
+        cell(p.slotId?.profileName || 'N/A'),
+        cell(p.slotId?.client?.fullName || 'N/A'),
+        cell(p.slotId?.client?.phone || 'N/A'),
         p.amount,
         p.currency,
         new Date(p.periodCoveredStart).toISOString().split('T')[0],
         new Date(p.periodCoveredEnd).toISOString().split('T')[0],
-        p.paymentMethod,
-        `"${p.notes || ''}"`,
+        cell(p.paymentMethod),
+        cell(p.notes || ''),
       ];
     });
 

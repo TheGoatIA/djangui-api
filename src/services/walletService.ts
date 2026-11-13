@@ -173,8 +173,25 @@ export class WalletService {
       const limits = getUserLimits(user);
       const planLabel = isSubscriptionEntitled(user.subscription) ? 'premium' : 'gratuit';
 
+      // AML caps apply to the money actually MOVED (net of Kauri fees). Fees are
+      // Kauri revenue, not funds leaving the platform: counting them meant a
+      // 50 000 XAF withdrawal (+1 500 fees) was refused although 50 000 is the
+      // advertised maximum. Stored Transaction.amount is also the net amount, so
+      // the daily sum below and this check now use the same basis.
+      const amlAmount = roundAmount(amount - (fees || 0));
+
+      // The single-operation cap targets money ENTERING (external deposit) or
+      // LEAVING a wallet. Internal credits — a tontine pot paid to its winner,
+      // a challenge reward, a refund — redistribute funds that already passed
+      // the cap on the way in. Capping them blocked every tontine whose pot
+      // exceeded 50 000 XAF: rotateTurn rolled back forever, funds stranded.
+      const isInternalCredit =
+        type === 'tontine_payout' ||
+        type === 'challenge_reward' ||
+        (type === 'deposit' && paymentMethod === 'wallet');
+
       // AML: limite par transaction unique
-      if (amount > limits.MAX_SINGLE_TRANSACTION) {
+      if (!isInternalCredit && amlAmount > limits.MAX_SINGLE_TRANSACTION) {
         throw new AppError(
           `Montant dépasse la limite par transaction pour les comptes ${planLabel} (${limits.MAX_SINGLE_TRANSACTION.toLocaleString()} ${limits.symbol})`,
           400,
@@ -201,18 +218,16 @@ export class WalletService {
               userId: mongoose.Types.ObjectId.isValid(userId)
                 ? new mongoose.Types.ObjectId(userId)
                 : userId,
-              // AML: tous les débits du jour, quel que soit leur type
-              type: {
-                $in: [
-                  'expense',
-                  'withdrawal',
-                  'tontine_contribution',
-                  'tontine_social_fund',
-                  'tontine_absence_fee',
-                  'saving_transfer',
-                ],
-              },
-              status: 'completed',
+              // AML: every REAL wallet debit of the day, whatever its category.
+              // System debits are always stored as type 'expense' + paymentMethod
+              // 'wallet'. Restricting to the wallet matters: the user's manually
+              // recorded budget expenses (rent paid in cash…) are also 'expense'
+              // rows and used to count here, blocking legitimate wallet operations.
+              type: 'expense',
+              paymentMethod: 'wallet',
+              // A withdrawal stays 'pending' while NotchPay processes it: it must
+              // count too, or rapid successive withdrawals bypass the daily cap.
+              status: { $in: ['completed', 'pending'] },
               date: { $gte: startOfDay },
             },
           },
@@ -220,7 +235,7 @@ export class WalletService {
         ]).session(session);
 
         const todaySpent = dailyTotal[0]?.total || 0;
-        if (todaySpent + amount > limits.MAX_DAILY_TOTAL) {
+        if (todaySpent + amlAmount > limits.MAX_DAILY_TOTAL) {
           throw new AppError(
             `Limite journalière de transactions atteinte pour les comptes ${planLabel} (${limits.MAX_DAILY_TOTAL.toLocaleString()} ${limits.symbol}/jour)`,
             400,
@@ -360,6 +375,28 @@ export class WalletService {
       }).catch((err) => logger.error(`Failure Alert Monitoring Error: ${err.message}`));
 
       throw error;
+    }
+  }
+
+  /** AML limits applicable to this user (plan + currency). */
+  static getLimits(user: Parameters<typeof getUserLimits>[0]): AMLLimits {
+    return getUserLimits(user);
+  }
+
+  /**
+   * Refuses, BEFORE the customer is charged, an incoming amount the wallet
+   * could never credit. Without this check a deposit above the AML
+   * single-transaction cap was accepted at initialization, paid at NotchPay,
+   * then rejected by executeTransaction at completion: the transaction rolled
+   * back, the payment stayed 'pending' forever — money taken, never credited.
+   */
+  static assertCreditAllowed(user: Parameters<typeof getUserLimits>[0], amount: number): void {
+    const limits = getUserLimits(user);
+    if (amount > limits.MAX_SINGLE_TRANSACTION) {
+      throw new AppError(
+        `Montant maximum par recharge : ${limits.MAX_SINGLE_TRANSACTION.toLocaleString()} ${limits.symbol}.`,
+        400,
+      );
     }
   }
 

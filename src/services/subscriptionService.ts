@@ -51,9 +51,16 @@ export class SubscriptionService {
     userId: string,
     data: Partial<ISubscription>,
   ): Promise<ISubscriptionDocument> {
+    // Ownership/system fields are never client-settable: `$set: { userId }`
+    // moved one's own subscription into ANOTHER user's list.
+    const { userId: _u, _id, createdAt, updatedAt, ...safe } = (data || {}) as any;
+    void _u;
+    void _id;
+    void createdAt;
+    void updatedAt;
     const subscription = await Subscription.findOneAndUpdate(
       { _id: id, userId },
-      { $set: data },
+      { $set: safe },
       { new: true, runValidators: true },
     );
 
@@ -161,8 +168,13 @@ export class SubscriptionService {
     for (const sub of expiredSubscriptions) {
       try {
         const nextBillingDate = this.calculateNextBillingDate(sub.nextBillingDate, sub.frequency);
-        sub.nextBillingDate = nextBillingDate;
-        await sub.save();
+        // Conditional on the date we read: two concurrent runs (e.g. old and new
+        // container during a deploy) can no longer advance it by two periods.
+        const advanced = await Subscription.updateOne(
+          { _id: sub._id, nextBillingDate: sub.nextBillingDate, status: 'active' },
+          { $set: { nextBillingDate } },
+        );
+        if (advanced.modifiedCount === 0) continue;
 
         // Optionnel : Créer une notification pour l'utilisateur
         await NotificationService.sendToUser(sub.userId.toString(), {

@@ -10,6 +10,25 @@ import { withLock } from '../utils/distributedLock';
 import { RESELLER_LIMITS } from '../middleware/resellerQuota';
 import logger from '../utils/logger';
 
+/** Client-settable slot fields (create & update). Everything else is system state. */
+const SLOT_FIELDS = ['profileName', 'client', 'price', 'currency', 'billingCycle', 'notes'];
+
+/**
+ * A slot PIN is stored ENCRYPTED only (encryptedPin/pinIv/pinAuthTag). The
+ * clear `pin` used to be accepted then silently dropped (no such schema
+ * path) — the PIN was never saved at all.
+ */
+function slotPinFields(pin: unknown, resellerId: string) {
+  if (pin === undefined) return {};
+  if (pin === null || pin === '')
+    return { encryptedPin: undefined, pinIv: undefined, pinAuthTag: undefined };
+  const { ciphertext, iv, authTag } = VaultCrypto.encrypt(String(pin), resellerId);
+  return { encryptedPin: ciphertext, pinIv: iv, pinAuthTag: authTag };
+}
+
+const pickSlotFields = (data: any) =>
+  Object.fromEntries(SLOT_FIELDS.filter((k) => k in (data || {})).map((k) => [k, data[k]]));
+
 export class ResellerService {
   // ─── COMPTES MAÎTRES ────────────────────────────────────────────────────────
 
@@ -325,8 +344,10 @@ export class ResellerService {
         currentPeriodEnd.setMonth(currentPeriodEnd.getMonth() + 1);
       }
 
+      // Whitelisted: `...data` let the client set any system field of the slot.
       const slot = await SharedSlot.create({
-        ...data,
+        ...pickSlotFields(data),
+        ...slotPinFields(data?.pin, String(resellerId)),
         masterAccountId: accountId,
         resellerId,
         startDate,
@@ -409,23 +430,11 @@ export class ResellerService {
     resellerId: string,
     data: any,
   ): Promise<ISharedSlotDocument> {
-    const ALLOWED_SLOT_FIELDS = [
-      'profileName',
-      'pin',
-      'client',
-      'price',
-      'currency',
-      'billingCycle',
-      'notes',
-      'reminderSent',
-    ];
-
-    const safeData: any = {};
-    for (const key of ALLOWED_SLOT_FIELDS) {
-      if (key in data) {
-        safeData[key] = data[key];
-      }
-    }
+    const safeData: any = {
+      ...pickSlotFields(data),
+      ...slotPinFields(data?.pin, String(resellerId)),
+    };
+    if ('reminderSent' in (data || {})) safeData.reminderSent = Boolean(data.reminderSent);
 
     const slot = await SharedSlot.findOneAndUpdate(
       { _id: slotId, resellerId },

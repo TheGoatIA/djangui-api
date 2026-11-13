@@ -3,6 +3,7 @@ import stripe from '../config/stripe';
 import { PaymentService } from '../services/paymentService';
 import { WalletService } from '../services/walletService';
 import Transaction from '../models/Transaction';
+import Payment from '../models/Payment';
 import { notchpayConfig } from '../config/notchpay';
 import { verifyNotchPaySignature } from '../utils/cryptoUtils';
 import { SlackService } from '../services/slackService';
@@ -14,6 +15,31 @@ import { MonitoringService } from '../services/monitoringService';
 // which is enough to get a human's attention without becoming its own noise.
 let lastInvalidSignatureAlertAt = 0;
 const INVALID_SIGNATURE_ALERT_COOLDOWN_MS = 5 * 60 * 1000;
+
+/**
+ * Resolves OUR internal reference from a NotchPay webhook payload.
+ *
+ * Verified against the live NotchPay sandbox: in both payment and transfer
+ * objects, `reference` is NotchPay's OWN id (`trx.…` / `trf.…`) and the
+ * reference we sent is echoed back as `merchant_reference` (our `metadata`
+ * is NOT echoed). Reading `payload.reference` therefore never matched any of
+ * our documents: every payment confirmation 404'd (silently dropped, only the
+ * polling job credited deposits) and failed transfers were never refunded.
+ * When `merchant_reference` is absent we fall back to the provider id we
+ * stored as `externalReference`.
+ */
+async function resolveNotchPayReference(
+  payload: any,
+  model: { findOne: (q: any) => any },
+): Promise<string | undefined> {
+  if (typeof payload?.merchant_reference === 'string' && payload.merchant_reference) {
+    return payload.merchant_reference;
+  }
+  if (typeof payload?.metadata?.reference === 'string') return payload.metadata.reference;
+  if (typeof payload?.reference !== 'string' || !payload.reference) return undefined;
+  const byProviderId = await model.findOne({ externalReference: payload.reference }).lean();
+  return byProviderId?.reference || payload.reference;
+}
 
 export class WebhookController {
   static async stripeWebhook(req: Request, res: Response, next: NextFunction) {
@@ -47,8 +73,9 @@ export class WebhookController {
       const session = event.data.object as any;
       const reference = session?.metadata?.reference;
 
-      if (!reference) {
-        // Checkout session not created by this app (no reference): nothing to complete.
+      const foreignApp = session?.metadata?.app && session.metadata.app !== 'kauri';
+      if (!reference || foreignApp) {
+        // Session d'une autre app du même compte Stripe (ou sans référence) : rien à faire ici.
         logger.warn(`Stripe webhook ${event.id}: checkout session without metadata.reference`);
       } else {
         try {
@@ -78,7 +105,12 @@ export class WebhookController {
   }
 
   static async notchpayWebhook(req: Request, res: Response, next: NextFunction) {
-    const signature = req.headers['x-notchpay-signature'] as string;
+    // NotchPay envoie la signature dans « x-notch-signature » (doc officielle).
+    // L'API lisait « x-notchpay-signature » : en production, 102 notifications sur
+    // 102 ont été refusées (401) et aucun paiement n'était confirmé par webhook.
+    // L'ancien nom reste accepté par compatibilité.
+    const signature = (req.headers['x-notch-signature'] ||
+      req.headers['x-notchpay-signature']) as string;
     const startedAt = Date.now();
 
     // Verify against the exact raw bytes NotchPay signed (captured by app.ts's
@@ -111,7 +143,7 @@ export class WebhookController {
     let retryable = false;
 
     if (data.event === 'payment.complete') {
-      const reference = payload.reference;
+      const reference = await resolveNotchPayReference(payload, Payment);
       if (!reference) {
         logger.warn('NotchPay payment.complete webhook without reference — ignored');
       } else {
@@ -128,10 +160,13 @@ export class WebhookController {
       // Note: WalletService.executeTransaction crée déjà la transaction en 'completed' lors de l'initiation
       // (Mobile Money est quasi-instantané), mais ce webhook permet de tracer la confirmation opérateur
       // et de notifier l'utilisateur du succès final.
-      const reference = payload.reference || payload.metadata?.reference;
+      const reference = await resolveNotchPayReference(payload, Transaction);
       try {
+        // Guard: Mongoose drops an undefined filter value, so { reference: undefined }
+        // would match ANY transaction.
+        if (!reference) throw Object.assign(new Error('missing reference'), { skip: true });
         const tx = await Transaction.findOneAndUpdate(
-          { reference },
+          { reference, category: 'withdrawal' },
           {
             $set: {
               status: 'completed',
@@ -149,51 +184,65 @@ export class WebhookController {
       } catch (confirmErr: any) {
         logger.error(`Failed to confirm transfer ${reference}: ${confirmErr.message}`);
         status = 'failed';
-        retryable = true;
+        retryable = !confirmErr.skip;
       }
     } else if (data.event === 'transfer.failed') {
-      // The transfer payload now sends our internal reference at the top level
-      // (see PayoutService.initiatePayout), but fall back to metadata.reference
-      // in case NotchPay ever echoes it there instead for this event type.
-      const reference = payload.reference || payload.metadata?.reference;
+      // Our reference comes back as merchant_reference (see resolveNotchPayReference).
+      const reference = await resolveNotchPayReference(payload, Transaction);
       logger.error(`Transfer ${reference} failed: ${payload.reason}`);
 
       try {
-        // Atomic status transition: only process refund if status transitions from non-failed to failed.
-        // findOneAndUpdate with $ne guard prevents race conditions from duplicate webhook deliveries.
-        const originalTx = await Transaction.findOneAndUpdate(
-          { reference, status: { $ne: 'failed' } },
-          {
-            $set: {
-              status: 'failed',
-              'metadata.failureReason': payload.reason,
-              'metadata.failedAt': new Date().toISOString(),
+        // Without a reference the filter below would match ANY transaction and refund it.
+        if (!reference) throw Object.assign(new Error('missing reference'), { skip: true });
+        // The status flip and the refund commit TOGETHER. They used to be two
+        // separate writes: when the refund failed, the transaction was already
+        // 'failed', so every redelivery hit the `$ne: 'failed'` guard and skipped
+        // the refund — the "retry" could never succeed and the user stayed debited.
+        const refunded = await WalletService.runInTransaction(async (session) => {
+          // Atomic claim (`$ne` guard) — duplicate deliveries refund at most once.
+          const originalTx = await Transaction.findOneAndUpdate(
+            // Only a withdrawal can be refunded — never a deposit or another debit type.
+            { reference, category: 'withdrawal', status: { $ne: 'failed' } },
+            {
+              $set: {
+                status: 'failed',
+                'metadata.failureReason': payload.reason,
+                'metadata.failedAt': new Date().toISOString(),
+              },
             },
-          },
-          { new: false }, // Return the OLD doc to confirm it was actually updated
-        );
+            { new: false, session }, // OLD doc: proves this call made the transition
+          );
+          if (!originalTx) return false;
 
-        if (!originalTx) {
-          // Either not found or already failed — idempotent, no action needed
-          logger.warn(`Transfer ${reference}: skipping refund (already processed or not found)`);
-        } else {
-          // Atomically claimed the transition — safe to issue refund exactly once.
           // Refund amount + fees: the wallet was debited for the full amount
-          // (withdrawal amount + Kauri fee), but `originalTx.amount` only stores
-          // the net withdrawal amount (fees are tracked separately in
-          // `originalTx.fees`) — refunding just `.amount` would silently let
-          // Kauri keep the fee on a transfer that never actually happened.
-          await WalletService.executeTransaction({
-            userId: originalTx.userId.toString(),
-            amount: originalTx.amount + (originalTx.fees || 0),
-            type: 'deposit',
-            description: `Remboursement transfert échoué (${payload.reason || 'Erreur opérateur'})`,
-            paymentMethod: 'wallet',
-            metadata: { originalReference: reference },
-          });
+          // (withdrawal + Kauri fee) while `.amount` stores only the net amount —
+          // refunding `.amount` alone would keep the fee on a transfer that never happened.
+          await WalletService.executeTransaction(
+            {
+              userId: originalTx.userId.toString(),
+              amount: originalTx.amount + (originalTx.fees || 0),
+              type: 'deposit',
+              description: `Remboursement transfert échoué (${payload.reason || 'Erreur opérateur'})`,
+              paymentMethod: 'wallet',
+              metadata: { originalReference: reference },
+            },
+            { session },
+          );
+          return true;
+        });
+
+        if (refunded) {
           logger.info(`Refund processed for failed transfer: ${reference}`);
+        } else {
+          logger.warn(`Transfer ${reference}: skipping refund (already processed or not found)`);
         }
       } catch (refundErr: any) {
+        if (refundErr.skip) {
+          logger.warn('NotchPay transfer.failed webhook without reference — ignored');
+          status = 'failed';
+          MonitoringService.recordWebhookReceived('notchpay', data.event, status);
+          return res.json({ received: true });
+        }
         logger.error(
           `Critical: Failed to process refund for transfer ${reference}: ${refundErr.message}`,
         );

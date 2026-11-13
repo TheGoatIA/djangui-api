@@ -9,6 +9,12 @@ export interface AuthRequest extends Request {
   user?: any;
 }
 
+/** True when the token was issued before the user's last credential revocation. */
+const issuedBeforeRevocation = (iat: number | undefined, user: IUserDocument): boolean => {
+  const revokedAt = user.authInvalidatedAt;
+  return Boolean(revokedAt && (iat ?? 0) * 1000 < new Date(revokedAt).getTime());
+};
+
 const protect = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     // 1) Getting token and check if it's there.
@@ -41,6 +47,7 @@ const protect = async (req: AuthRequest, res: Response, next: NextFunction) => {
       algorithms: ['HS256'],
     }) as {
       id: string;
+      iat?: number;
     };
 
     // 3) Check if user still exists
@@ -49,7 +56,12 @@ const protect = async (req: AuthRequest, res: Response, next: NextFunction) => {
       return next(new AppError('The user belonging to this token no longer exists.', 401));
     }
 
-    // 4) Check if user is active
+    // 4) Token issued before a password change / reset / "sign out everywhere"
+    if (issuedBeforeRevocation(decoded.iat, currentUser)) {
+      return next(new AppError('Session expired. Please log in again.', 401));
+    }
+
+    // 5) Check if user is active
     if (!currentUser.isActive) {
       return next(new AppError('This user account is deactivated.', 403, 'ACCOUNT_DEACTIVATED'));
     }
@@ -120,10 +132,12 @@ const identify = async (req: AuthRequest, res: Response, next: NextFunction) => 
       algorithms: ['HS256'],
     }) as {
       id: string;
+      iat?: number;
     };
 
     const currentUser = await User.findById(decoded.id);
     if (!currentUser || !currentUser.isActive) return next();
+    if (issuedBeforeRevocation(decoded.iat, currentUser)) return next();
 
     req.user = currentUser;
     RequestContext.set('userId', currentUser._id.toString());

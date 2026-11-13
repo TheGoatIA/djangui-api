@@ -26,8 +26,6 @@ import { MonitoringService } from '../services/monitoringService';
  * able to take the entire API down over a transient Redis hiccup.
  */
 export function createRateLimitStore(prefix: string): RedisStore | undefined {
-  if (process.env.NODE_ENV === 'test') return undefined;
-
   try {
     const store = new RedisStore({
       prefix: `rl:${prefix}:`,

@@ -1,4 +1,5 @@
 import UserChallenge from '../models/UserChallenge';
+import { currentLanguage } from '../utils/requestContext';
 import Challenge from '../models/Challenge';
 import { WalletService } from './walletService';
 import { GamificationService } from './gamificationService';
@@ -12,19 +13,65 @@ import { MonitoringService } from './monitoringService';
 // une valeur du type 999.9999999999999 en IEEE 754).
 const roundAmount = (n: number): number => Math.round(n * 100) / 100;
 
+/**
+ * Single progress rule for every path (validate / skip): a week is "processed"
+ * once completed or skipped. validateWeek used to count only completed weeks
+ * while skipWeek counted both — after one skip, validating every other week
+ * capped progress at 75 %: the challenge never completed and the saved money
+ * could only be recovered by quitting with a penalty.
+ */
+function applyProgress(uc: any): boolean {
+  const processed = uc.weeks.filter((w: any) => ['completed', 'skipped'].includes(w.status)).length;
+  uc.progress = uc.weeks.length ? Math.round((processed / uc.weeks.length) * 100) : 0;
+  const done = uc.progress >= 100 && uc.status === 'active';
+  if (done) {
+    uc.status = 'completed';
+    uc.completedAt = new Date();
+  }
+  return done;
+}
+
+const isHttpUrl = (u: unknown) => typeof u === 'string' && /^https?:\/\/[^\s]+$/i.test(u);
+
 export class ChallengeService {
   /**
    * Liste tous les challenges disponibles
    */
   static async getAllChallenges() {
-    return Challenge.find().sort({ createdAt: -1 });
+    const list = await Challenge.find().sort({ createdAt: -1 });
+    return list.map((c) => ChallengeService.localize(c.toObject()));
+  }
+
+  /** Titre/description dans la langue de l'utilisateur (anglais si disponible). */
+  static localize(c: any) {
+    if (!c || typeof c !== 'object') return c;
+    if (currentLanguage() === 'en') {
+      if (c.titleEn) c.title = c.titleEn;
+      if (c.descriptionEn) c.description = c.descriptionEn;
+    }
+    return c;
   }
 
   /**
    * Liste les challenges d'un utilisateur
    */
   static async getUserChallenges(userId: string) {
-    return UserChallenge.find({ userId }).populate('challengeId').sort({ createdAt: -1 });
+    const list = await UserChallenge.find({ userId })
+      .populate('challengeId')
+      .sort({ createdAt: -1 });
+    // Proof images stored in our (private) storage are served as signed URLs.
+    const { StorageService } = await import('./storageService');
+    return Promise.all(
+      list.map(async (uc) => {
+        const o: any = uc.toObject();
+        if (o.challengeId) o.challengeId = ChallengeService.localize(o.challengeId);
+        for (const w of o.weeks || []) {
+          if (w.proofImageUrl)
+            w.proofImageUrl = await StorageService.signStoredUrl(w.proofImageUrl);
+        }
+        return o;
+      }),
+    );
   }
 
   /**
@@ -55,13 +102,19 @@ export class ChallengeService {
       }
     }
 
-    const created = await UserChallenge.create({
-      userId,
-      challengeId,
-      endDate,
-      weeks,
-      status: 'active',
-    });
+    let created;
+    try {
+      created = await UserChallenge.create({
+        userId,
+        challengeId,
+        endDate,
+        weeks,
+        status: 'active',
+      });
+    } catch (err: any) {
+      if (err?.code === 11000) throw new AppError('Vous participez déjà à ce challenge', 400);
+      throw err;
+    }
 
     MonitoringService.recordChallengeEvent('join', challenge.type);
     return created;
@@ -244,18 +297,14 @@ export class ChallengeService {
 
       week.status = 'completed';
       week.validatedAt = new Date();
-      if (data?.proofImageUrl) week.proofImageUrl = data.proofImageUrl;
-      if (data?.note) week.verificationNote = data.note;
-
-      // Mise à jour de la progression globale
-      const completedWeeks = uc.weeks.filter((w) => w.status === 'completed').length;
-      uc.progress = Math.round((completedWeeks / uc.weeks.length) * 100);
-
-      const shouldAwardCompletion = uc.progress >= 100;
-      if (shouldAwardCompletion) {
-        uc.status = 'completed';
-        uc.completedAt = new Date();
+      if (data?.proofImageUrl !== undefined) {
+        // Rendered as a link (app, admin): only http(s) — never javascript:/data:.
+        if (!isHttpUrl(data.proofImageUrl)) throw new AppError('Lien de preuve invalide', 400);
+        week.proofImageUrl = data.proofImageUrl;
       }
+      if (data?.note) week.verificationNote = String(data.note).slice(0, 500);
+
+      const shouldAwardCompletion = applyProgress(uc);
 
       await uc.save({ session });
 
@@ -291,7 +340,7 @@ export class ChallengeService {
       const uc = await UserChallenge.findOne({ _id: userChallengeId, userId }).session(session);
       if (!uc) throw new AppError('Challenge non trouvé ou non autorisé', 404);
 
-      if (uc.status !== 'completed' && uc.progress < 100) {
+      if (uc.status !== 'completed') {
         throw new AppError('Le challenge doit être terminé pour récupérer les fonds', 400);
       }
 
@@ -376,13 +425,15 @@ export class ChallengeService {
     week.status = 'skipped';
     uc.flexibility.skipsUsed += 1;
 
-    // Mise à jour de la progression (considéré comme "fait" mais sans gain)
-    const processedWeeks = uc.weeks.filter((w) =>
-      ['completed', 'skipped'].includes(w.status),
-    ).length;
-    uc.progress = Math.round((processedWeeks / uc.weeks.length) * 100);
+    // Considéré comme "fait" mais sans gain — même règle que validateWeek.
+    const completed = applyProgress(uc);
 
     await uc.save();
+    if (completed) {
+      GamificationService.awardChallengeCompletion(userId, 'Challenge Réussi').catch((err: any) =>
+        logger.error(`Gamification award error: ${err.message}`),
+      );
+    }
     MonitoringService.recordChallengeEvent('skip', 'unknown');
     return uc;
   }
@@ -451,6 +502,8 @@ export class ChallengeService {
         {
           title: 'Épargne de Secours',
           description: 'Épargnez 50 000 XAF en 4 semaines pour parer aux imprévus.',
+          titleEn: 'Emergency Savings',
+          descriptionEn: 'Save 50,000 XAF in 4 weeks to be ready for the unexpected.',
           type: 'saving',
           targetAmount: 50000,
           durationDays: 28,
@@ -461,6 +514,8 @@ export class ChallengeService {
         {
           title: 'Défi Tontineur Pro',
           description: 'Ne ratez aucune cotisation pendant 3 mois.',
+          titleEn: 'Pro Tontine Member',
+          descriptionEn: "Don't miss a single contribution for 3 months.",
           type: 'habit',
           durationDays: 90,
           difficulty: 'medium',
@@ -470,6 +525,8 @@ export class ChallengeService {
         {
           title: 'Zéro Dépense Inutile',
           description: 'Réduisez vos dépenses de divertissement de 20% ce mois-ci.',
+          titleEn: 'Zero Wasteful Spending',
+          descriptionEn: 'Cut your entertainment spending by 20% this month.',
           type: 'spending_cut',
           durationDays: 30,
           difficulty: 'hard',

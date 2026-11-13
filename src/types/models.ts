@@ -86,6 +86,7 @@ export interface IUser {
   appVersion?: string;
   lastLogin?: Date;
   refreshToken?: string;
+  authInvalidatedAt?: Date;
   aiSecurity: {
     attackCount: number;
     coachBlockedUntil?: Date | null;
@@ -106,6 +107,8 @@ export interface IUser {
 export interface IChallenge {
   title: string;
   description: string;
+  titleEn?: string;
+  descriptionEn?: string;
   type: 'saving' | 'spending_cut' | 'habit';
   difficulty: 'easy' | 'medium' | 'hard';
   targetAmount?: number;

@@ -199,6 +199,11 @@ const userSchema = new Schema<IUserDocument>(
     appVersion: String,
     lastLogin: Date,
     refreshToken: String,
+    // Every access token issued BEFORE this instant is rejected by `protect`
+    // (password change/reset, "sign out all devices"). Access tokens are
+    // stateless JWTs valid 15 min: without this, a stolen token kept working
+    // after the victim reset their password.
+    authInvalidatedAt: Date,
     // AI Security — système de paliers (plus de suspension automatique de compte)
     aiSecurity: {
       attackCount: { type: Number, default: 0 },
@@ -249,6 +254,12 @@ const userSchema = new Schema<IUserDocument>(
         // there's no reason GET /me or any other serialized User should ever
         // return them to the client — strip unconditionally, same as password.
         delete userRet.refreshToken;
+        delete userRet.authInvalidatedAt;
+        // Single-use email tokens are stored hashed, but have no business in a response.
+        delete userRet.emailVerificationToken;
+        delete userRet.emailVerificationExpires;
+        delete userRet.passwordResetToken;
+        delete userRet.passwordResetExpires;
         if (Array.isArray(userRet.sessions)) {
           userRet.sessions = userRet.sessions.map((s: any) => {
             const { refreshToken, ...rest } = s;
@@ -276,6 +287,11 @@ userSchema.virtual('isBusiness').get(function (this: IUserDocument) {
 // Pre-save hook for password hashing
 userSchema.pre('save', async function (this: IUserDocument) {
   if (!this.isModified('password') || !this.password) return;
+
+  // A changed password revokes every access token issued so far. Backdated by
+  // 1 s because JWT `iat` has second precision: the tokens issued right after
+  // this save (same second) must stay valid.
+  if (!this.isNew) (this as any).authInvalidatedAt = new Date(Date.now() - 1000);
 
   try {
     const salt = await bcrypt.genSalt(12);
