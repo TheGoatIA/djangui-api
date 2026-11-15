@@ -67,6 +67,21 @@ export class PaymentService {
     }
   }
 
+  /**
+   * Invoice generation after a COMMITTED payment: a failure (e.g. EACCES on
+   * the invoices folder) must not turn a successful payment into a 500 — the
+   * user would see "impossible de vérifier ce paiement" and the notification
+   * and audit log below would be skipped. The invoice can be regenerated later
+   * from the invoices endpoint.
+   */
+  static async safeInvoice(reference: string, generate: () => Promise<unknown>) {
+    try {
+      await generate();
+    } catch (err: any) {
+      logger.error(`Invoice generation failed for committed payment ${reference}: ${err.message}`);
+    }
+  }
+
   /** Smallest wallet top-up (NotchPay Mobile Money, XAF). */
   static readonly MIN_DEPOSIT = 100;
 
@@ -541,9 +556,13 @@ export class PaymentService {
       (walletTransaction as any)
         ._postCommit?.()
         .catch((err: any) => logger.error(`Post-commit hook error: ${err.message}`));
-      await InvoiceService.generateForTransaction(walletTransaction._id.toString());
+      await PaymentService.safeInvoice(reference, () =>
+        InvoiceService.generateForTransaction(walletTransaction._id.toString()),
+      );
     } else if (payment.type === 'subscription') {
-      await InvoiceService.generateForPayment(payment._id.toString());
+      await PaymentService.safeInvoice(reference, () =>
+        InvoiceService.generateForPayment(payment._id.toString()),
+      );
 
       const planName =
         payment.metadata?.plan === 'business' ? 'Super Premium (Business)' : 'Premium';

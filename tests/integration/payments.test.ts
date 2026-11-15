@@ -15,6 +15,7 @@ import stripe from '../../src/config/stripe';
 import { notchpayApi, notchpayConfig } from '../../src/config/notchpay';
 import Payment from '../../src/models/Payment';
 import User from '../../src/models/User';
+import { InvoiceService } from '../../src/services/invoiceService';
 import { PaymentService } from '../../src/services/paymentService';
 import { PaymentPollingService } from '../../src/services/paymentPollingService';
 
@@ -177,6 +178,28 @@ suite('Paiements : confirmation par sondage, webhooks, idempotence', () => {
     const d = await User.findById(u._id);
     expect(d?.subscription?.plan).toBe('premium');
     expect(d?.subscription?.status).toBe('active');
+  });
+
+  it('facture en échec (EACCES) : le paiement confirmé reste un succès', async () => {
+    // Constat staging : dossier des factures non inscriptible -> /payment/success
+    // en 500 « impossible de vérifier ce paiement » alors que l'argent était passé.
+    const spy = jest
+      .spyOn(InvoiceService, 'generateForPayment')
+      .mockRejectedValue(new Error('EACCES: permission denied'));
+    const u = await mkUser();
+    const p = await mkPayment(u._id, {
+      method: 'notchpay',
+      amount: 5000,
+      type: 'subscription',
+      meta: { plan: 'business' },
+    });
+    providerState.set(p.externalReference, { status: 'complete' });
+
+    await expect(PaymentService.verifyTransaction(p.reference)).resolves.toBeTruthy();
+    expect(spy).toHaveBeenCalled();
+    expect(await statusOf(p.id)).toBe('completed');
+    expect((await User.findById(u._id))?.subscription?.plan).toBe('business');
+    spy.mockRestore();
   });
 
   it('webhook NotchPay signé : crédite une fois, la redélivrance est idempotente', async () => {
