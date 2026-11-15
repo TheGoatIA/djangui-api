@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { WalletService } from '../services/walletService';
 import { KYCService } from '../services/kycService';
 import { PayoutService } from '../services/payoutService';
@@ -6,6 +6,7 @@ import { InvoiceService } from '../services/invoiceService';
 import { ChallengeService } from '../services/challengeService';
 import Transaction from '../models/Transaction';
 import Invoice from '../models/Invoice';
+import Payment from '../models/Payment';
 import { catchAsync } from '../utils';
 import { AppError } from '../middleware/errorHandler';
 
@@ -13,7 +14,7 @@ export class FintechController {
   /**
    * Obtenir le solde du wallet
    */
-  static getBalance = catchAsync(async (req: any, res: Response) => {
+  static readonly getBalance = catchAsync(async (req: any, res: Response) => {
     const balance = await WalletService.getBalance(req.user._id);
     res.status(200).json({
       status: 'success',
@@ -24,7 +25,7 @@ export class FintechController {
   /**
    * Liste des transactions récentes
    */
-  static getTransactions = catchAsync(async (req: any, res: Response) => {
+  static readonly getTransactions = catchAsync(async (req: any, res: Response) => {
     const transactions = await Transaction.find({ userId: req.user._id })
       .sort({ date: -1 })
       .limit(20);
@@ -39,16 +40,24 @@ export class FintechController {
   /**
    * Soumettre des documents KYC
    */
-  static submitKYC = catchAsync(async (req: any, res: Response) => {
-    const { documentType, documentNumber, fullName } = req.body;
-    // Les URLs d'images devraient normalement venir d'un upload S3/GCS
-    const { documentImageUrl, selfieImageUrl } = req.body;
+  static readonly submitKYC = catchAsync(async (req: any, res: Response) => {
+    const {
+      documentType,
+      documentNumber,
+      fullName,
+      documentExpiryDate,
+      documentImageUrl,
+      documentBackImageUrl,
+      selfieImageUrl,
+    } = req.body;
 
     const kyc = await KYCService.submitDocuments(req.user._id, {
       documentType,
       documentNumber,
       fullName,
+      documentExpiryDate,
       documentImageUrl,
+      documentBackImageUrl,
       selfieImageUrl,
     });
 
@@ -62,7 +71,7 @@ export class FintechController {
   /**
    * Demande de retrait (Payout)
    */
-  static requestWithdrawal = catchAsync(async (req: any, res: Response) => {
+  static readonly requestWithdrawal = catchAsync(async (req: any, res: Response) => {
     // Soyez flexible pour accepter phone ou phoneNumber
     const { amount, provider } = req.body;
     const phone = req.body.phone || req.body.phoneNumber || req.body.telephone;
@@ -93,16 +102,24 @@ export class FintechController {
   /**
    * Récupérer une facture PDF
    */
-  static getInvoice = catchAsync(async (req: Request, res: Response) => {
+  static readonly getInvoice = catchAsync(async (req: any, res: Response) => {
     const { transactionId } = req.params;
-    let invoice = await Invoice.findOne({ transactionId });
+    let invoice = await Invoice.findOne({ transactionId, userId: req.user._id });
 
     // Si la facture n'existe pas OU si l'URL du PDF est absente, on tente une (re)génération
-    if (!invoice || !invoice.pdfUrl) {
+    if (!invoice?.pdfUrl) {
+      // Vérifie que la transaction appartient bien à l'utilisateur avant de générer.
+      const transaction = await Transaction.findOne({
+        _id: transactionId,
+        userId: req.user._id,
+      });
+      if (!transaction) {
+        throw new AppError('Transaction introuvable.', 404);
+      }
       invoice = await InvoiceService.generateForTransaction(transactionId);
     }
 
-    if (!invoice || !invoice.pdfUrl) {
+    if (!invoice?.pdfUrl) {
       throw new AppError(
         "Le reçu n'a pas pu être généré ou n'est pas encore disponible sur le stockage.",
         404,
@@ -121,15 +138,20 @@ export class FintechController {
   /**
    * Récupérer une facture PDF liée à un paiement
    */
-  static getPaymentInvoice = catchAsync(async (req: Request, res: Response) => {
+  static readonly getPaymentInvoice = catchAsync(async (req: any, res: Response) => {
     const { paymentId } = req.params;
-    let invoice = await Invoice.findOne({ paymentId });
+    let invoice = await Invoice.findOne({ paymentId, userId: req.user._id });
 
-    if (!invoice || !invoice.pdfUrl) {
+    if (!invoice?.pdfUrl) {
+      // Vérifie que le paiement appartient bien à l'utilisateur avant de générer.
+      const payment = await Payment.findOne({ _id: paymentId, userId: req.user._id });
+      if (!payment) {
+        throw new AppError('Paiement introuvable.', 404);
+      }
       invoice = await InvoiceService.generateForPayment(paymentId);
     }
 
-    if (!invoice || !invoice.pdfUrl) {
+    if (!invoice?.pdfUrl) {
       throw new AppError(
         "Le reçu n'a pas pu être généré ou n'est pas encore disponible sur le stockage.",
         404,
@@ -148,7 +170,7 @@ export class FintechController {
   /**
    * Déposer de l'argent pour un challenge (Épargne réelle)
    */
-  static depositChallenge = catchAsync(async (req: any, res: Response) => {
+  static readonly depositChallenge = catchAsync(async (req: any, res: Response) => {
     const { userChallengeId, weekNumber, amount } = req.body;
     const challenge = await ChallengeService.addChallengeDeposit(
       req.user._id,

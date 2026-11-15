@@ -4,6 +4,7 @@ import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import { MonitoringService } from '../services/monitoringService';
+import { setAuthCookies, clearAuthCookies, isCookieOnlyClient } from '../utils/authCookies';
 
 export class AuthController {
   static async register(req: Request, res: Response, next: NextFunction) {
@@ -13,12 +14,10 @@ export class AuthController {
       // Metrique business
       MonitoringService.recordUserSignup('email', req.body.country || 'unknown');
 
+      setAuthCookies(res, tokens);
       res.status(201).json({
         success: true,
-        data: {
-          user,
-          tokens,
-        },
+        data: isCookieOnlyClient(req) ? { user } : { user, tokens },
       });
     } catch (err) {
       next(err);
@@ -37,6 +36,7 @@ export class AuthController {
         MonitoringService.recordUserSignup('firebase', country || 'unknown');
       }
 
+      setAuthCookies(res, result.tokens);
       res.status(200).json({
         status: 'success',
         ...result,
@@ -64,20 +64,74 @@ export class AuthController {
   static async login(req: Request, res: Response, next: NextFunction) {
     try {
       const { email, password } = req.body;
-      const { user, tokens } = await AuthService.login(email, password, {
+      const result = await AuthService.login(email, password, {
         deviceId: req.body.deviceId,
         deviceInfo: req.body.deviceInfo,
         appVersion: req.body.appVersion,
         ipAddress: req.ip,
       });
 
+      if ('requiresTotp' in result) {
+        res.status(200).json({
+          success: true,
+          data: { requiresTotp: true, challengeToken: result.challengeToken },
+        });
+        return;
+      }
+
+      const { user, tokens } = result;
+      setAuthCookies(res, tokens);
       res.status(200).json({
         success: true,
-        data: {
-          user,
-          tokens,
-        },
+        data: isCookieOnlyClient(req) ? { user } : { user, tokens },
       });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async verifyTotp(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { challengeToken, code } = req.body;
+      const { user, tokens } = await AuthService.verifyTotpAndLogin(challengeToken, code, {
+        deviceId: req.body.deviceId,
+        deviceInfo: req.body.deviceInfo,
+        appVersion: req.body.appVersion,
+        ipAddress: req.ip,
+      });
+
+      setAuthCookies(res, tokens);
+      res.status(200).json({
+        success: true,
+        data: isCookieOnlyClient(req) ? { user } : { user, tokens },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async setupTotp(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const data = await AuthService.setupTotp(req.user._id);
+      res.status(200).json({ success: true, data });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async enableTotp(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const data = await AuthService.enableTotp(req.user._id, req.body.code);
+      res.status(200).json({ success: true, data });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async disableTotp(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const data = await AuthService.disableTotp(req.user._id, req.body.code);
+      res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
     }
@@ -85,7 +139,8 @@ export class AuthController {
 
   static async changePassword(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      await AuthService.changePassword(req.user._id, req.body);
+      const currentRefreshToken = req.body?.refreshToken || req.cookies?.refresh_token;
+      await AuthService.changePassword(req.user._id, req.body, currentRefreshToken);
       res.status(200).json({
         success: true,
         message: 'Password updated successfully',
@@ -97,7 +152,8 @@ export class AuthController {
 
   static async deleteMe(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      await AuthService.deleteAccount(req.user._id);
+      await AuthService.deleteAccount(req.user._id, req.body?.password);
+      clearAuthCookies(res);
       res.status(200).json({
         success: true,
         message: 'Account deleted successfully',
@@ -148,14 +204,18 @@ export class AuthController {
 
   static async refresh(req: Request, res: Response, next: NextFunction) {
     try {
-      const { refreshToken } = req.body;
+      // Mobile sends the refresh token in the body; the admin dashboard relies
+      // on the httpOnly cookie instead and never has it in JS to send explicitly.
+      const refreshToken = req.body?.refreshToken || req.cookies?.refresh_token;
+      if (!refreshToken) {
+        throw new AppError('Refresh token is required', 401);
+      }
       const tokens = await AuthService.refreshAccessToken(refreshToken);
 
+      setAuthCookies(res, tokens);
       res.status(200).json({
         success: true,
-        data: {
-          tokens,
-        },
+        data: isCookieOnlyClient(req) ? {} : { tokens },
       });
     } catch (err) {
       next(err);
@@ -227,11 +287,12 @@ export class AuthController {
 
   static async logout(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const { refreshToken } = req.body;
+      const refreshToken = req.body?.refreshToken || req.cookies?.refresh_token;
       // Extract the access token to blacklist it immediately in Redis
-      const accessToken = req.headers.authorization?.split(' ')[1];
+      const accessToken = req.headers.authorization?.split(' ')[1] || req.cookies?.access_token;
       await AuthService.logout(req.user._id, refreshToken, accessToken);
 
+      clearAuthCookies(res);
       res.status(200).json({
         success: true,
         message: 'Logged out successfully',
@@ -263,12 +324,10 @@ export class AuthController {
       const { token } = req.params;
       const { user, tokens } = await AuthService.resetPassword(token, password);
 
+      setAuthCookies(res, tokens);
       res.status(200).json({
         success: true,
-        data: {
-          user,
-          tokens,
-        },
+        data: isCookieOnlyClient(req) ? { user } : { user, tokens },
       });
     } catch (err) {
       next(err);
@@ -359,8 +418,12 @@ export class AuthController {
 
   static async updateDeviceInfo(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const { deviceInfo, appVersion } = req.body;
-      const user = await AuthService.updateDeviceInfo(req.user._id, { deviceInfo, appVersion });
+      const { deviceInfo, appVersion, deviceId } = req.body;
+      const user = await AuthService.updateDeviceInfo(req.user._id, {
+        deviceInfo,
+        appVersion,
+        deviceId,
+      });
 
       res.status(200).json({
         success: true,
@@ -408,7 +471,24 @@ export class AuthController {
   }
 
   static async renderResetPasswordPage(req: Request, res: Response) {
-    const token = req.params.token || (req.query.token as string);
+    const rawToken = req.params.token || (req.query.token as string) || '';
+
+    // Reset tokens are always a 64-char lowercase hex string (crypto.randomBytes(32)
+    // .toString('hex'), see AuthService.forgotPassword). This is a public,
+    // unauthenticated route, and `token` was previously interpolated unescaped into
+    // both an HTML href attribute and an inline <script> string — a crafted token
+    // value could break out of both contexts and execute arbitrary JS on this page.
+    // Validating the expected shape up front removes any character an XSS payload
+    // would need; the HTML-escape below is kept as defense in depth.
+    if (!/^[a-f0-9]{64}$/.test(rawToken)) {
+      return res.status(400).send('Lien de réinitialisation invalide.');
+    }
+    const token = rawToken
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#x27;');
     const deepLink = `kauri://reset-password?token=${token}`;
 
     res.send(`
@@ -430,7 +510,7 @@ export class AuthController {
           <h1>Ouverture de Kauri...</h1>
           <p>Si l'application ne s'ouvre pas, cliquez sur le bouton ci-dessous.</p>
           <a href="${deepLink}" class="btn">Ouvrir l'application</a>
-          <script>
+          <script nonce="${(res as any).locals.cspNonce}">
               window.location.href = "${deepLink}";
               setTimeout(() => {
                   window.location.href = "${deepLink}";

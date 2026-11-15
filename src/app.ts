@@ -1,25 +1,40 @@
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
-import { RedisStore } from 'rate-limit-redis';
+import { createRateLimitStore, createRateLimitHandler } from './utils/rateLimitStore';
 import redis from './config/redis';
-import path from 'path';
+import path from 'node:path';
+import fs from 'node:fs';
 import errorHandler from './middleware/errorHandler';
 import { requestLogger } from './middleware/requestLogger';
+import { localizeErrors } from './middleware/localizeErrors';
+import { requestContext } from './utils/requestContext';
 import { MonitoringService } from './services/monitoringService';
 import routes from './routes';
 import swaggerUi from 'swagger-ui-express';
-import swaggerDocument from '../docs/swagger.json';
 import { currencyMiddleware } from './middleware/currencyMiddleware';
 import mongoose from 'mongoose';
-import os from 'os';
+import crypto from 'node:crypto';
 import { AuthController } from './controllers/authController';
+import { requireClientApiKey } from './middleware/clientApiKey';
+import { rejectNoSqlInjection } from './middleware/noSqlInjection';
+import { safeEqual } from './utils/safeCompare';
 
 // Rate limiting using Redis
 
 const app = express();
+
+// The app runs behind a single reverse proxy (see server.ts's keepAliveTimeout/
+// headersTimeout comment). Without this, Express derives req.ip from the raw
+// socket peer — i.e. the proxy's own address — for every request: the IP-based
+// rate limiters below (and req.ip anywhere else, e.g. session/audit logging)
+// would then treat every real client as the same "IP", letting one abusive
+// client exhaust the shared bucket and locking out everyone else, while also
+// making distributed brute-force attempts invisible to per-IP limiting.
+app.set('trust proxy', 1);
 
 const productionOrigins = [
   'https://kauri-app.com',
@@ -33,17 +48,35 @@ const developmentOrigins = [
   'http://localhost:5173',
 ];
 
-const allowedOrigins =
-  process.env.NODE_ENV === 'production'
-    ? productionOrigins
-    : [...productionOrigins, ...developmentOrigins];
+// ADMIN_URL (required env) and CORS_ALLOWED_ORIGINS (optional, comma-separated)
+// let staging / non-default deployments be allowed without a code change.
+const toOrigin = (value?: string): string | null => {
+  if (!value) return null;
+  try {
+    return new URL(value.trim()).origin;
+  } catch {
+    return null;
+  }
+};
+const envOrigins = [
+  toOrigin(process.env.ADMIN_URL),
+  ...(process.env.CORS_ALLOWED_ORIGINS || '').split(',').map(toOrigin),
+].filter((o): o is string => !!o);
+
+const allowedOrigins = [
+  ...new Set([
+    ...productionOrigins,
+    ...envOrigins,
+    ...(process.env.NODE_ENV === 'production' ? [] : developmentOrigins),
+  ]),
+];
 
 app.use(
   cors({
     origin: allowedOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Client-Type'],
   }),
 );
 
@@ -55,37 +88,53 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   // Use memory store in tests, otherwise use Redis
-  store:
-    process.env.NODE_ENV === 'test'
-      ? undefined
-      : new RedisStore({
-          sendCommand: (...args: string[]) => redis.call(...args),
-        }),
+  store: createRateLimitStore('global'),
+  handler: createRateLimitHandler('global'),
 });
 
 // Middlewares
 
-// Telemetry Proxy: Handle raw binary for OTEL before ANY other middleware (to avoid body parsing or rate limiting issues)
+// Rate limit FIRST: the raw-body telemetry parser below buffers up to its limit
+// per request, so it must never run for a client that is already over budget.
+app.use(limiter);
+
+// Telemetry Proxy: Handle raw binary for OTEL before the JSON/urlencoded parsers.
 // Important: application/x-protobuf must be treated as a Buffer. inflate: false ensures we proxy compressed data as-is.
+// The client key is checked BEFORE the body is read so anonymous callers can't
+// make the server buffer megabytes just to be rejected afterwards.
 app.use(
   '/api/v1/system/telemetry/traces',
+  requireClientApiKey,
   express.raw({
     type: ['application/x-protobuf', 'application/json', '*/*'],
-    limit: '10mb',
+    limit: '2mb',
     inflate: false,
   }),
 );
 
-app.use(limiter);
 app.use(MonitoringService.metricsMiddleware.bind(MonitoringService));
 app.use(requestLogger);
+// Messages d'erreur dans la langue de l'utilisateur (fr par défaut) — voir utils/errorI18n.ts
+app.use(requestContext);
+app.use(localizeErrors);
+// Per-request CSP nonce so the one legitimate inline <script> left on this app
+// (the reset-password deep-link redirect, see AuthController.renderResetPasswordPage)
+// can run without `'unsafe-inline'` in script-src — 'unsafe-inline' disables CSP's
+// XSS mitigation entirely for every route it applies to, and was previously the
+// only thing standing between a token-injection bug on that page and arbitrary
+// script execution (the token is now also strictly validated, see authController.ts).
+app.use((req, res, next) => {
+  res.locals.cspNonce = crypto.randomBytes(16).toString('base64');
+  next();
+});
+
 // Strict CSP for all routes — no unsafe-inline
 app.use(
   helmet({
     contentSecurityPolicy: {
       directives: {
         ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-        'script-src': ["'self'", "'unsafe-inline'"], // Needed for some internal tools and Swagger
+        'script-src': ["'self'", (req: any, res: any) => `'nonce-${res.locals.cspNonce}'`],
         'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         'font-src': ["'self'", 'https://fonts.gstatic.com'],
         'img-src': ["'self'", 'data:', 'https://validator.swagger.io'],
@@ -115,24 +164,70 @@ app.use(
 
 app.get('/favicon.ico', (req, res) => res.status(204).end());
 
-app.use(compression());
+app.use(
+  compression({
+    // La compression bufferise les chunks avant de les envoyer — exactement
+    // ce que le streaming NDJSON du coach (/coach/ask/stream) doit éviter,
+    // sinon le client ne recevrait rien avant la fin (ou un remplissage
+    // tardif du buffer gzip), annulant l'intérêt du streaming.
+    filter: (req, res) => {
+      if (req.path.endsWith('/ask/stream')) return false;
+      return compression.filter(req, res);
+    },
+  }),
+);
 
 app.use(
   express.json({
+    limit: '100kb',
     verify: (req: any, res, buf) => {
-      if (req.originalUrl.includes('/webhooks/stripe')) {
+      // Both webhook signatures must be verified against the exact bytes the
+      // provider signed — re-serializing the parsed JSON (JSON.stringify(req.body))
+      // isn't guaranteed to byte-match the original (key order, number formatting,
+      // unicode escaping can all differ), which would silently reject legitimate
+      // webhook deliveries. See utils/cryptoUtils.ts for the NotchPay side.
+      if (
+        req.originalUrl.includes('/webhooks/stripe') ||
+        req.originalUrl.includes('/webhooks/notchpay')
+      ) {
         req.rawBody = buf;
       }
     },
   }),
 );
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
+
+// Reject MongoDB operator injection / prototype pollution in every body and query
+// string. Provider webhooks are exempt: they are authenticated by signature and a
+// rejected delivery would leave a real payment unconfirmed.
+app.use((req, res, next) =>
+  /\/webhooks\/(stripe|notchpay)/.test(req.originalUrl)
+    ? next()
+    : rejectNoSqlInjection(req, res, next),
+);
+
+// CSRF defence for cookie-authenticated browser sessions (admin dashboard).
+// SameSite=Lax alone is not enough: every *.kauri-app.com subdomain is same-site.
+// Any state-changing request that authenticates ONLY through the auth cookies
+// (no Authorization header) must therefore come from an allowed origin.
+// Mobile (Bearer token) and webhooks (no cookies) are unaffected.
+app.use((req, res, next) => {
+  const safeMethod = ['GET', 'HEAD', 'OPTIONS'].includes(req.method);
+  const usesCookieAuth =
+    !req.headers.authorization && (req.cookies?.access_token || req.cookies?.refresh_token);
+  if (safeMethod || !usesCookieAuth) return next();
+
+  const origin = req.headers.origin || toOrigin(req.headers.referer);
+  if (origin && allowedOrigins.includes(origin)) return next();
+
+  return res.status(403).json({
+    status: 'error',
+    message: 'Origine de la requête non autorisée.',
+  });
+});
+
 app.use(currencyMiddleware);
-
-// Static files
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
-
-import fs from 'fs';
 
 // Routes
 app.get('/', (req, res) => {
@@ -350,18 +445,58 @@ app.get('/', (req, res) => {
 
 app.get('/reset-password/:token?', AuthController.renderResetPasswordPage);
 
+// Digital Asset Links / Apple App Site Association: let the mobile app claim
+// https://<api>/reset-password/* as a verified link (Android App Links, iOS
+// Universal Links) so the reset token never transits the hijackable custom
+// scheme kauri://. Values come from the environment — nothing is hardcoded.
+app.get('/.well-known/assetlinks.json', (req, res) => {
+  const fingerprints = (process.env.ANDROID_SHA256_CERT_FINGERPRINTS || '')
+    .split(',')
+    .map((f) => f.trim())
+    .filter(Boolean);
+  if (fingerprints.length === 0) return res.status(404).json({ message: 'Not configured' });
+  res.json([
+    {
+      relation: ['delegate_permission/common.handle_all_urls'],
+      target: {
+        namespace: 'android_app',
+        package_name: process.env.ANDROID_PACKAGE_NAME || 'cm.tbg.kauri',
+        sha256_cert_fingerprints: fingerprints,
+      },
+    },
+  ]);
+});
+
+app.get('/.well-known/apple-app-site-association', (req, res) => {
+  const appId = (process.env.IOS_APP_ID || '').trim(); // "<TEAM_ID>.cm.tbg.kauri"
+  if (!appId) return res.status(404).json({ message: 'Not configured' });
+  res.json({
+    applinks: {
+      apps: [],
+      details: [{ appID: appId, paths: ['/reset-password/*'] }],
+    },
+  });
+});
+
 app.use('/api/v1', routes);
 
 // Basic Auth Middleware for Documentation
 const swaggerAuth = (req: any, res: any, next: any) => {
-  const auth = {
-    login: process.env.SWAGGER_USER || 'admin',
-    password: process.env.SWAGGER_PASSWORD || 'kauri2026',
-  };
+  // No fallback: if SWAGGER_PASSWORD is not set the server should not have started
+  // (env.ts validates this at boot). If somehow reached, reject safely.
+  const swaggerUser = process.env.SWAGGER_USER;
+  const swaggerPassword = process.env.SWAGGER_PASSWORD;
+  if (!swaggerUser || !swaggerPassword) {
+    return res.status(503).send('Documentation unavailable: server misconfigured.');
+  }
   const b64auth = (req.headers.authorization || '').split(' ')[1] || '';
-  const [login, password] = Buffer.from(b64auth, 'base64').toString().split(':');
+  const decoded = Buffer.from(b64auth, 'base64').toString();
+  // Split on the FIRST colon only: a password may legitimately contain ':'.
+  const sep = decoded.indexOf(':');
+  const login = sep === -1 ? '' : decoded.slice(0, sep);
+  const password = sep === -1 ? '' : decoded.slice(sep + 1);
 
-  if (login && password && login === auth.login && password === auth.password) {
+  if (login && password && safeEqual(login, swaggerUser) && safeEqual(password, swaggerPassword)) {
     return next();
   }
 
@@ -438,18 +573,21 @@ app.get('/api/health', async (req, res) => {
 // Prometheus Metrics Endpoint — protected (IP whitelist or internal bearer token)
 const metricsAuth = (req: any, res: any, next: any) => {
   const metricsToken = process.env.METRICS_TOKEN;
-  const allowedIPs = (process.env.METRICS_ALLOWED_IPS || '127.0.0.1,::1,::ffff:127.0.0.1').split(
-    ',',
-  );
+  const allowedIPs = (process.env.METRICS_ALLOWED_IPS || '127.0.0.1,::1')
+    .split(',')
+    .map((ip: string) => ip.trim().replace(/^::ffff:/, ''))
+    .filter(Boolean);
 
-  const clientIP = (req.ip || req.connection?.remoteAddress || '') as string;
-  const isAllowedIP = allowedIPs.some((ip: string) => clientIP.includes(ip.trim()));
+  // Exact match on the normalised address — a substring test would accept e.g.
+  // any IPv6 address ending in '::1'.
+  const clientIP = ((req.ip || req.socket?.remoteAddress || '') as string).replace(/^::ffff:/, '');
+  const isAllowedIP = allowedIPs.includes(clientIP);
 
   if (isAllowedIP) return next();
 
   if (metricsToken) {
     const authHeader = (req.headers.authorization || '') as string;
-    if (authHeader === `Bearer ${metricsToken}`) return next();
+    if (safeEqual(authHeader, `Bearer ${metricsToken}`)) return next();
     return res.status(403).json({ message: 'Forbidden' });
   }
 
@@ -467,6 +605,14 @@ app.get('/metrics', metricsAuth, MonitoringService.getMetrics.bind(MonitoringSer
 import { PaymentController } from './controllers/paymentController';
 app.get('/payment/success', PaymentController.handlePaymentSuccess);
 app.get('/payment/cancel', PaymentController.handlePaymentCancel);
+
+// 404 Fallback for unhandled API routes (ensures mobile clients always receive clean JSON instead of HTML)
+app.use((req, res, _next) => {
+  res.status(404).json({
+    status: 'error',
+    message: `Route introuvable: ${req.method} ${req.originalUrl}`,
+  });
+});
 
 // Error handling
 app.use(errorHandler);

@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcrypt';
 import User, { IUserDocument } from '../models/User';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
@@ -9,13 +10,62 @@ import { EmailService } from './emailService';
 import { SlackService } from './slackService';
 import { AuditService } from './auditService';
 import Country from '../models/Country';
+import Transaction from '../models/Transaction';
+import Payment from '../models/Payment';
+import TontineMember from '../models/TontineMember';
+import SharedSlot from '../models/SharedSlot';
+import SharedMasterAccount from '../models/SharedMasterAccount';
+import Subscription from '../models/Subscription';
+import Invoice from '../models/Invoice';
+import SupportTicket from '../models/SupportTicket';
+import Budget from '../models/Budget';
+import BudgetParticipant from '../models/BudgetParticipant';
+import SavingGoal from '../models/SavingGoal';
+import GoalParticipant from '../models/GoalParticipant';
+import Notification from '../models/Notification';
+import Investment from '../models/Investment';
+import Conversation from '../models/Conversation';
+import UserChallenge from '../models/UserChallenge';
+import HealthScoreHistory from '../models/HealthScoreHistory';
+import UserActivity from '../models/UserActivity';
+import SessionLog from '../models/SessionLog';
+import ConnectionLog from '../models/ConnectionLog';
+import CountryChangeRequest from '../models/CountryChangeRequest';
+import AIUsage from '../models/AIUsage';
 import redis from '../config/redis';
+import { hashToken } from '../utils/cryptoUtils';
+import {
+  generateBase32Secret,
+  generateOtpauthUrl,
+  verifyTotp,
+  generateBackupCodes,
+} from '../utils/totp';
 
+// jwtid makes every token unique. Without it, two tokens issued for the same user
+// within the same second are byte-identical (same {id, iat, exp}), so two devices
+// logging in together would share ONE refresh token and per-session revocation
+// could not tell them apart.
 const signToken = (id: string, secret: string, expiresIn: any) => {
   return jwt.sign({ id }, secret, {
     expiresIn,
+    jwtid: crypto.randomUUID(),
   });
 };
+
+// The 2FA challenge token is deliberately signed with a DIFFERENT key than
+// real access tokens (derived from, but distinct from, JWT_ACCESS_SECRET) —
+// it proves only "this user got the password right", not "this user is
+// logged in". If it reused JWT_ACCESS_SECRET with the same {id} shape, the
+// `protect` middleware (which just checks {id} against that secret) would
+// accept it as a full session before TOTP was ever verified.
+const getTotpChallengeSecret = () =>
+  crypto
+    .createHash('sha256')
+    .update(`${process.env.JWT_ACCESS_SECRET}:totp-challenge`)
+    .digest('hex');
+
+const signTotpChallengeToken = (id: string) =>
+  jwt.sign({ id, purpose: '2fa_challenge' }, getTotpChallengeSecret(), { expiresIn: '2m' });
 
 export const createSendToken = (user: IUserDocument) => {
   const accessToken = signToken(
@@ -34,6 +84,9 @@ export const createSendToken = (user: IUserDocument) => {
 };
 
 export class AuthService {
+  private static readonly LOGIN_LOCKOUT_THRESHOLD = 10;
+  private static readonly LOGIN_LOCKOUT_WINDOW_SECONDS = 15 * 60;
+
   static async register(userData: any) {
     const existingUser = await User.findOne({ email: userData.email });
     if (existingUser) {
@@ -48,19 +101,29 @@ export class AuthService {
       throw new AppError("Ce pays n'est pas encore supporté.", 400);
     }
 
-    const newUser = await User.create({
-      ...userData,
-      country: countryCode,
-      currency: country ? country.currency : 'XAF',
-    });
-
     // Generate verification token
     const verificationToken = crypto.randomBytes(32).toString('hex');
     const hashedToken = crypto.createHash('sha256').update(verificationToken).digest('hex');
 
-    newUser.emailVerificationToken = hashedToken;
-    newUser.emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-    await (newUser as any).save({ validateBeforeSave: false });
+    // Whitelist explicitly: never spread the raw request body into `new User(...)`.
+    // Fields like role/walletBalance/kycLevel/isEmailVerified are valid schema
+    // paths — spreading an untrusted object would let a caller set them directly.
+    const newUser = new User({
+      email: userData.email,
+      password: userData.password,
+      firstName: userData.firstName,
+      lastName: userData.lastName,
+      phone: userData.phone,
+      country: countryCode,
+      currency: country ? country.currency : 'XAF',
+      emailVerificationToken: hashedToken,
+      emailVerificationExpires: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+    });
+
+    const tokens = createSendToken(newUser);
+    newUser.refreshToken = hashToken(tokens.refreshToken);
+
+    await newUser.save({ validateBeforeSave: false });
 
     // Send verification email
     try {
@@ -68,12 +131,6 @@ export class AuthService {
     } catch (err) {
       logger.error('Failed to send verification email');
     }
-
-    const tokens = createSendToken(newUser);
-
-    // Store refresh token in user
-    newUser.refreshToken = tokens.refreshToken;
-    await (newUser as any).save({ validateBeforeSave: false });
 
     // Audit Log for registration
     AuditService.record({
@@ -87,7 +144,8 @@ export class AuthService {
 
     // Notify Slack
     SlackService.sendNotification(
-      `👤 *New User Registered*\n*Email*: ${newUser.email}\n*Country*: ${newUser.country}\n*Currency*: ${newUser.currency}`,
+      // User ID only — Slack is not scoped as a store for user PII (see login).
+      `👤 *New User Registered*\n*User ID*: ${newUser._id}\n*Country*: ${newUser.country}\n*Currency*: ${newUser.currency}`,
     );
 
     const platform = userData.deviceInfo?.platform || 'unknown';
@@ -117,7 +175,11 @@ export class AuthService {
         user = await User.findOne({ email });
       } else if (!user && phone_number) {
         // Try to find by phone if UID fails
-        user = await User.findOne({ phone: phone_number });
+        // Only match accounts whose phone was proven (isPhoneVerified). The
+        // `phone` field set at email registration is unverified free text:
+        // matching on it would let an attacker pre-register a victim's number
+        // with their own password and inherit the victim's later OTP login.
+        user = await User.findOne({ phone: phone_number, isPhoneVerified: true });
       }
 
       if (!user) {
@@ -165,6 +227,9 @@ export class AuthService {
           metadata: { email: user.email, provider: 'firebase' },
         });
       } else {
+        if (!user.isActive) {
+          throw new AppError('This user account is deactivated.', 403, 'ACCOUNT_DEACTIVATED');
+        }
         // Update user info
         user.firebaseUid = uid;
         if (phone_number && !user.phone) {
@@ -176,7 +241,7 @@ export class AuthService {
           user.isEmailVerified = true;
         }
         await (user as any).save({ validateBeforeSave: false });
-        logger.info(`User logged in via Firebase Auth: ${user.email || user.phone}`);
+        logger.info(`User logged in via Firebase Auth: ${user._id}`);
       }
 
       // 4) Generate backend tokens
@@ -216,6 +281,7 @@ export class AuthService {
         options.platform,
       );
       logger.error(`Error in Firebase Auth: ${error.message}`);
+      if (error instanceof AppError && error.statusCode === 403) throw error;
       throw new AppError('Invalid or expired Firebase token', 401);
     }
   }
@@ -252,21 +318,209 @@ export class AuthService {
       throw new AppError('Please provide email and password', 400);
     }
 
-    // 2) Check if user exists && password is correct
-    const user = await User.findOne({ email }).select('+password');
-    if (!user || !(await user.comparePassword(password))) {
+    // Per-account lockout, independent of source IP: authLimiter on the route
+    // only throttles per-IP, so a distributed attacker spreading attempts across
+    // many IPs could still brute-force one specific account's password. Fails
+    // open on a Redis error (consistent with idempotency.ts) rather than
+    // blocking every login on an infrastructure outage.
+    const lockKey = `login_attempts:${email.toLowerCase()}`;
+    try {
+      const attempts = await redis.get(lockKey);
+      if (attempts && parseInt(attempts, 10) >= AuthService.LOGIN_LOCKOUT_THRESHOLD) {
+        throw new AppError(
+          'Trop de tentatives échouées sur ce compte. Réessayez dans quelques minutes.',
+          429,
+        );
+      }
+    } catch (err: any) {
+      if (err instanceof AppError) throw err;
+      logger.error(`Login lockout check Redis error: ${err.message}`);
+    }
+
+    // 2) Check if user exists && password is correct with constant-time comparison (F17)
+    const DUMMY_HASH = '$2b$12$CwTycUXWue0Thq9StjUM0uJ8kTeC3W7Kd9tf59WsdG6b/H2fBb0lu';
+    const user = await User.findOne({ email }).select('+password +security.totpEnabled');
+    const passwordOk = await bcrypt.compare(password, user?.password || DUMMY_HASH);
+
+    if (!user || !passwordOk) {
       if (user) {
+        // Alert by user ID, not email/PII — this alert may flow into Slack, which
+        // isn't scoped as a store for user PII.
         SlackService.sendNotification(
-          `🔐 *Security Alert: Failed Login*\n*User*: ${email}\n*Reason*: Incorrect password\n*Time*: ${new Date().toISOString()}`,
+          `🔐 *Security Alert: Failed Login*\n*User ID*: ${user._id}\n*Reason*: Incorrect password\n*Time*: ${new Date().toISOString()}`,
         );
       }
       MonitoringService.recordAuthFailure(
         user ? 'wrong_password' : 'user_not_found',
         user?.country,
       );
+      (async () => {
+        try {
+          await redis
+            .multi()
+            .incr(lockKey)
+            .expire(lockKey, AuthService.LOGIN_LOCKOUT_WINDOW_SECONDS)
+            .exec();
+        } catch (err: any) {
+          logger.error(`Login lockout increment Redis error: ${err.message}`);
+        }
+      })();
       throw new AppError('Incorrect email or password', 401);
     }
 
+    // Successful login clears the counter for this account.
+    redis
+      .del(lockKey)
+      .catch((err: any) => logger.error(`Login lockout clear Redis error: ${err.message}`));
+
+    // 2FA is opt-in and currently only ever surfaced to admin/support
+    // accounts (via the admin dashboard's Settings page) — never forced on
+    // regular consumer-app users, who share this same login endpoint.
+    if ((user.role === 'admin' || user.role === 'support') && user.security?.totpEnabled) {
+      return { requiresTotp: true, challengeToken: signTotpChallengeToken(user._id.toString()) };
+    }
+
+    return AuthService.completeLogin(user, sessionData);
+  }
+
+  /** Verifies a TOTP/backup code against a login challenge and finishes the login. */
+  static async verifyTotpAndLogin(challengeToken: string, code: string, sessionData?: any) {
+    if (!challengeToken || typeof code !== 'string' || !code) {
+      throw new AppError('Code de vérification requis', 400);
+    }
+
+    let decoded: { id: string; purpose: string };
+    try {
+      decoded = jwt.verify(challengeToken, getTotpChallengeSecret(), {
+        algorithms: ['HS256'],
+      }) as { id: string; purpose: string };
+    } catch {
+      throw new AppError('Session de vérification expirée, veuillez vous reconnecter', 401);
+    }
+    if (decoded.purpose !== '2fa_challenge') {
+      throw new AppError('Jeton de vérification invalide', 401);
+    }
+
+    const user = await User.findById(decoded.id).select(
+      '+security.totpSecret +security.totpEnabled +security.backupCodeHashes',
+    );
+    if (!user || !user.security?.totpEnabled || !user.security.totpSecret) {
+      throw new AppError("La double authentification n'est plus disponible pour ce compte", 400);
+    }
+
+    let usedBackupCode = false;
+    if (!verifyTotp(user.security.totpSecret, code)) {
+      const hashes = user.security.backupCodeHashes || [];
+      let matchedIndex = -1;
+      for (let i = 0; i < hashes.length; i++) {
+        // eslint-disable-next-line no-await-in-loop
+        if (await bcrypt.compare(code.toUpperCase(), hashes[i])) {
+          matchedIndex = i;
+          break;
+        }
+      }
+      if (matchedIndex === -1) {
+        AuditService.record({
+          userId: user._id as any,
+          action: 'LOGIN_2FA_FAILED',
+          resource: 'USER',
+          status: 'failure',
+        });
+        throw new AppError('Code de vérification invalide', 401);
+      }
+      usedBackupCode = true;
+      user.security.backupCodeHashes.splice(matchedIndex, 1);
+      await (user as any).save({ validateBeforeSave: false });
+    }
+
+    const result = await AuthService.completeLogin(user, sessionData);
+    AuditService.record({
+      userId: user._id as any,
+      action: usedBackupCode ? 'LOGIN_2FA_BACKUP_CODE_USED' : 'LOGIN_2FA_SUCCESS',
+      resource: 'USER',
+      status: 'success',
+    });
+    return result;
+  }
+
+  static async setupTotp(userId: string) {
+    const user = await User.findById(userId);
+    if (!user) throw new AppError('Utilisateur non trouvé', 404);
+
+    const secret = generateBase32Secret();
+    user.security = { ...(user.security as any), totpTempSecret: secret };
+    await (user as any).save({ validateBeforeSave: false });
+
+    return { secret, otpauthUrl: generateOtpauthUrl(secret, user.email) };
+  }
+
+  static async enableTotp(userId: string, code: string) {
+    const user = await User.findById(userId).select('+security.totpTempSecret');
+    if (!user?.security?.totpTempSecret) {
+      throw new AppError('Aucune configuration 2FA en cours — relancez la configuration.', 400);
+    }
+    if (!verifyTotp(user.security.totpTempSecret, code)) {
+      throw new AppError('Code invalide', 400);
+    }
+
+    const backupCodes = generateBackupCodes();
+    const backupCodeHashes = await Promise.all(backupCodes.map((c) => bcrypt.hash(c, 10)));
+
+    user.security.totpSecret = user.security.totpTempSecret;
+    user.security.totpTempSecret = undefined;
+    user.security.totpEnabled = true;
+    user.security.backupCodeHashes = backupCodeHashes;
+    await (user as any).save({ validateBeforeSave: false });
+
+    AuditService.record({
+      userId: user._id as any,
+      action: '2FA_ENABLED',
+      resource: 'USER',
+      status: 'success',
+    });
+    return { backupCodes };
+  }
+
+  static async disableTotp(userId: string, code: string) {
+    if (typeof code !== 'string' || !code) {
+      throw new AppError('Code de vérification requis', 400);
+    }
+    const user = await User.findById(userId).select(
+      '+security.totpSecret +security.backupCodeHashes',
+    );
+    if (!user?.security?.totpEnabled) {
+      throw new AppError("La double authentification n'est pas activée", 400);
+    }
+
+    let valid = user.security.totpSecret ? verifyTotp(user.security.totpSecret, code) : false;
+    if (!valid) {
+      for (const hash of user.security.backupCodeHashes || []) {
+        // eslint-disable-next-line no-await-in-loop
+        if (await bcrypt.compare(code.toUpperCase(), hash)) {
+          valid = true;
+          break;
+        }
+      }
+    }
+    if (!valid) throw new AppError('Code invalide', 400);
+
+    user.security.totpEnabled = false;
+    user.security.totpSecret = undefined;
+    user.security.totpTempSecret = undefined;
+    user.security.backupCodeHashes = [];
+    await (user as any).save({ validateBeforeSave: false });
+
+    AuditService.record({
+      userId: user._id as any,
+      action: '2FA_DISABLED',
+      resource: 'USER',
+      status: 'success',
+    });
+    return { success: true };
+  }
+
+  /** Shared tail of both plain-password login and post-2FA login: issues tokens, records the session, audits. */
+  private static async completeLogin(user: IUserDocument, sessionData?: any) {
     // 3) Generate tokens
     const tokens = createSendToken(user);
 
@@ -275,11 +529,16 @@ export class AuthService {
       deviceId: sessionData?.deviceId,
       deviceInfo: sessionData?.deviceInfo,
       appVersion: sessionData?.appVersion,
-      refreshToken: tokens.refreshToken,
+      refreshToken: hashToken(tokens.refreshToken),
       lastActive: new Date(),
       createdAt: new Date(),
       ipAddress: sessionData?.ipAddress,
     };
+
+    const MAX_ACTIVE_SESSIONS = 3;
+    if (!user.sessions) {
+      user.sessions = [];
+    }
 
     if (sessionData?.deviceId) {
       // Update existing session for this device or add new
@@ -291,6 +550,18 @@ export class AuthService {
       }
     } else {
       user.sessions.push(session);
+    }
+
+    // Sécurité Fintech : Limitation stricte à 3 sessions simultanées maximum
+    if (user.sessions.length > MAX_ACTIVE_SESSIONS) {
+      user.sessions.sort(
+        (a, b) =>
+          new Date(a.lastActive || a.createdAt).getTime() -
+          new Date(b.lastActive || b.createdAt).getTime(),
+      );
+      while (user.sessions.length > MAX_ACTIVE_SESSIONS) {
+        user.sessions.shift();
+      }
     }
 
     // Update legacy fields
@@ -319,17 +590,23 @@ export class AuthService {
     }
 
     try {
-      // 1) Verify refresh token
-      const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET!) as { id: string };
+      // 1) Verify refresh token (algorithm pinned — see middleware/auth.ts for why)
+      const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET!, {
+        algorithms: ['HS256'],
+      }) as { id: string };
 
       // 2) Check if user still exists and HAS this session
       const user = await User.findById(decoded.id);
       if (!user) {
         throw new AppError('User no longer exists', 401);
       }
+      if (!user.isActive) {
+        throw new AppError('This user account is deactivated.', 401);
+      }
 
-      const sessionIndex = user.sessions.findIndex((s) => s.refreshToken === refreshToken);
-      if (sessionIndex === -1 && user.refreshToken !== refreshToken) {
+      const incomingHash = hashToken(refreshToken);
+      const sessionIndex = user.sessions.findIndex((s) => s.refreshToken === incomingHash);
+      if (sessionIndex === -1 && user.refreshToken !== incomingHash) {
         throw new AppError('Invalid or expired refresh token', 401);
       }
 
@@ -338,12 +615,12 @@ export class AuthService {
 
       // 4) Update session
       if (sessionIndex !== -1) {
-        user.sessions[sessionIndex].refreshToken = tokens.refreshToken;
+        user.sessions[sessionIndex].refreshToken = hashToken(tokens.refreshToken);
         user.sessions[sessionIndex].lastActive = new Date();
       }
 
       // Update legacy fields
-      user.refreshToken = tokens.refreshToken;
+      user.refreshToken = hashToken(tokens.refreshToken);
       await (user as any).save({ validateBeforeSave: false });
 
       MonitoringService.recordAuthEvent('refresh', 'jwt', 'success', user.country);
@@ -359,9 +636,10 @@ export class AuthService {
   static async logout(userId: string, refreshToken?: string, accessToken?: string) {
     const user = await User.findById(userId);
     if (user) {
+      const incomingHash = refreshToken ? hashToken(refreshToken) : undefined;
       // Find the session to record duration
-      const sessionIndex = refreshToken
-        ? user.sessions.findIndex((s) => s.refreshToken === refreshToken)
+      const sessionIndex = incomingHash
+        ? user.sessions.findIndex((s) => s.refreshToken === incomingHash)
         : -1;
 
       if (sessionIndex !== -1) {
@@ -378,7 +656,7 @@ export class AuthService {
       } else {
         // Fallback for legacy logout
         MonitoringService.recordAuthEvent('logout', 'jwt', 'success', user.country, 'unknown');
-        if (user.refreshToken === refreshToken) user.refreshToken = undefined;
+        if (incomingHash && user.refreshToken === incomingHash) user.refreshToken = undefined;
       }
 
       await (user as any).save({ validateBeforeSave: false });
@@ -469,13 +747,16 @@ export class AuthService {
     user.password = password;
     user.passwordResetToken = undefined;
     user.passwordResetExpires = undefined;
+    // A reset means the old credential may be compromised: every refresh token
+    // issued before it (all devices) must stop working immediately.
+    user.sessions = [] as any;
 
     MonitoringService.recordAuthEvent('reset_password', 'email', 'success', user.country);
 
     await user.save();
 
     const tokens = createSendToken(user);
-    user.refreshToken = tokens.refreshToken;
+    user.refreshToken = hashToken(tokens.refreshToken);
     await (user as any).save({ validateBeforeSave: false });
 
     return { user, tokens };
@@ -510,9 +791,11 @@ export class AuthService {
   static async resendVerificationEmail(email: string) {
     if (!email) throw new AppError('Email requis', 400);
 
+    // Identical silent response whether the account exists / is already
+    // verified or not — this endpoint is unauthenticated and must not reveal
+    // which emails are registered.
     const user = await User.findOne({ email });
-    if (!user) throw new AppError('Utilisateur non trouvé', 404);
-    if (user.isEmailVerified) throw new AppError('Ce compte est déjà vérifié', 400);
+    if (!user || user.isEmailVerified) return;
 
     const verificationToken = crypto.randomBytes(32).toString('hex');
     const hashedToken = crypto.createHash('sha256').update(verificationToken).digest('hex');
@@ -536,26 +819,90 @@ export class AuthService {
     const user = await User.findById(userId);
     if (!user) throw new AppError('User not found', 404);
 
-    const allowedFields = [
-      'firstName',
-      'lastName',
-      'country',
-      'currency',
-      'language',
-      'preferences',
-      'phone',
-      'monthlyIncome',
-    ];
+    // This save runs with validateBeforeSave:false (legacy documents may not
+    // satisfy the full schema), so every accepted field is validated by hand
+    // here — otherwise arbitrary strings/types would be persisted as-is.
+    const isCleanName = (v: unknown): v is string =>
+      typeof v === 'string' && v.trim().length >= 1 && v.trim().length <= 60;
 
-    if (updateData.firstName) user.firstName = updateData.firstName;
-    if (updateData.lastName) user.lastName = updateData.lastName;
-    if (updateData.country) user.country = updateData.country;
-    if (updateData.currency) user.currency = updateData.currency;
-    if (updateData.language) user.language = updateData.language;
-    if (updateData.phone) user.phone = updateData.phone;
-    if (updateData.monthlyIncome !== undefined) user.monthlyIncome = updateData.monthlyIncome;
+    if (updateData.firstName !== undefined) {
+      if (!isCleanName(updateData.firstName)) throw new AppError('Prénom invalide', 400);
+      user.firstName = updateData.firstName.trim();
+    }
+    if (updateData.lastName !== undefined) {
+      if (!isCleanName(updateData.lastName)) throw new AppError('Nom invalide', 400);
+      user.lastName = updateData.lastName.trim();
+    }
+
+    // Country (and the currency derived from it) is governed by the admin-approved
+    // country-change request flow (POST /auth/request-country-change). Echoing the
+    // current value is harmless; any actual change is refused here.
+    if (updateData.country && String(updateData.country).toUpperCase() !== user.country) {
+      throw new AppError(
+        'Le changement de pays nécessite une demande de validation (request-country-change).',
+        400,
+      );
+    }
+    if (updateData.currency && String(updateData.currency).toUpperCase() !== user.currency) {
+      throw new AppError(
+        'La devise est déterminée par votre pays et ne peut pas être modifiée directement.',
+        400,
+      );
+    }
+
+    if (updateData.language !== undefined) {
+      if (!['fr', 'en'].includes(updateData.language)) {
+        throw new AppError('Langue non supportée', 400);
+      }
+      user.language = updateData.language;
+    }
+
+    if (updateData.phone !== undefined && updateData.phone !== '') {
+      if (typeof updateData.phone !== 'string' || !/^\+?[0-9 ()-]{6,20}$/.test(updateData.phone)) {
+        throw new AppError('Numéro de téléphone invalide', 400);
+      }
+      if (updateData.phone !== user.phone) {
+        user.phone = updateData.phone;
+        // A changed number is unverified until proven again via link-phone.
+        user.isPhoneVerified = false;
+      }
+    }
+
+    if (updateData.monthlyIncome !== undefined) {
+      const income = Number(updateData.monthlyIncome);
+      if (!Number.isFinite(income) || income < 0 || income > 1e12) {
+        throw new AppError('Revenu mensuel invalide', 400);
+      }
+      user.monthlyIncome = income;
+    }
 
     if (updateData.preferences) {
+      const incoming = updateData.preferences;
+      const TONES = [
+        'encouraging',
+        'firm',
+        'balanced',
+        'billionaire_mentor',
+        'strict_accountant',
+        'kind_auntie',
+      ];
+      const FREQUENCIES = ['high', 'medium', 'low'];
+      if (incoming.coachTone !== undefined && !TONES.includes(incoming.coachTone)) {
+        throw new AppError('Ton du coach invalide', 400);
+      }
+      if (
+        incoming.notificationFrequency !== undefined &&
+        !FREQUENCIES.includes(incoming.notificationFrequency)
+      ) {
+        throw new AppError('Fréquence de notification invalide', 400);
+      }
+      if (incoming.budgetAlertThreshold !== undefined) {
+        const t = Number(incoming.budgetAlertThreshold);
+        if (!Number.isFinite(t) || t < 0 || t > 100) {
+          throw new AppError("Seuil d'alerte budget invalide", 400);
+        }
+      }
+
       // Get current values or defaults
       const currentPrefs = user.preferences || {
         coachTone: 'balanced',
@@ -564,21 +911,15 @@ export class AuthService {
       };
 
       // Merge only provided values
-      const newPrefs = {
-        coachTone: updateData.preferences.coachTone || currentPrefs.coachTone || 'balanced',
+      user.preferences = {
+        coachTone: incoming.coachTone || currentPrefs.coachTone || 'balanced',
         notificationFrequency:
-          updateData.preferences.notificationFrequency ||
-          currentPrefs.notificationFrequency ||
-          'medium',
+          incoming.notificationFrequency || currentPrefs.notificationFrequency || 'medium',
         budgetAlertThreshold:
-          updateData.preferences.budgetAlertThreshold !== undefined
-            ? updateData.preferences.budgetAlertThreshold
-            : currentPrefs.budgetAlertThreshold !== undefined
-              ? currentPrefs.budgetAlertThreshold
-              : 80,
+          incoming.budgetAlertThreshold === undefined
+            ? (currentPrefs.budgetAlertThreshold ?? 80)
+            : Number(incoming.budgetAlertThreshold),
       };
-
-      user.preferences = newPrefs;
       user.markModified('preferences');
     }
 
@@ -586,7 +927,7 @@ export class AuthService {
     return user;
   }
 
-  static async changePassword(userId: string, data: any) {
+  static async changePassword(userId: string, data: any, currentRefreshToken?: string) {
     const { currentPassword, newPassword } = data;
     if (!currentPassword || !newPassword) {
       throw new AppError('Please provide current and new password', 400);
@@ -598,6 +939,23 @@ export class AuthService {
     }
 
     user.password = newPassword;
+    // Sign out every other device: keep only the session the request came from
+    // (identified by its refresh token, when the client supplied it).
+    let keepHash = currentRefreshToken ? hashToken(currentRefreshToken) : undefined;
+    if (!keepHash) {
+      // Client didn't tell us which session is the current one: the most
+      // recently active session is the best available proxy for this device.
+      const latest = [...(user.sessions || [])].sort(
+        (x: any, y: any) =>
+          new Date(y.lastActive || y.createdAt).getTime() -
+          new Date(x.lastActive || x.createdAt).getTime(),
+      )[0] as any;
+      keepHash = latest?.refreshToken;
+    }
+    user.sessions = (user.sessions || []).filter(
+      (s: any) => keepHash && s.refreshToken === keepHash,
+    ) as any;
+    if (!keepHash || user.refreshToken !== keepHash) user.refreshToken = undefined;
     await user.save();
 
     MonitoringService.recordSensitiveAction('password_change', 'success');
@@ -605,9 +963,26 @@ export class AuthService {
     return true;
   }
 
-  static async deleteAccount(userId: string) {
-    const user = await User.findById(userId);
+  static async deleteAccount(userId: string, password?: string) {
+    const user = await User.findById(userId).select('+password');
     if (!user) throw new AppError('User not found', 404);
+
+    // Irreversible action: a stolen access token alone must not be enough.
+    // Password accounts re-prove knowledge of the password; accounts created
+    // through Firebase (Google/Apple/phone) have none, their Firebase session is
+    // the credential.
+    if (user.password) {
+      if (typeof password !== 'string' || !password) {
+        throw new AppError(
+          'Mot de passe requis pour supprimer le compte',
+          400,
+          'PASSWORD_REQUIRED',
+        );
+      }
+      if (!(await user.comparePassword(password))) {
+        throw new AppError('Mot de passe incorrect', 401);
+      }
+    }
 
     // Prevent deletion if user has a positive wallet balance
     if (user.walletBalance > 0) {
@@ -617,15 +992,40 @@ export class AuthService {
       );
     }
 
-    // Cascade delete all user data (RGPD right to erasure)
-    const { default: Transaction } = await import('../models/Transaction');
-    const { default: Payment } = await import('../models/Payment');
-    const { default: AuditLog } = await import('../models/AuditLog');
+    // Cascade delete user data (RGPD right to erasure) while preserving AML financial records (F10, F20)
 
     await Promise.all([
-      Transaction.deleteMany({ userId }),
-      Payment.deleteMany({ userId }),
-      AuditLog.deleteMany({ userId }),
+      // Données personnelles non financières : effacées (RGPD art. 17)
+      Budget.deleteMany({ userId }),
+      BudgetParticipant.deleteMany({ userId }),
+      SavingGoal.deleteMany({ userId }),
+      GoalParticipant.deleteMany({ userId }),
+      Notification.deleteMany({ userId }),
+      Investment.deleteMany({ userId }),
+      Conversation.deleteMany({ userId }),
+      UserChallenge.deleteMany({ userId }),
+      HealthScoreHistory.deleteMany({ userId }),
+      UserActivity.deleteMany({ userId }),
+      SessionLog.deleteMany({ userId }),
+      ConnectionLog.deleteMany({ userId }),
+      CountryChangeRequest.deleteMany({ userId }),
+      // Statistiques d'usage IA conservées sans lien avec la personne
+      AIUsage.updateMany({ userId }, { $set: { userId: null } }),
+      // Transactions manuelles supprimées, transactions financières réelles anonymisées
+      Transaction.deleteMany({ userId, paymentMethod: 'cash' }),
+      Transaction.updateMany(
+        { userId },
+        { $set: { userId: null, description: 'Anonymized User Transaction' } },
+      ),
+      // Rétention AML légale de 5 ans : Payment anonymisé (détachement de userId et PII)
+      Payment.updateMany({ userId }, { $set: { userId: null, 'metadata.anonymized': true } }),
+      // Nettoyage des collections associées (droit à l'oubli complet)
+      TontineMember.deleteMany({ userId }),
+      SharedSlot.deleteMany({ resellerId: userId }),
+      SharedMasterAccount.deleteMany({ resellerId: userId }),
+      Subscription.deleteMany({ userId }),
+      Invoice.deleteMany({ userId }),
+      SupportTicket.deleteMany({ userId }),
       User.findByIdAndDelete(userId),
     ]);
 
@@ -636,7 +1036,20 @@ export class AuthService {
   static async getSessions(userId: string) {
     const user = await User.findById(userId).select('sessions');
     if (!user) throw new AppError('User not found', 404);
-    return user.sessions || [];
+    // The client's SessionModel reads flat `deviceName`/`os` fields — the
+    // stored shape is nested under `deviceInfo` (see the `sessions` schema),
+    // so it must be flattened here rather than returned as-is, which
+    // previously left every session showing as "Unknown Device"/"Unknown OS"
+    // even when deviceInfo was actually populated.
+    return (user.sessions || []).map((s: any) => ({
+      _id: s._id,
+      deviceName: s.deviceInfo?.model || null,
+      os: s.deviceInfo?.os
+        ? `${s.deviceInfo.os}${s.deviceInfo.osVersion ? ' ' + s.deviceInfo.osVersion : ''}`
+        : null,
+      ipAddress: s.ipAddress || null,
+      lastActive: s.lastActive,
+    }));
   }
 
   static async revokeSession(userId: string, sessionId: string) {
@@ -665,6 +1078,8 @@ export class AuthService {
 
     user.sessions = [];
     user.refreshToken = undefined;
+    // Also kill every device's still-valid access token (15 min otherwise).
+    user.authInvalidatedAt = new Date(Date.now() - 1000);
     await (user as any).save({ validateBeforeSave: false });
 
     AuditService.record({
@@ -677,10 +1092,17 @@ export class AuthService {
     return true;
   }
 
-  static async updateDeviceInfo(userId: string, data: { deviceInfo: any; appVersion: string }) {
+  static async updateDeviceInfo(
+    userId: string,
+    data: { deviceInfo: any; appVersion: string; deviceId?: string },
+  ) {
     const user = await User.findByIdAndUpdate(
       userId,
       {
+        // Legacy top-level fields — kept for compatibility with anything
+        // still reading them, but GET /auth/sessions never did: it reads the
+        // `sessions[]` subdocuments below, which this call previously never
+        // touched, leaving every session's deviceInfo permanently empty.
         deviceInfo: data.deviceInfo,
         appVersion: data.appVersion,
       },
@@ -688,6 +1110,29 @@ export class AuthService {
     );
 
     if (!user) throw new AppError('User not found', 404);
+
+    if (user.sessions && user.sessions.length > 0) {
+      // Prefer an exact deviceId match (set at login for the password flow);
+      // social/phone/biometric-refresh logins don't send one yet, so fall
+      // back to the most recently created session — this call always fires
+      // right after a fresh login (see AuthBloc), so at that moment the
+      // newest session is reliably this device's.
+      let target = data.deviceId
+        ? user.sessions.find((s: any) => s.deviceId === data.deviceId)
+        : undefined;
+      if (!target) {
+        target = [...user.sessions].sort(
+          (a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        )[0];
+      }
+      if (target) {
+        (target as any).deviceInfo = data.deviceInfo;
+        (target as any).appVersion = data.appVersion;
+        if (data.deviceId) (target as any).deviceId = data.deviceId;
+        await (user as any).save({ validateBeforeSave: false });
+      }
+    }
+
     return user;
   }
 }

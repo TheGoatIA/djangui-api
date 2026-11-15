@@ -55,6 +55,12 @@ const userChallengeSchema = new Schema<IUserChallenge>(
 );
 
 userChallengeSchema.index({ userId: 1, status: 1 });
+// One ACTIVE participation per user and challenge: the "already joined" check
+// alone let two simultaneous joins both create an active participation.
+userChallengeSchema.index(
+  { userId: 1, challengeId: 1 },
+  { unique: true, partialFilterExpression: { status: 'active' } },
+);
 
 const UserChallenge = mongoose.model<IUserChallenge>('UserChallenge', userChallengeSchema);
 

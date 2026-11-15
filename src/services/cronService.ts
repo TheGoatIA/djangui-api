@@ -4,7 +4,6 @@ import Budget from '../models/Budget';
 import Transaction from '../models/Transaction';
 import { NotificationService } from './notificationService';
 import logger from '../utils/logger';
-import mongoose from 'mongoose';
 import { DbBackupService } from './dbBackupService';
 import { ReportService } from './reportService';
 import { EmailService } from './emailService';
@@ -12,6 +11,7 @@ import { ArchiveService } from './archiveService';
 import { ForecastService } from './ai/forecastService';
 import { CoachService } from './ai/coachService';
 import SavingGoal from '../models/SavingGoal';
+import { GoalService } from './goalService';
 import Tontine from '../models/Tontine';
 import TontineMember from '../models/TontineMember';
 import TontineContribution from '../models/TontineContribution';
@@ -21,8 +21,14 @@ import { SubscriptionService } from './subscriptionService';
 import { SlackService } from './slackService';
 import { MonitoringService } from './monitoringService';
 import { ReconciliationService } from './reconciliationService';
+import { NotchPayReconciliationService } from './notchpayReconciliationService';
+import { PaymentPollingService } from './paymentPollingService';
 import { FinancialAlertService } from './financialAlertService';
+import { CurrencyService } from './currencyService';
 import UserActivity from '../models/UserActivity';
+import SharedSlot from '../models/SharedSlot';
+import { ResellerNotificationDispatcher } from './resellerNotificationService';
+import { ChallengeService } from './challengeService';
 
 export class CronService {
   /**
@@ -65,6 +71,15 @@ export class CronService {
       this.runMonitored('integrity_check', () => this.runFinancialIntegrityCheck()),
     );
 
+    // Daily at 03:15 AM: Currency exchange rate staleness check (USD/CAD are
+    // hand-set approximations, not fixed pegs — see CurrencyService)
+    cron.schedule(
+      '15 3 * * *',
+      this.runMonitored('currency_rate_staleness_check', async () => {
+        CurrencyService.checkRatesStaleness();
+      }),
+    );
+
     // Monthly on the 1st at 04:00 AM: Data Archiving
     cron.schedule(
       '0 4 1 * *',
@@ -93,6 +108,19 @@ export class CronService {
     cron.schedule(
       '0 8 * * *',
       this.runMonitored('goal_progress_reminder', () => this.sendDailyGoalProgress()),
+    );
+
+    // Daily at 08:30 AM: Goal Deadline Reminders (J-7 / J-1)
+    cron.schedule(
+      '30 8 * * *',
+      this.runMonitored('goal_deadline_reminder', () => this.sendGoalDeadlineReminders()),
+    );
+
+    // Daily at 07:00 AM: Goal Surplus Sweep Suggestions (autoSaveRules.enableSurplus,
+    // déclenché au autoSaveRules.dayOfMonth de chaque objectif)
+    cron.schedule(
+      '0 7 * * *',
+      this.runMonitored('goal_surplus_suggestion', () => this.sendGoalSurplusSuggestions()),
     );
 
     // Daily at 11:00 AM: Personal AI Financial Advice
@@ -143,10 +171,30 @@ export class CronService {
       this.runMonitored('economy_pulse', () => this.updateEconomyMetrics()),
     );
 
+    // Daily at 08:30 AM: Reseller Slot Reminders (J-3, J-0, Overdue)
+    cron.schedule(
+      '30 8 * * *',
+      this.runMonitored('reseller_slot_reminders', () => this.checkResellerSlotReminders()),
+    );
+
+    // Daily at 00:15 AM: Reseller Slot Status Transitions (due_soon -> overdue -> blocked)
+    cron.schedule(
+      '15 0 * * *',
+      this.runMonitored('reseller_slot_status_update', () => this.updateResellerSlotStatuses()),
+    );
+
     // Daily at 02:00 AM: Tontine Auto-Debits
     cron.schedule(
       '0 2 * * *',
       this.runMonitored('tontine_auto_debit', () => TontineService.processAutoDebits()),
+    );
+
+    // Daily at 03:00 AM: Tontine Turn Rotation (pays out the current turn's winner and
+    // advances currentTurn once its deadline + grace period has elapsed). Runs after
+    // auto-debits so last-minute contributions are recorded before payout is computed.
+    cron.schedule(
+      '0 3 * * *',
+      this.runMonitored('tontine_turn_rotation', () => this.rotateEligibleTontineTurns()),
     );
 
     // Daily at 04:00 AM: Global Reconciliation Check
@@ -157,10 +205,38 @@ export class CronService {
       }),
     );
 
+    // Every minute: confirm pending Stripe/NotchPay payments by asking the provider
+    // directly. This is what completes payments when provider webhooks are not
+    // configured (and a safety net when they are: completePayment is idempotent).
+    cron.schedule(
+      '* * * * *',
+      this.runMonitored('payment_polling', async () => {
+        await PaymentPollingService.pollPendingPayments();
+      }),
+    );
+
+    // Every 30 minutes: check pending payments/transfers against NotchPay's
+    // own records directly (not just Kauri's internal ledger against itself,
+    // which is all the job above does) — self-heals a missed webhook instead
+    // of leaving a payment stuck pending or a failed withdrawal unrefunded.
+    cron.schedule(
+      '*/30 * * * *',
+      this.runMonitored('notchpay_reconciliation', async () => {
+        await NotchPayReconciliationService.reconcile();
+      }),
+    );
+
     // Every 5 min: Update production metrics gauges (pending tx, daily volume, success rate)
     cron.schedule(
       '*/5 * * * *',
       this.runMonitored('metrics_gauge_update', () => this.updateProductionMetricsGauges()),
+    );
+
+    cron.schedule(
+      '0 5 * * *',
+      this.runMonitored('challenge_expiration', async () => {
+        await ChallengeService.resolveExpiredChallenges();
+      }),
     );
 
     // Run once on startup
@@ -291,31 +367,35 @@ export class CronService {
       const users = await User.find({ isActive: true });
 
       for (const user of users) {
-        const stats = await Transaction.aggregate([
-          {
-            $match: {
-              userId: user._id,
-              date: { $gte: lastWeek },
-              type: 'expense',
+        try {
+          const stats = await Transaction.aggregate([
+            {
+              $match: {
+                userId: user._id,
+                date: { $gte: lastWeek },
+                type: 'expense',
+              },
             },
-          },
-          {
-            $group: {
-              _id: null,
-              total: { $sum: '$amount' },
+            {
+              $group: {
+                _id: null,
+                total: { $sum: '$amount' },
+              },
             },
-          },
-        ]);
+          ]);
 
-        const totalSpent = stats.length > 0 ? stats[0].total : 0;
+          const totalSpent = stats.length > 0 ? stats[0].total : 0;
 
-        await NotificationService.sendToUser(user._id.toString(), {
-          title: '',
-          body: '',
-          translationKey: 'WEEKLY_SUMMARY',
-          translationData: { amount: totalSpent, currency: user.currency },
-          data: { type: 'WEEKLY_SUMMARY' },
-        });
+          await NotificationService.sendToUser(user._id.toString(), {
+            title: '',
+            body: '',
+            translationKey: 'WEEKLY_SUMMARY',
+            translationData: { amount: totalSpent, currency: user.currency },
+            data: { type: 'WEEKLY_SUMMARY' },
+          });
+        } catch (err: any) {
+          logger.error(`Weekly summary failed for user ${user._id}: ${err.message}`);
+        }
       }
       logger.info('Weekly summaries sent');
     } catch (error: any) {
@@ -338,36 +418,72 @@ export class CronService {
       const users = await User.find({ isActive: true });
 
       for (const user of users) {
-        const existingBudget = await Budget.findOne({
-          userId: user._id,
-          'period.month': month,
-          'period.year': year,
-        });
-        if (existingBudget) continue;
-
-        const lastBudget = await Budget.findOne({
-          userId: user._id,
-          'period.month': prevMonth,
-          'period.year': prevYear,
-        });
-
-        if (lastBudget) {
-          // Clone previous budget categories but reset spent
-          const newCategories = lastBudget.categories.map((cat) => ({
-            name: cat.name,
-            allocated: cat.allocated,
-            spent: 0,
-            percentage: 0,
-          }));
-
-          await Budget.create({
+        try {
+          const existingBudget = await Budget.findOne({
             userId: user._id,
-            period: { type: 'monthly', month, year },
-            categories: newCategories,
-            totalAllocated: lastBudget.totalAllocated,
-            totalSpent: 0,
-            status: 'active',
+            'period.month': month,
+            'period.year': year,
           });
+          if (existingBudget) continue;
+
+          const lastBudget = await Budget.findOne({
+            userId: user._id,
+            'period.month': prevMonth,
+            'period.year': prevYear,
+          });
+
+          if (lastBudget) {
+            // Suggestion d'objectif (Feature 4) : jamais de débit automatique du
+            // wallet — juste une notification proposant à l'utilisateur de
+            // contribuer lui-même le surplus non dépensé à l'objectif lié.
+            // La contribution réelle ne se produit que si l'utilisateur confirme
+            // via le flux GoalService.addContribution déjà existant.
+            const surplus = lastBudget.totalAllocated - lastBudget.totalSpent;
+            if (lastBudget.linkedGoalId && lastBudget.status !== 'exceeded' && surplus > 0) {
+              const goal = await SavingGoal.findOne({
+                _id: lastBudget.linkedGoalId,
+                userId: user._id,
+              }).select('name');
+              if (goal) {
+                NotificationService.sendToUser(user._id.toString(), {
+                  title: '',
+                  body: '',
+                  translationKey: 'BUDGET_SURPLUS_GOAL_SUGGESTION',
+                  translationData: { amount: surplus, goalName: goal.name },
+                  data: {
+                    type: 'budget_surplus_goal_suggestion',
+                    goalId: goal._id.toString(),
+                    amount: String(surplus),
+                  },
+                }).catch((err: any) =>
+                  logger.error(`Budget surplus suggestion notification error: ${err.message}`),
+                );
+              }
+            }
+
+            // Clone previous budget categories but reset spent
+            const newCategories = lastBudget.categories.map((cat) => ({
+              name: cat.name,
+              allocated: cat.allocated,
+              spent: 0,
+              percentage: 0,
+            }));
+
+            await Budget.create({
+              userId: user._id,
+              period: { type: 'monthly', month, year },
+              categories: newCategories,
+              totalAllocated: lastBudget.totalAllocated,
+              totalSpent: 0,
+              status: 'active',
+              linkedGoalId: lastBudget.linkedGoalId,
+              // Cloned amounts are already in the previous budget's currency —
+              // never assume XAF, that mislabels a non-XAF user's rollover budget.
+              currency: lastBudget.currency || user.currency || 'XAF',
+            });
+          }
+        } catch (err: any) {
+          logger.error(`Monthly budget init failed for user ${user._id}: ${err.message}`);
         }
       }
       logger.info('Monthly budgets initialized');
@@ -497,17 +613,21 @@ export class CronService {
       const inactiveUsers = await User.find({ isActive: true });
 
       for (const user of inactiveUsers) {
-        const lastTransaction = await Transaction.findOne({ userId: user._id })
-          .sort({ date: -1 })
-          .select('date');
+        try {
+          const lastTransaction = await Transaction.findOne({ userId: user._id })
+            .sort({ date: -1 })
+            .select('date');
 
-        if (!lastTransaction || lastTransaction.date < threeDaysAgo) {
-          await NotificationService.sendToUser(user._id.toString(), {
-            title: '',
-            body: '',
-            translationKey: 'INACTIVITY_REMINDER',
-            data: { type: 'INACTIVITY_REMINDER' },
-          });
+          if (!lastTransaction || lastTransaction.date < threeDaysAgo) {
+            await NotificationService.sendToUser(user._id.toString(), {
+              title: '',
+              body: '',
+              translationKey: 'INACTIVITY_REMINDER',
+              data: { type: 'INACTIVITY_REMINDER' },
+            });
+          }
+        } catch (err: any) {
+          logger.error(`Inactivity check failed for user ${user._id}: ${err.message}`);
         }
       }
       logger.info('Inactivity check completed');
@@ -544,13 +664,16 @@ export class CronService {
       const activeGoals = await SavingGoal.find({ status: 'active', progress: { $lt: 100 } });
 
       for (const goal of activeGoals) {
-        await NotificationService.sendToUser(goal.userId.toString(), {
-          title: '',
-          body: '',
-          translationKey: 'GOAL_DAILY_PROGRESS',
-          translationData: { goalName: goal.name, progress: goal.progress.toFixed(1) },
-          data: { type: 'GOAL_DAILY_PROGRESS', goalId: goal._id.toString() },
-        });
+        const recipients = await GoalService.getNotifyRecipients(goal);
+        for (const uid of recipients) {
+          await NotificationService.sendToUser(uid, {
+            title: '',
+            body: '',
+            translationKey: 'GOAL_DAILY_PROGRESS',
+            translationData: { goalName: goal.name, progress: goal.progress.toFixed(1) },
+            data: { type: 'GOAL_DAILY_PROGRESS', goalId: goal._id.toString() },
+          });
+        }
       }
       logger.info(`Daily goal progress sent for ${activeGoals.length} goals`);
     } catch (error: any) {
@@ -559,28 +682,150 @@ export class CronService {
   }
 
   /**
+   * Remind users when an active goal's deadline is approaching (J-7 and J-1).
+   * An exact day-count match (rather than "less than N days") makes each
+   * reminder fire exactly once per goal, with no need to track "already
+   * notified" state.
+   */
+  private static async sendGoalDeadlineReminders() {
+    try {
+      const REMINDER_DAYS = [7, 1];
+      let totalSent = 0;
+
+      for (const daysBefore of REMINDER_DAYS) {
+        const targetDate = new Date();
+        targetDate.setDate(targetDate.getDate() + daysBefore);
+        const startOfDay = new Date(targetDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(targetDate);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        const goals = await SavingGoal.find({
+          status: 'active',
+          progress: { $lt: 100 },
+          deadline: { $gte: startOfDay, $lte: endOfDay },
+        });
+
+        for (const goal of goals) {
+          const recipients = await GoalService.getNotifyRecipients(goal);
+          for (const uid of recipients) {
+            await NotificationService.sendToUser(uid, {
+              title: '',
+              body: '',
+              translationKey: 'GOAL_DEADLINE_APPROACHING',
+              translationData: { goalName: goal.name, days: String(daysBefore) },
+              data: { type: 'GOAL_DEADLINE_APPROACHING', goalId: goal._id.toString() },
+            });
+            totalSent++;
+          }
+        }
+      }
+      logger.info(`Goal deadline reminders sent: ${totalSent}`);
+    } catch (error: any) {
+      logger.error(`Error in sendGoalDeadlineReminders job: ${error.message}`);
+    }
+  }
+
+  /**
+   * Suggère de verser le surplus (revenus - dépenses) du mois précédent
+   * dans chaque objectif ayant activé `autoSaveRules.enableSurplus`, le jour
+   * choisi par l'utilisateur (`autoSaveRules.dayOfMonth`). Comme pour
+   * BUDGET_SURPLUS_GOAL_SUGGESTION, jamais de débit automatique du wallet —
+   * seulement une notification ; la contribution réelle passe toujours par
+   * GoalService.addContribution, à l'initiative de l'utilisateur.
+   */
+  private static async sendGoalSurplusSuggestions() {
+    try {
+      const today = new Date().getDate();
+      const goals = await SavingGoal.find({
+        status: 'active',
+        'autoSaveRules.enableSurplus': true,
+        'autoSaveRules.dayOfMonth': today,
+      });
+      if (goals.length === 0) return;
+
+      const now = new Date();
+      const month = now.getMonth() + 1;
+      const year = now.getFullYear();
+      const prevMonth = month === 1 ? 12 : month - 1;
+      const prevYear = month === 1 ? year - 1 : year;
+      const periodStart = new Date(prevYear, prevMonth - 1, 1);
+      const periodEnd = new Date(prevYear, prevMonth, 1); // exclusive
+
+      let sent = 0;
+      for (const goal of goals) {
+        const totals = await Transaction.aggregate([
+          {
+            $match: {
+              userId: goal.userId,
+              type: { $in: ['income', 'expense'] },
+              status: 'completed',
+              date: { $gte: periodStart, $lt: periodEnd },
+            },
+          },
+          { $group: { _id: '$type', total: { $sum: '$amount' } } },
+        ]);
+        const income = totals.find((t: any) => t._id === 'income')?.total || 0;
+        const expense = totals.find((t: any) => t._id === 'expense')?.total || 0;
+        const surplus = income - expense;
+
+        if (surplus > 0) {
+          const recipients = await GoalService.getNotifyRecipients(goal);
+          for (const uid of recipients) {
+            await NotificationService.sendToUser(uid, {
+              title: '',
+              body: '',
+              translationKey: 'GOAL_SURPLUS_SUGGESTION',
+              translationData: { amount: surplus, currency: goal.currency, goalName: goal.name },
+              data: {
+                type: 'goal_surplus_suggestion',
+                goalId: goal._id.toString(),
+                amount: String(surplus),
+              },
+            });
+          }
+          sent++;
+        }
+      }
+      logger.info(`Goal surplus suggestions sent: ${sent}`);
+    } catch (error: any) {
+      logger.error(`Error in sendGoalSurplusSuggestions job: ${error.message}`);
+    }
+  }
+
+  /**
    * Proactive overdraft prevention based on forecast (Premium Only)
    */
   private static async runOverdraftPrevention() {
     try {
+      const now = new Date();
       const premiumUsers = await User.find({
-        'subscription.plan': 'premium',
-        'subscription.status': 'active',
+        'subscription.plan': { $in: ['premium', 'business'] },
+        'subscription.status': { $in: ['active', 'cancelled'] },
+        $or: [
+          { 'subscription.endDate': { $gte: now } },
+          { 'subscription.endDate': { $exists: false }, 'subscription.status': 'active' },
+          { 'subscription.endDate': null, 'subscription.status': 'active' },
+        ],
         isActive: true,
       });
 
       for (const user of premiumUsers) {
-        // We call the service to get the forecast
-        const result = await ForecastService.getBalanceForecast(user._id.toString());
+        try {
+          // We call the service to get the forecast
+          const result = await ForecastService.getBalanceForecast(user._id.toString());
 
-        if (result && result.criticalAlert) {
-          await NotificationService.sendToUser(user._id.toString(), {
-            title: '',
-            body: '',
-            translationKey: 'TREASURY_ALERT',
-            translationData: { firstName: user.firstName, alert: result.criticalAlert },
-            data: { type: 'OVERDRAFT_PREVENTION' },
-          });
+          if (result?.criticalAlert) {
+            await NotificationService.sendToUser(user._id.toString(), {
+              title: '',
+              body: '',
+              translationKey: 'TREASURY_ALERT',
+              translationData: { firstName: user.firstName, alert: result.criticalAlert },
+              data: { type: 'OVERDRAFT_PREVENTION' },
+            });
+          }
+        } catch (err: any) {
+          logger.error(`Overdraft prevention failed for user ${user._id}: ${err.message}`);
         }
       }
       logger.info(`Overdraft prevention job completed for ${premiumUsers.length} premium users`);
@@ -648,46 +893,98 @@ export class CronService {
       tomorrow.setDate(tomorrow.getDate() + 1);
 
       for (const tontine of activeTontines) {
-        // Calculate deadline for current turn
-        const deadline = TontineService.getTurnDeadline(
-          tontine.startDate,
-          tontine.frequency,
-          tontine.currentTurn,
-        );
+        try {
+          // Calculate deadline for current turn
+          const deadline = TontineService.getTurnDeadline(
+            tontine.startDate,
+            tontine.frequency,
+            tontine.currentTurn,
+          );
 
-        // If deadline is tomorrow (within 24-48h window for once-a-day check)
-        const diffHours = (deadline.getTime() - new Date().getTime()) / 3600000;
+          // If deadline is tomorrow (within 24-48h window for once-a-day check)
+          const diffHours = (deadline.getTime() - Date.now()) / 3600000;
 
-        if (diffHours > 0 && diffHours <= 24) {
-          // Find members who haven't paid for this turn
-          const members = await TontineMember.find({
-            tontineId: tontine._id,
-            invitationStatus: 'accepted',
-          });
-
-          for (const member of members) {
-            const hasPaid = await TontineContribution.findOne({
+          if (diffHours > 0 && diffHours <= 24) {
+            // Find members who haven't paid for this turn
+            const members = await TontineMember.find({
               tontineId: tontine._id,
-              memberId: member._id,
-              turnIndex: tontine.currentTurn,
-              validationStatus: { $in: ['ai_validated', 'completed'] },
+              invitationStatus: 'accepted',
             });
 
-            if (!hasPaid) {
-              await NotificationService.sendToUser(member.userId.toString(), {
-                title: '',
-                body: '',
-                translationKey: 'TONTINE_PAYMENT_REMINDER',
-                translationData: { turn: tontine.currentTurn, tontineName: tontine.name },
-                data: { tontineId: tontine._id.toString(), type: 'TONTINE_REMINDER' },
-              });
+            for (const member of members) {
+              try {
+                const hasPaid = await TontineContribution.findOne({
+                  tontineId: tontine._id,
+                  memberId: member._id,
+                  turnIndex: tontine.currentTurn,
+                  validationStatus: { $in: ['ai_validated', 'completed'] },
+                });
+
+                if (!hasPaid) {
+                  await NotificationService.sendToUser(member.userId.toString(), {
+                    title: '',
+                    body: '',
+                    translationKey: 'TONTINE_PAYMENT_REMINDER',
+                    translationData: { turn: tontine.currentTurn, tontineName: tontine.name },
+                    data: { tontineId: tontine._id.toString(), type: 'TONTINE_REMINDER' },
+                  });
+                }
+              } catch (err: any) {
+                logger.error(
+                  `Tontine reminder failed for member ${member._id} (tontine ${tontine._id}): ${err.message}`,
+                );
+              }
             }
           }
+        } catch (err: any) {
+          logger.error(`Tontine reminder check failed for tontine ${tontine._id}: ${err.message}`);
         }
       }
       logger.info(`Tontine reminders check completed for ${activeTontines.length} active tontines`);
     } catch (error: any) {
       logger.error(`Error in sendTontineReminders job: ${error.message}`);
+    }
+  }
+
+  /**
+   * Rotate the turn (and trigger the winner's payout) for every active tontine whose
+   * current turn deadline + grace period has already elapsed. Without this job,
+   * `currentTurn` never advances and `TontineService.rotateTurn` is dead code — turns
+   * would never actually complete or pay out in production.
+   */
+  private static async rotateEligibleTontineTurns() {
+    let rotatedCount = 0;
+    try {
+      const activeTontines = await Tontine.find({ status: 'active' });
+
+      for (const tontine of activeTontines) {
+        const deadline = TontineService.getTurnDeadline(
+          tontine.startDate,
+          tontine.frequency,
+          tontine.currentTurn,
+        );
+        const graceDeadline = new Date(
+          deadline.getTime() + tontine.sanctions.gracePeriodHours * 3600000,
+        );
+
+        if (new Date() > graceDeadline) {
+          try {
+            // Pénalise les absents avant de figer le pot du tour, sinon un
+            // membre qui n'a jamais payé échapperait à toute sanction (V-04).
+            await TontineService.applyAbsenceFees(tontine._id.toString());
+            await TontineService.rotateTurn(tontine._id.toString());
+            rotatedCount++;
+          } catch (err: any) {
+            logger.error(`Tontine turn rotation failed for ${tontine._id}: ${err.message}`);
+          }
+        }
+      }
+
+      logger.info(
+        `Tontine turn rotation check completed. Rotated ${rotatedCount}/${activeTontines.length} active tontines.`,
+      );
+    } catch (error: any) {
+      logger.error(`Error in rotateEligibleTontineTurns job: ${error.message}`);
     }
   }
 
@@ -852,6 +1149,93 @@ export class CronService {
       );
     } catch (error: any) {
       logger.error(`Error in updateTontineHealthMetrics job: ${error.message}`);
+    }
+  }
+
+  /**
+   * Check upcoming and overdue reseller slots and dispatch reminders
+   */
+  private static async checkResellerSlotReminders() {
+    try {
+      const now = new Date();
+      const in3DaysStart = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000);
+      const in3DaysEnd = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+
+      // 1. J-3 Reminders
+      const jMinus3Slots = await SharedSlot.find({
+        status: { $in: ['active', 'due_soon'] },
+        currentPeriodEnd: { $gte: in3DaysStart, $lte: in3DaysEnd },
+        autoSendReminders: true,
+      });
+
+      for (const slot of jMinus3Slots) {
+        await ResellerNotificationDispatcher.dispatch(slot, 'J-3');
+      }
+
+      // 2. J-0 Reminders
+      const jZeroSlots = await SharedSlot.find({
+        status: { $in: ['active', 'due_soon'] },
+        currentPeriodEnd: { $gte: todayStart, $lte: todayEnd },
+        autoSendReminders: true,
+      });
+
+      for (const slot of jZeroSlots) {
+        await ResellerNotificationDispatcher.dispatch(slot, 'J-0');
+      }
+
+      logger.info(
+        `Reseller slot reminders check completed: ${jMinus3Slots.length} (J-3), ${jZeroSlots.length} (J-0)`,
+      );
+    } catch (error: any) {
+      logger.error(`Error in checkResellerSlotReminders job: ${error.message}`);
+    }
+  }
+
+  /**
+   * Daily transition of slot statuses (active -> due_soon -> overdue -> blocked)
+   */
+  private static async updateResellerSlotStatuses() {
+    try {
+      const now = new Date();
+      const in3Days = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+
+      // 1. Mark due_soon
+      await SharedSlot.updateMany(
+        {
+          status: 'active',
+          currentPeriodEnd: { $lte: in3Days, $gt: now },
+        },
+        { $set: { status: 'due_soon' } },
+      );
+
+      // 2. Mark overdue
+      await SharedSlot.updateMany(
+        {
+          status: { $in: ['active', 'due_soon'] },
+          currentPeriodEnd: { $lte: now },
+        },
+        { $set: { status: 'overdue' } },
+      );
+
+      // 3. Mark blocked (if grace period exceeded)
+      const overdueSlots = await SharedSlot.find({ status: 'overdue' });
+      for (const slot of overdueSlots) {
+        const graceDeadline = new Date(
+          new Date(slot.currentPeriodEnd).getTime() +
+            (slot.gracePeriodDays || 2) * 24 * 60 * 60 * 1000,
+        );
+        if (now > graceDeadline) {
+          slot.status = 'blocked';
+          await slot.save();
+        }
+      }
+
+      logger.info('Reseller slot statuses updated successfully');
+    } catch (error: any) {
+      logger.error(`Error in updateResellerSlotStatuses job: ${error.message}`);
     }
   }
 }

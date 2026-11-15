@@ -1,13 +1,50 @@
 import { Request, Response, NextFunction } from 'express';
 import stripe from '../config/stripe';
 import { PaymentService } from '../services/paymentService';
+import { WalletService } from '../services/walletService';
+import Transaction from '../models/Transaction';
+import Payment from '../models/Payment';
 import { notchpayConfig } from '../config/notchpay';
 import { verifyNotchPaySignature } from '../utils/cryptoUtils';
+import { SlackService } from '../services/slackService';
 import logger from '../utils/logger';
+import { MonitoringService } from '../services/monitoringService';
+
+// A sustained forgery attempt shouldn't spam Slack on every single request —
+// this just keeps the alert to roughly once per 5-minute window per process,
+// which is enough to get a human's attention without becoming its own noise.
+let lastInvalidSignatureAlertAt = 0;
+const INVALID_SIGNATURE_ALERT_COOLDOWN_MS = 5 * 60 * 1000;
+
+/**
+ * Resolves OUR internal reference from a NotchPay webhook payload.
+ *
+ * Verified against the live NotchPay sandbox: in both payment and transfer
+ * objects, `reference` is NotchPay's OWN id (`trx.…` / `trf.…`) and the
+ * reference we sent is echoed back as `merchant_reference` (our `metadata`
+ * is NOT echoed). Reading `payload.reference` therefore never matched any of
+ * our documents: every payment confirmation 404'd (silently dropped, only the
+ * polling job credited deposits) and failed transfers were never refunded.
+ * When `merchant_reference` is absent we fall back to the provider id we
+ * stored as `externalReference`.
+ */
+async function resolveNotchPayReference(
+  payload: any,
+  model: { findOne: (q: any) => any },
+): Promise<string | undefined> {
+  if (typeof payload?.merchant_reference === 'string' && payload.merchant_reference) {
+    return payload.merchant_reference;
+  }
+  if (typeof payload?.metadata?.reference === 'string') return payload.metadata.reference;
+  if (typeof payload?.reference !== 'string' || !payload.reference) return undefined;
+  const byProviderId = await model.findOne({ externalReference: payload.reference }).lean();
+  return byProviderId?.reference || payload.reference;
+}
 
 export class WebhookController {
   static async stripeWebhook(req: Request, res: Response, next: NextFunction) {
     const sig = req.headers['stripe-signature'] as string;
+    const startedAt = Date.now();
     let event;
 
     try {
@@ -18,90 +55,222 @@ export class WebhookController {
       );
     } catch (err: any) {
       logger.error(`Stripe Webhook Error: ${err.message}`);
+      MonitoringService.recordWebhookReceived('stripe', 'unknown', 'invalid_signature');
+      MonitoringService.observeWebhookProcessingDuration(
+        'stripe',
+        'unknown',
+        (Date.now() - startedAt) / 1000,
+      );
       return res.status(400).send(`Webhook Error: ${err.message}`);
     }
 
+    let status: 'processed' | 'failed' = 'processed';
+    // Only transient failures are worth a provider retry: a payment we don't
+    // know about (404) will never succeed no matter how often it is redelivered.
+    let retryable = false;
+
     if (event.type === 'checkout.session.completed') {
       const session = event.data.object as any;
-      const reference = session.metadata.reference;
+      const reference = session?.metadata?.reference;
 
-      try {
-        await PaymentService.completePayment(reference, session.id);
-      } catch (err: any) {
-        logger.error(`Error completing payment via Stripe Webhook: ${err.message}`);
+      const foreignApp = session?.metadata?.app && session.metadata.app !== 'kauri';
+      if (!reference || foreignApp) {
+        // Session d'une autre app du même compte Stripe (ou sans référence) : rien à faire ici.
+        logger.warn(`Stripe webhook ${event.id}: checkout session without metadata.reference`);
+      } else {
+        try {
+          await PaymentService.completePayment(reference, session.id);
+        } catch (err: any) {
+          logger.error(`Error completing payment via Stripe Webhook: ${err.message}`);
+          status = 'failed';
+          retryable = err?.statusCode !== 404;
+        }
       }
     }
 
+    MonitoringService.recordWebhookReceived('stripe', event.type, status);
+    MonitoringService.observeWebhookProcessingDuration(
+      'stripe',
+      event.type,
+      (Date.now() - startedAt) / 1000,
+    );
+
+    // Non-2xx makes Stripe redeliver (with backoff) — completePayment is idempotent,
+    // so a retry can't double-credit. Answering 200 here would silently lose the
+    // payment completion after a transient DB/network error.
+    if (retryable) {
+      return res.status(500).json({ received: false });
+    }
     res.json({ received: true });
   }
 
   static async notchpayWebhook(req: Request, res: Response, next: NextFunction) {
-    const signature = req.headers['x-notchpay-signature'] as string;
+    // NotchPay envoie la signature dans « x-notch-signature » (doc officielle).
+    // L'API lisait « x-notchpay-signature » : en production, 102 notifications sur
+    // 102 ont été refusées (401) et aucun paiement n'était confirmé par webhook.
+    // L'ancien nom reste accepté par compatibilité.
+    const signature = (req.headers['x-notch-signature'] ||
+      req.headers['x-notchpay-signature']) as string;
+    const startedAt = Date.now();
 
-    if (!verifyNotchPaySignature(req.body, signature, notchpayConfig.webhookSecret || '')) {
+    // Verify against the exact raw bytes NotchPay signed (captured by app.ts's
+    // express.json `verify` hook), not a re-serialization of the parsed body —
+    // see cryptoUtils.verifyNotchPaySignature for why that matters.
+    const rawBody = (req as any).rawBody || req.body;
+    if (!verifyNotchPaySignature(rawBody, signature, notchpayConfig.webhookSecret || '')) {
       logger.warn('Invalid NotchPay webhook signature received');
+      MonitoringService.recordWebhookReceived('notchpay', 'unknown', 'invalid_signature');
+      MonitoringService.observeWebhookProcessingDuration(
+        'notchpay',
+        'unknown',
+        (Date.now() - startedAt) / 1000,
+      );
+
+      const now = Date.now();
+      if (now - lastInvalidSignatureAlertAt > INVALID_SIGNATURE_ALERT_COOLDOWN_MS) {
+        lastInvalidSignatureAlertAt = now;
+        SlackService.sendSecurity(
+          `🔒 *Signature de webhook NotchPay invalide détectée* — tentative de falsification possible, ou secret webhook mal configuré. IP: ${req.ip}`,
+        ).catch((e: any) => logger.error(`Slack alert error: ${e.message}`));
+      }
+
       return res.status(401).json({ message: 'Invalid signature' });
     }
 
-    const data = req.body;
+    const data = req.body || {};
+    const payload = data.data || {};
+    let status: 'processed' | 'failed' = 'processed';
+    let retryable = false;
 
     if (data.event === 'payment.complete') {
-      const reference = data.data.reference;
-      try {
-        await PaymentService.completePayment(reference);
-      } catch (err: any) {
-        logger.error(`Error completing payment via NotchPay Webhook: ${err.message}`);
+      const reference = await resolveNotchPayReference(payload, Payment);
+      if (!reference) {
+        logger.warn('NotchPay payment.complete webhook without reference — ignored');
+      } else {
+        try {
+          await PaymentService.completePayment(reference);
+        } catch (err: any) {
+          logger.error(`Error completing payment via NotchPay Webhook: ${err.message}`);
+          status = 'failed';
+          retryable = err?.statusCode !== 404;
+        }
       }
     } else if (data.event === 'transfer.complete') {
-      // Le transfert est fini, on pourrait mettre à jour le statut de la transaction
-      // mais WalletService.executeTransaction l'a déjà mis en completed lors de l'initiation MoMo
-      // car NotchPay Transfers est quasi instantané.
-      // Ici on peut envoyer une notification de succès finale.
-      logger.info(`Transfer ${data.data.reference} completed successfully`);
-    } else if (data.event === 'transfer.failed') {
-      const reference = data.data.reference;
-      logger.error(`Transfer ${reference} failed: ${data.data.reason}`);
-
-      const { WalletService } = require('../services/walletService');
-      const Transaction = require('../models/Transaction').default;
-
+      // Le transfert est confirmé par NotchPay — marquer la transaction en base comme confirmée.
+      // Note: WalletService.executeTransaction crée déjà la transaction en 'completed' lors de l'initiation
+      // (Mobile Money est quasi-instantané), mais ce webhook permet de tracer la confirmation opérateur
+      // et de notifier l'utilisateur du succès final.
+      const reference = await resolveNotchPayReference(payload, Transaction);
       try {
-        // Atomic status transition: only process refund if status transitions from non-failed to failed.
-        // findOneAndUpdate with $ne guard prevents race conditions from duplicate webhook deliveries.
-        const originalTx = await Transaction.findOneAndUpdate(
-          { reference, status: { $ne: 'failed' } },
+        // Guard: Mongoose drops an undefined filter value, so { reference: undefined }
+        // would match ANY transaction.
+        if (!reference) throw Object.assign(new Error('missing reference'), { skip: true });
+        const tx = await Transaction.findOneAndUpdate(
+          { reference, category: 'withdrawal' },
           {
             $set: {
-              status: 'failed',
-              'metadata.failureReason': data.data.reason,
-              'metadata.failedAt': new Date().toISOString(),
+              status: 'completed',
+              'metadata.notchpayConfirmedAt': new Date().toISOString(),
+              'metadata.notchpayStatus': 'confirmed',
             },
           },
-          { new: false }, // Return the OLD doc to confirm it was actually updated
+          { new: true },
         );
-
-        if (!originalTx) {
-          // Either not found or already failed — idempotent, no action needed
-          logger.warn(`Transfer ${reference}: skipping refund (already processed or not found)`);
+        if (tx) {
+          logger.info(`Transfer ${reference} confirmed by NotchPay operator.`);
         } else {
-          // Atomically claimed the transition — safe to issue refund exactly once
-          await WalletService.executeTransaction({
-            userId: originalTx.userId.toString(),
-            amount: originalTx.amount,
-            type: 'deposit',
-            description: `Remboursement transfert échoué (${data.data.reason || 'Erreur opérateur'})`,
-            paymentMethod: 'wallet',
-            metadata: { originalReference: reference },
-          });
+          logger.warn(`Transfer ${reference}: transaction not found for confirmation webhook.`);
+        }
+      } catch (confirmErr: any) {
+        logger.error(`Failed to confirm transfer ${reference}: ${confirmErr.message}`);
+        status = 'failed';
+        retryable = !confirmErr.skip;
+      }
+    } else if (data.event === 'transfer.failed') {
+      // Our reference comes back as merchant_reference (see resolveNotchPayReference).
+      const reference = await resolveNotchPayReference(payload, Transaction);
+      logger.error(`Transfer ${reference} failed: ${payload.reason}`);
+
+      try {
+        // Without a reference the filter below would match ANY transaction and refund it.
+        if (!reference) throw Object.assign(new Error('missing reference'), { skip: true });
+        // The status flip and the refund commit TOGETHER. They used to be two
+        // separate writes: when the refund failed, the transaction was already
+        // 'failed', so every redelivery hit the `$ne: 'failed'` guard and skipped
+        // the refund — the "retry" could never succeed and the user stayed debited.
+        const refunded = await WalletService.runInTransaction(async (session) => {
+          // Atomic claim (`$ne` guard) — duplicate deliveries refund at most once.
+          const originalTx = await Transaction.findOneAndUpdate(
+            // Only a withdrawal can be refunded — never a deposit or another debit type.
+            { reference, category: 'withdrawal', status: { $ne: 'failed' } },
+            {
+              $set: {
+                status: 'failed',
+                'metadata.failureReason': payload.reason,
+                'metadata.failedAt': new Date().toISOString(),
+              },
+            },
+            { new: false, session }, // OLD doc: proves this call made the transition
+          );
+          if (!originalTx) return false;
+
+          // Refund amount + fees: the wallet was debited for the full amount
+          // (withdrawal + Kauri fee) while `.amount` stores only the net amount —
+          // refunding `.amount` alone would keep the fee on a transfer that never happened.
+          await WalletService.executeTransaction(
+            {
+              userId: originalTx.userId.toString(),
+              amount: originalTx.amount + (originalTx.fees || 0),
+              type: 'deposit',
+              description: `Remboursement transfert échoué (${payload.reason || 'Erreur opérateur'})`,
+              paymentMethod: 'wallet',
+              metadata: { originalReference: reference },
+            },
+            { session },
+          );
+          return true;
+        });
+
+        if (refunded) {
           logger.info(`Refund processed for failed transfer: ${reference}`);
+        } else {
+          logger.warn(`Transfer ${reference}: skipping refund (already processed or not found)`);
         }
       } catch (refundErr: any) {
+        if (refundErr.skip) {
+          logger.warn('NotchPay transfer.failed webhook without reference — ignored');
+          status = 'failed';
+          MonitoringService.recordWebhookReceived('notchpay', data.event, status);
+          return res.json({ received: true });
+        }
         logger.error(
           `Critical: Failed to process refund for transfer ${reference}: ${refundErr.message}`,
         );
+        // This previously was a log line only, despite the word "Critical" —
+        // a user is left with a debited wallet and no refund until someone
+        // notices. The NotchPay reconciliation job will retry this on its
+        // next run, but a human should be told immediately, not just hope
+        // the next cron pass fixes it silently.
+        SlackService.sendAlert(
+          `🚨 *Échec du remboursement automatique* pour le transfert \`${reference}\`\n*Erreur*: ${refundErr.message}\nLe portefeuille de l'utilisateur reste débité — vérification manuelle requise (la réconciliation NotchPay retentera automatiquement, mais ne pas attendre sans vérifier).`,
+        ).catch((e: any) => logger.error(`Slack alert error: ${e.message}`));
+        status = 'failed';
+        retryable = true;
       }
     }
 
+    MonitoringService.recordWebhookReceived('notchpay', data.event || 'unknown', status);
+    MonitoringService.observeWebhookProcessingDuration(
+      'notchpay',
+      data.event || 'unknown',
+      (Date.now() - startedAt) / 1000,
+    );
+
+    // Non-2xx → NotchPay redelivers. Every handler above is idempotent (status
+    // guards / atomic transitions), so a redelivery is safe.
+    if (retryable) {
+      return res.status(500).json({ received: false });
+    }
     res.json({ received: true });
   }
 }

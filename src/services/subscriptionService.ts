@@ -51,9 +51,16 @@ export class SubscriptionService {
     userId: string,
     data: Partial<ISubscription>,
   ): Promise<ISubscriptionDocument> {
+    // Ownership/system fields are never client-settable: `$set: { userId }`
+    // moved one's own subscription into ANOTHER user's list.
+    const { userId: _u, _id, createdAt, updatedAt, ...safe } = (data || {}) as any;
+    void _u;
+    void _id;
+    void createdAt;
+    void updatedAt;
     const subscription = await Subscription.findOneAndUpdate(
       { _id: id, userId },
-      { $set: data },
+      { $set: safe },
       { new: true, runValidators: true },
     );
 
@@ -161,8 +168,13 @@ export class SubscriptionService {
     for (const sub of expiredSubscriptions) {
       try {
         const nextBillingDate = this.calculateNextBillingDate(sub.nextBillingDate, sub.frequency);
-        sub.nextBillingDate = nextBillingDate;
-        await sub.save();
+        // Conditional on the date we read: two concurrent runs (e.g. old and new
+        // container during a deploy) can no longer advance it by two periods.
+        const advanced = await Subscription.updateOne(
+          { _id: sub._id, nextBillingDate: sub.nextBillingDate, status: 'active' },
+          { $set: { nextBillingDate } },
+        );
+        if (advanced.modifiedCount === 0) continue;
 
         // Optionnel : Créer une notification pour l'utilisateur
         await NotificationService.sendToUser(sub.userId.toString(), {
@@ -193,17 +205,33 @@ export class SubscriptionService {
   static async processPremiumExpirations(): Promise<number> {
     const now = new Date();
     // Trouver les utilisateurs premium actifs dont l'abonnement est expiré
+    // Both paid tiers, and both 'active' and 'cancelled' (cancelled keeps access
+    // until endDate, then must land on 'expired' too). Previously only
+    // active 'premium' was handled, so 'business' never expired.
     const expiredUsers = await User.find({
-      'subscription.plan': 'premium',
-      'subscription.status': 'active',
+      'subscription.plan': { $in: ['premium', 'business'] },
+      'subscription.status': { $in: ['active', 'cancelled'] },
       'subscription.endDate': { $lte: now },
     });
 
     let count = 0;
     for (const user of expiredUsers) {
       try {
-        user.subscription.status = 'expired';
-        await (user as any).save({ validateBeforeSave: false });
+        // Atomic conditional update (not read-then-save): if a payment webhook
+        // renews this same user between the find() above and now, its update to
+        // 'active' has already landed — the condition below then matches zero
+        // documents and this cron correctly skips them instead of overwriting a
+        // renewal with a stale in-memory 'expired' status.
+        const updated = await User.updateOne(
+          {
+            _id: user._id,
+            'subscription.plan': { $in: ['premium', 'business'] },
+            'subscription.status': { $in: ['active', 'cancelled'] },
+            'subscription.endDate': { $lte: now },
+          },
+          { $set: { 'subscription.status': 'expired' } },
+        );
+        if (updated.modifiedCount === 0) continue;
 
         // Notifier l'utilisateur
         await NotificationService.sendToUser(user._id.toString(), {
@@ -213,7 +241,7 @@ export class SubscriptionService {
           data: { type: 'PREMIUM_EXPIRATION' },
         });
 
-        MonitoringService.recordChurn('premium', 'auto_expiration');
+        MonitoringService.recordChurn(user.subscription?.plan || 'premium', 'auto_expiration');
         logger.info(`Premium status expired for user ${user._id}`);
         count++;
       } catch (error: any) {

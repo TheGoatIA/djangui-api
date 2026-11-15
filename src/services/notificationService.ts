@@ -52,9 +52,12 @@ export class NotificationService {
       const frequency = user.preferences?.notificationFrequency || 'medium';
       let shouldPush = true;
 
-      if (category === 'important' && frequency === 'low') {
-        shouldPush = false;
-      } else if (category === 'informational' && frequency !== 'high') {
+      // Matches the app labels: High = "toutes les actus", Medium = "essentiel",
+      // Low = "critique uniquement". transactional & important (withdrawal
+      // failed & refunded, account suspended, KYC decision, tontine closed…)
+      // are the critical ones: ALWAYS pushed — they used to be dropped at Low.
+      // Informational (chat, tips) only at High. History is always recorded.
+      if (category === 'informational' && frequency !== 'high') {
         shouldPush = false;
       }
 
@@ -71,6 +74,15 @@ export class NotificationService {
           `No FCM tokens found for user ${userId}. Push skiped, but saved to history: ${payload.title}`,
         );
         MonitoringService.recordNotificationEvent('skipped', 'no_tokens');
+        return;
+      }
+
+      // Guard: Firebase may not be initialized in dev if credentials are missing
+      if (!admin.apps.length) {
+        logger.debug(
+          `[FCM] Firebase not initialized — push skipped for user ${userId}: ${payload.title}`,
+        );
+        MonitoringService.recordNotificationEvent('skipped', 'firebase_not_configured');
         return;
       }
 
@@ -126,6 +138,14 @@ export class NotificationService {
    */
   static async sendToTopic(topic: string, payload: NotificationPayload) {
     try {
+      // Guard: Firebase may not be initialized in dev if credentials are missing
+      if (!admin.apps.length) {
+        logger.debug(
+          `[FCM] Firebase not initialized — topic push skipped (${topic}): ${payload.title}`,
+        );
+        return;
+      }
+
       const message: messaging.Message = {
         notification: {
           title: payload.title,

@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
+import crypto from 'crypto';
 
 export interface ITontine extends Document {
   name: string;
@@ -9,8 +10,8 @@ export interface ITontine extends Document {
   contributionAmount: number;
   currency: string;
   totalParts: number;
-  rotationMode: 'fixed' | 'random' | 'auction';
-  validationMode: 'ia_only' | 'ia_plus_manual';
+  rotationMode: 'fixed' | 'random';
+  validationMode: 'ia_plus_manual';
   status: 'pending' | 'active' | 'completed' | 'suspended' | 'suspended_premium_required';
   sanctions: {
     lateFee: number;
@@ -20,13 +21,10 @@ export interface ITontine extends Document {
   socialFund?: {
     enabled: boolean;
     amount: number;
+    // Total réellement collecté (somme des paiements de fonds social des membres),
+    // distinct de `amount` qui est le montant unitaire demandé à chaque membre.
+    totalCollected: number;
   };
-  escrowDetails: {
-    type: 'mobile_money' | 'bank';
-    provider: string; // e.g. 'Orange Money', 'MTN MoMo', 'UBA'
-    accountNumber: string;
-    accountName: string;
-  }[];
   autoRenew: boolean;
   inviteCode: string;
   currentTurn: number;
@@ -45,8 +43,14 @@ const tontineSchema = new Schema<ITontine>(
     contributionAmount: { type: Number, required: true, min: 0 },
     currency: { type: String, default: 'XAF' },
     totalParts: { type: Number, required: true, min: 2 },
-    rotationMode: { type: String, enum: ['fixed', 'random', 'auction'], default: 'fixed' },
-    validationMode: { type: String, enum: ['ia_only', 'ia_plus_manual'], default: 'ia_only' },
+    // 'auction' retiré (V-02) : jamais implémenté, se comportait silencieusement
+    // comme 'fixed' — voir startTontine, qui n'a jamais eu de branche dédiée.
+    rotationMode: { type: String, enum: ['fixed', 'random'], default: 'fixed' },
+    // 'ia_only' retiré (V-01) : la validation automatique sans revue humaine
+    // permettait de créditer de l'argent réel sur la seule foi d'une lecture OCR
+    // (confiance toujours fixée à 0.9, aucune confirmation de paiement réelle).
+    // Toute cotisation passe désormais par une validation manuelle du créateur.
+    validationMode: { type: String, enum: ['ia_plus_manual'], default: 'ia_plus_manual' },
     status: {
       type: String,
       enum: ['pending', 'active', 'completed', 'suspended', 'suspended_premium_required'],
@@ -60,27 +64,26 @@ const tontineSchema = new Schema<ITontine>(
     socialFund: {
       enabled: { type: Boolean, default: false },
       amount: { type: Number, default: 0 },
+      totalCollected: { type: Number, default: 0 },
     },
-    escrowDetails: [
-      {
-        type: { type: String, enum: ['mobile_money', 'bank'], required: true },
-        provider: { type: String, required: true },
-        accountNumber: { type: String, required: true },
-        accountName: { type: String, required: true },
-      },
-    ],
     autoRenew: { type: Boolean, default: false },
     inviteCode: { type: String, unique: true, index: true },
     currentTurn: { type: Number, default: 1 },
     rulesAcceptedByAll: { type: Boolean, default: false },
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+    toJSON: { getters: true },
+    toObject: { getters: true },
+  },
 );
 
-// Pre-save to generate invite code if missing
+// Pre-save to generate invite code if missing. Uses a CSPRNG (not Math.random, which is
+// predictable and not suitable for anything access-control-adjacent) so codes can't be
+// brute-forced/guessed in a feasible number of attempts.
 tontineSchema.pre('save', function (next) {
   if (!this.inviteCode) {
-    this.inviteCode = Math.random().toString(36).substring(2, 10).toUpperCase();
+    this.inviteCode = crypto.randomBytes(6).toString('hex').toUpperCase();
   }
   next();
 });

@@ -1,7 +1,13 @@
 import { Response, NextFunction } from 'express';
-import { ReportService } from '../services/reportService';
+import { ReportService, ReportPeriod } from '../services/reportService';
 import { ExportService } from '../services/exportService';
 import { AuthRequest } from '../middleware/auth';
+
+const VALID_PERIODS: ReportPeriod[] = ['weekly', 'monthly', 'yearly'];
+
+function parsePeriod(value: unknown): ReportPeriod | undefined {
+  return VALID_PERIODS.includes(value as ReportPeriod) ? (value as ReportPeriod) : undefined;
+}
 
 export class ReportController {
   static async getDashboard(req: AuthRequest, res: Response, next: NextFunction) {
@@ -18,10 +24,21 @@ export class ReportController {
 
   static async getAnalysis(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const month = parseInt(req.query.month as string) || new Date().getMonth() + 1;
-      const year = parseInt(req.query.year as string) || new Date().getFullYear();
+      // Explicit month+year (calendar drill-down, e.g. from a date picker) takes
+      // priority; otherwise `period` (weekly/monthly/yearly) picks the rolling
+      // window — this is what the mobile app's period selector drives.
+      const parsedMonth = parseInt(req.query.month as string);
+      const parsedYear = parseInt(req.query.year as string);
+      const hasExplicitMonth = !isNaN(parsedMonth) && !isNaN(parsedYear);
+      const month = hasExplicitMonth ? parsedMonth : undefined;
+      const year = hasExplicitMonth ? parsedYear : undefined;
+      const period = parsePeriod(req.query.period);
 
-      const analysis = await ReportService.getSpendingAnalysis(req.user._id, month, year);
+      const analysis = await ReportService.getSpendingAnalysis(req.user._id, {
+        month,
+        year,
+        period,
+      });
       res.status(200).json({
         success: true,
         data: analysis,
@@ -33,7 +50,8 @@ export class ReportController {
 
   static async getTrends(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const trends = await ReportService.getSavingsTrend(req.user._id);
+      const period = parsePeriod(req.query.period) || 'monthly';
+      const trends = await ReportService.getSavingsTrend(req.user._id, period);
       res.status(200).json({
         success: true,
         data: trends,
@@ -74,6 +92,19 @@ export class ReportController {
       res.status(200).json({
         success: true,
         data: report,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async getHealthScoreHistory(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const months = parseInt(req.query.months as string) || 6;
+      const history = await ReportService.getHealthScoreHistory(req.user._id, months);
+      res.status(200).json({
+        success: true,
+        data: history,
       });
     } catch (err) {
       next(err);

@@ -1,4 +1,6 @@
-# Security Audit Report - Kauri API
+> **⚠️ Document obsolète (2026-08-10).** Ce rapport initial est conservé à titre historique mais ne reflète plus l'état réel du système. Pour la politique de sécurité actuelle, l'audit applicatif complet du 29 août 2026 et son suivi de correction, voir **[../SECURITY.md](../SECURITY.md)**. Pour le détail des correctifs côté application mobile (Flutter), voir `SECURITY_CHECKLIST.md` dans le dépôt `djangui-mobile` (dépôt séparé).
+
+# Security Audit Report - Kauri API (historique)
 
 ## 1. Authentication & Authorization
 - **JWT Protection**: Implemented robust token verification with `jsonwebtoken`.

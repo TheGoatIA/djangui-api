@@ -11,9 +11,27 @@ interface AuthenticatedRequest extends Request {
 /**
  * Sanitize object to remove sensitive data
  */
-const sanitize = (obj: any): any => {
+export const sanitize = (obj: any): any => {
   if (!obj || typeof obj !== 'object') return obj;
-  const sensitiveKeys = ['password', 'token', 'secret', 'cvv', 'card', 'pin'];
+  // Substring match on the lower-cased key. Added: 2FA/backup codes ('code'),
+  // OTPs, identity document numbers, signatures, auth headers & cookies —
+  // they were written in clear to the logs (and shipped to Graylog).
+  const sensitiveKeys = [
+    'password',
+    'token',
+    'secret',
+    'cvv',
+    'card',
+    'pin',
+    'code',
+    'otp',
+    'documentnumber',
+    'signature',
+    'authorization',
+    'cookie',
+    'apikey',
+    'iban',
+  ];
   const sanitized = { ...obj };
 
   for (const key of Object.keys(sanitized)) {
@@ -72,8 +90,10 @@ export const requestLogger = (req: AuthenticatedRequest, res: Response, next: Ne
         }
       }
 
-      if (statusCode >= 400) {
-        logger.error({ ...logData, message: `FAILED ${logData.message}` });
+      if (statusCode >= 500) {
+        logger.error({ ...logData, message: `SERVER_ERROR ${logData.message}` });
+      } else if (statusCode >= 400) {
+        logger.warn({ ...logData, message: `CLIENT_ERROR ${logData.message}` });
       } else {
         logger.http(logData);
       }

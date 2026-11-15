@@ -26,18 +26,32 @@ const savingGoalSchema = new Schema<ISavingGoalDocument>(
     targetAmount: {
       type: Number,
       required: [true, 'Target amount is required'],
-      min: [0, 'Target amount cannot be negative'],
+      // > 0 : un objectif à 0 affiche 100% de progression dès sa création
+      // (division par zéro côté app) sans qu'aucune épargne n'ait eu lieu.
+      min: [0.01, 'Target amount must be greater than zero'],
     },
     currentAmount: {
       type: Number,
       default: 0,
       min: 0,
     },
+    // Native currency of targetAmount/currentAmount/contributions[].amount —
+    // always set server-side from the creating user's own currency (see
+    // GoalService.createGoal), never trust a client-supplied value here.
+    // Without this field, currencyMiddleware has no way to tell these amounts
+    // are already in e.g. EUR and wrongly re-converts them as if they were XAF.
+    currency: {
+      type: String,
+      default: 'XAF',
+    },
     startDate: {
       type: Date,
       default: Date.now,
     },
-    deadline: Date,
+    deadline: {
+      type: Date,
+      required: [true, 'Deadline is required'],
+    },
     priority: {
       type: String,
       enum: ['high', 'medium', 'low'],
@@ -63,8 +77,10 @@ const savingGoalSchema = new Schema<ISavingGoalDocument>(
     autoSaveRules: {
       enableSurplus: { type: Boolean, default: false },
       enableRoundup: { type: Boolean, default: false },
-      percentageIncome: { type: Number, default: 0 },
-      dayOfMonth: { type: Number, default: 1 },
+      percentageIncome: { type: Number, default: 0, min: 0, max: 100 },
+      // 1-28 : garantit un déclenchement identique tous les mois (certains
+      // n'ont pas de 29/30/31).
+      dayOfMonth: { type: Number, default: 1, min: 1, max: 28 },
     },
     progress: {
       type: Number,
@@ -75,11 +91,27 @@ const savingGoalSchema = new Schema<ISavingGoalDocument>(
       enum: ['active', 'completed', 'cancelled', 'paused'],
       default: 'active',
     },
+    // Objectifs partagés : l'objectif reste possédé par `userId` (le créateur) —
+    // inviteCode n'est généré qu'à la demande (GoalService.shareGoal), pas
+    // systématiquement, car la plupart des objectifs ne sont jamais partagés.
+    // `sparse` évite tout conflit d'unicité entre les nombreux objectifs sans code.
+    inviteCode: { type: String, unique: true, sparse: true, index: true },
+    isShared: { type: Boolean, default: false },
     contributions: [
       {
+        // Non `required` : les contributions déjà en base avant l'ajout de
+        // l'attribution n'en ont pas — tout nouveau code le renseigne toujours.
+        userId: { type: Schema.Types.ObjectId, ref: 'User' },
         amount: { type: Number, required: true },
         date: { type: Date, default: Date.now },
         note: String,
+        // 'contribution' par défaut : les entrées déjà en base avant l'ajout
+        // des rachats à l'historique sont toutes des contributions.
+        type: {
+          type: String,
+          enum: ['contribution', 'redemption'],
+          default: 'contribution',
+        },
       },
     ],
   },

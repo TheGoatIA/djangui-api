@@ -1,0 +1,173 @@
+# docker-compose.prod.yml
+#
+# name: fixe explicitement le préfixe de tous les conteneurs/réseau/volumes
+# (kauri-prod-api-1, kauri-prod-mongodb-1...) au lieu de le dériver du nom du
+# dossier serveur (qui donnait juste "api" — collision possible avec un futur
+# projet différent aussi nommé "api"). Migration effectuée le 29/08/2026,
+# voir RUNBOOK.md § Migration de renommage des conteneurs.
+# Ce fichier est référencé par le job `deploy_production` de
+# .github/workflows/deploy.yml, qui pointait vers un fichier inexistant
+# jusqu'ici (vérifié sur le dépôt ET sur le serveur de production —
+# aucune des deux copies n'existait). En pratique, la production tourne
+# depuis le début via `docker-compose.yml` lancé manuellement sur le
+# serveur, avec les ports réels définis dans le `.env` du serveur
+# (PORT, PROMETHEUS_PORT, GRAFANA_PORT, etc.) — ce fichier compose est
+# déjà paramétré pour ça, donc cette copie produit un comportement
+# identique à ce qui tourne déjà, elle ne fait que rendre le pipeline
+# automatisé enfin fonctionnel et versionné.
+#
+# Si votre topologie de production diverge un jour de la référence
+# infrastructure (docker-compose.yml) — par ex. des limites de ressources
+# différentes, ou des services supplémentaires propres à la prod — modifiez
+# CE fichier, pas docker-compose.yml, pour que la divergence reste
+# explicite et versionnée plutôt que vécue seulement sur le serveur.
+
+name: kauri-prod
+
+# Rotation des logs conteneur (sans cela le json-file Docker grossit sans limite).
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  api:
+    # Image construite et taguée par le pipeline CI (.github/workflows/deploy.yml,
+    # job build-and-push) au format yyyyMMdd.N, poussée sur GitHub Container
+    # Registry. Le déploiement fait un `pull`, jamais un `build` — le serveur
+    # de production ne compile plus jamais de code lui-même.
+    image: ghcr.io/thegoatia/djangui-api:${IMAGE_TAG:-latest}
+    ports:
+      - "${INTERNAL_BIND_ADDR:-127.0.0.1}:${PORT:-5000}:5000"
+    env_file: .env
+    environment:
+      - PORT=5000
+      - NODE_ENV=${NODE_ENV:-production}
+      - MONGODB_URI=${MONGODB_URI:-mongodb://${MONGODB_USER:-admin}:${MONGODB_PASSWORD:?MONGODB_PASSWORD is required}@mongodb:27017/kauri?authSource=admin&replicaSet=rs0}
+      - REDIS_URL=${REDIS_URL:-redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379}
+      - METRICS_TOKEN=${METRICS_TOKEN}
+      - NODE_OPTIONS=--max-old-space-size=1843 # Allocate ~90% of RAM to V8 heap
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - kauri-network
+    volumes:
+      - ./uploads:/app/uploads
+      - ./backups:/app/backups
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          # Doit rester nettement au-dessus de NODE_OPTIONS --max-old-space-size
+          # (1843M) ci-dessus — un conteneur limité en dessous du heap V8 qu'on
+          # lui autorise garantit un OOM-kill sous charge réelle. 512M (valeur
+          # précédente jamais réellement appliquée) aurait provoqué exactement
+          # ça au premier redéploiement. Aligné sur ce qui tourne réellement en
+          # production depuis des semaines (2Go), avec une marge (2.5Go).
+          memory: 2560M
+          cpus: '2.0'
+        reservations:
+          memory: 1G
+
+  mongodb:
+    image: mongo:7.0
+    entrypoint: >
+      /bin/sh -c "cp /data/db/mongodb.key /tmp/mongodb.key && chmod 600 /tmp/mongodb.key && chown 999:999 /tmp/mongodb.key && exec /usr/local/bin/docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all --auth --keyFile /tmp/mongodb.key"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGODB_USER:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGODB_PASSWORD:?MONGODB_PASSWORD is required}
+    # MongoDB is NOT exposed on the host — accessible only within the Docker network
+    expose:
+      - "27017"
+    volumes:
+      - mongodb_data:/data/db
+      - ./mongodb.key:/data/db/mongodb.key
+    networks:
+      - kauri-network
+    healthcheck:
+      test: [ "CMD-SHELL", "mongosh --port 27017 -u $${MONGO_INITDB_ROOT_USERNAME:-admin} -p $${MONGO_INITDB_ROOT_PASSWORD:?MONGODB_PASSWORD is required} --authenticationDatabase admin --quiet --eval \"db.adminCommand('ping').ok\" || (mongosh --port 27017 -u $${MONGO_INITDB_ROOT_USERNAME:-admin} -p $${MONGO_INITDB_ROOT_PASSWORD:?MONGODB_PASSWORD is required} --authenticationDatabase admin --quiet --eval \"rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]})\" || mongosh --port 27017 --quiet --eval \"rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]})\" && sleep 2)" ]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          # Aligné sur ce qui tourne réellement en production (4Go) — la valeur
+          # précédente (1Go) était trop juste pour un replica set MongoDB avec
+          # des données réelles et n'a jamais été réellement appliquée.
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+
+  redis:
+    image: redis:7-alpine # Version spécifique
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+    # Comme MongoDB ci-dessus : accessible uniquement depuis le réseau Docker
+    # interne (les autres services de ce compose), jamais depuis l'hôte. Un
+    # mot de passe protège déjà l'accès, mais exposer le port sur l'hôte reste
+    # une surface d'attaque inutile pour un service qui n'a aucun client hors
+    # de ce réseau.
+    expose:
+      - "6379"
+    networks:
+      - kauri-network
+    restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          # 512M (état intermédiaire vérifié fonctionnel lors de l'incident du
+          # 29/08/2026, où ce conteneur a été recréé manuellement avec 1Go —
+          # 512M est une valeur de croisière plus raisonnable pour ce cas
+          # d'usage : sessions, rate-limit, idempotence, verrous — pas un cache
+          # de données volumineux).
+          memory: 512M
+          cpus: '0.5'
+
+  # Centralized Logging (Graylog)
+  # Monitoring : pile d'observabilite centrale du VPS (/opt/observability).
+  # Elle est branchee sur le reseau kauri-network de ce projet et y repond sous les
+  # noms "graylog" (GELF UDP 12201) et "otel-collector" (OTLP 4317/4318) ; le
+  # Prometheus central collecte api:5000/metrics. Regles : alerts/rules.yaml.
+  # Interfaces : grafana.borisgauty.com (org Kauri), logs.borisgauty.com,
+  # traces.borisgauty.com, alerts.borisgauty.com.
+
+  # MinIO : service partage du VPS (/opt/shared-services, conteneur shared-minio), branche sur
+  # kauri-network sous le nom "minio" ; memes buckets (kauri-*) et meme cle d'acces qu'avant.
+
+
+
+networks:
+  kauri-network:
+    driver: bridge
+
+volumes:
+  # `external: true` : ces volumes ont été créés à la main (`docker volume
+  # create`) pendant la migration de renommage des conteneurs du 29/08/2026,
+  # pas par Compose — sans ce marqueur, Compose les retrouve et les réutilise
+  # correctement quand même (aucune perte de données), mais réaffiche un
+  # warning "already exists but was not created by Docker Compose" à chaque
+  # déploiement. `external: true` fait taire ce warning sans rien déplacer.
+  # alertmanager_data et minio_data sont exclus : créés directement par
+  # Compose (services ajoutés après la migration), pas de warning pour eux.
+  mongodb_data:
+    external: true
+    name: kauri-prod_mongodb_data

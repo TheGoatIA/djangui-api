@@ -1,7 +1,6 @@
 import Invoice from '../models/Invoice';
 import Transaction from '../models/Transaction';
 import Payment from '../models/Payment';
-import User from '../models/User';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
@@ -14,7 +13,7 @@ export class InvoiceService {
   static async generateForTransaction(transactionId: string) {
     // Vérifier si une facture existe déjà pour cette transaction
     let invoice = await Invoice.findOne({ transactionId });
-    if (invoice && invoice.pdfUrl) {
+    if (invoice?.pdfUrl) {
       return invoice;
     }
 
@@ -23,22 +22,41 @@ export class InvoiceService {
       if (!transaction) throw new AppError('Transaction non trouvée', 404);
 
       const user = transaction.userId as any;
-      const invoiceNumber = `INV-${new Date().getFullYear()}-${uuidv4().split('-')[0].toUpperCase()}`;
+      const invoiceNumber = `INV-${new Date().getFullYear()}-${uuidv4().toUpperCase()}`;
 
-      // 1. Créer l'entrée en base de données
-      invoice = await Invoice.create({
-        userId: user._id,
-        transactionId: transaction._id,
-        invoiceNumber,
-        amount: transaction.amount,
-        currency: transaction.currency,
-        status: 'issued',
-        metadata: {
-          paymentMethod: transaction.paymentMethod,
-          transactionType: transaction.type,
-          userName: user.kycData?.fullName || `${user.firstName} ${user.lastName}`,
-        },
-      });
+      // Upsert atomique (backé par l'index unique sur transactionId) : deux
+      // déclencheurs concurrents (génération auto post-paiement + polling client)
+      // ne peuvent plus tous les deux passer le check ci-dessus et créer chacun
+      // leur propre facture/PDF pour la même transaction.
+      try {
+        invoice = await Invoice.findOneAndUpdate(
+          { transactionId: transaction._id },
+          {
+            $setOnInsert: {
+              userId: user._id,
+              transactionId: transaction._id,
+              invoiceNumber,
+              amount: transaction.amount,
+              currency: transaction.currency,
+              status: 'issued',
+              metadata: {
+                paymentMethod: transaction.paymentMethod,
+                transactionType: transaction.type,
+                userName: user.kycData?.fullName || `${user.firstName} ${user.lastName}`,
+              },
+            },
+          },
+          { upsert: true, new: true, setDefaultsOnInsert: true },
+        );
+      } catch (err: any) {
+        if (err.code === 11000) {
+          // Une autre requête concurrente a déjà créé la facture — la relire.
+          invoice = await Invoice.findOne({ transactionId: transaction._id });
+        } else {
+          throw err;
+        }
+      }
+      if (!invoice) throw new AppError('Facture introuvable après création concurrente', 500);
     }
 
     // 2. Génération physique du PDF (Synchrone pour garantir l'URL au premier appel)
@@ -54,7 +72,7 @@ export class InvoiceService {
           `[FINTECH] PDF generation finished but pdfUrl is still missing on invoice ${invoice.id}`,
         );
       }
-      return updatedInvoice || invoice;
+      return updatedInvoice ?? invoice;
     } catch (err: any) {
       logger.error(`[FINTECH] Synchronous PDF Generation FAILED: ${err.message}`);
       throw err; // On propage l'erreur au lieu de renvoyer une facture vide
@@ -66,7 +84,7 @@ export class InvoiceService {
    */
   static async generateForPayment(paymentId: string) {
     let invoice = await Invoice.findOne({ paymentId });
-    if (invoice && invoice.pdfUrl) {
+    if (invoice?.pdfUrl) {
       return invoice;
     }
 
@@ -75,21 +93,37 @@ export class InvoiceService {
       if (!payment) throw new AppError('Paiement non trouvé', 404);
 
       const user = payment.userId as any;
-      const invoiceNumber = `INV-${new Date().getFullYear()}-${uuidv4().split('-')[0].toUpperCase()}`;
+      const invoiceNumber = `INV-${new Date().getFullYear()}-${uuidv4().toUpperCase()}`;
 
-      invoice = await Invoice.create({
-        userId: user._id,
-        paymentId: payment._id,
-        invoiceNumber,
-        amount: payment.amount,
-        currency: payment.currency || 'XAF',
-        status: 'issued',
-        metadata: {
-          paymentMethod: payment.method,
-          transactionType: payment.type,
-          userName: user.kycData?.fullName || `${user.firstName} ${user.lastName}`,
-        },
-      });
+      // Upsert atomique — voir le commentaire équivalent dans generateForTransaction.
+      try {
+        invoice = await Invoice.findOneAndUpdate(
+          { paymentId: payment._id },
+          {
+            $setOnInsert: {
+              userId: user._id,
+              paymentId: payment._id,
+              invoiceNumber,
+              amount: payment.amount,
+              currency: payment.currency || 'XAF',
+              status: 'issued',
+              metadata: {
+                paymentMethod: payment.method,
+                transactionType: payment.type,
+                userName: user.kycData?.fullName || `${user.firstName} ${user.lastName}`,
+              },
+            },
+          },
+          { upsert: true, new: true, setDefaultsOnInsert: true },
+        );
+      } catch (err: any) {
+        if (err.code === 11000) {
+          invoice = await Invoice.findOne({ paymentId: payment._id });
+        } else {
+          throw err;
+        }
+      }
+      if (!invoice) throw new AppError('Facture introuvable après création concurrente', 500);
     }
 
     try {
@@ -103,7 +137,7 @@ export class InvoiceService {
           `[FINTECH] PDF generation finished but pdfUrl is still missing on invoice ${invoice.id}`,
         );
       }
-      return updatedInvoice || invoice;
+      return updatedInvoice ?? invoice;
     } catch (err: any) {
       logger.error(`[FINTECH] Synchronous PDF Generation FAILED: ${err.message}`);
       throw err;
@@ -115,8 +149,8 @@ export class InvoiceService {
    */
   private static async createPhysicalPDF(invoiceId: string) {
     const PDFDocument = require('pdfkit');
-    const fs = require('fs');
-    const path = require('path');
+    const fs = require('node:fs');
+    const path = require('node:path');
 
     try {
       const invoice = await Invoice.findById(invoiceId).populate('userId transactionId paymentId');
@@ -147,14 +181,18 @@ export class InvoiceService {
       logger.info(`[FINTECH] Header generation...`);
 
       // --- HEADER ---
-      // Logo Officiel Kauri
-      const logoUrl = 'https://kauri-app.com/logo.png';
+      // Logo Kauri : chemin local (évite PDFKit qui ne supporte pas les URLs HTTP)
+      const logoLocalPath = path.join(process.cwd(), 'public', 'logo.png');
       try {
-        // On tente de charger le logo (fallback sur shape si URL inaccessible en local)
-        // Note: En production, il vaut mieux avoir le logo en local ou déjà téléchargé
-        doc.image(logoUrl, 50, 45, { width: 50 });
-      } catch (e) {
+        if (fs.existsSync(logoLocalPath)) {
+          doc.image(logoLocalPath, 50, 45, { width: 50 });
+        } else {
+          // Fallback vectoriel Kauri (vert/jaune) si logo absent
+          throw new Error(`Logo file not found at ${logoLocalPath}`);
+        }
+      } catch (e: any) {
         // Fallback Shape Kauri Style (Vert/Jaune)
+        logger.debug(`Using fallback logo shape for invoice: ${e.message}`);
         doc
           .save()
           .fillColor('#16A34A') // Vert Kauri
@@ -289,15 +327,25 @@ export class InvoiceService {
         stream.on('error', reject);
       });
 
-      // 3. Upload vers MinIO
+      // 3. Upload vers MinIO (visibilité privée par défaut pour protéger les PII financières)
       const bucket = 'kauri-invoices';
       const destinationKey = `invoices/${fileName}`;
-      const publicUrl = await StorageService.uploadFile(filePath, bucket, destinationKey);
-
-      // 4. Nettoyage local (Optionnel, mais recommandé si on veut être full cloud)
+      let publicUrl: string;
       try {
-        fs.unlinkSync(filePath);
-      } catch (e) {}
+        publicUrl = await StorageService.uploadFile(filePath, bucket, destinationKey, 'private');
+        // Cleanup local temp file only if successfully uploaded to MinIO
+        try {
+          fs.unlinkSync(filePath);
+        } catch (e: any) {
+          logger.warn(`Failed to cleanup temporary invoice file at ${filePath}: ${e.message}`);
+        }
+      } catch (storageErr: any) {
+        // MinIO unavailable (e.g. dev local without Docker) — keep file local, don't crash
+        logger.warn(
+          `[FINTECH] MinIO upload failed (dev fallback: keeping local file): ${storageErr.message}`,
+        );
+        publicUrl = `file://${filePath}`;
+      }
 
       invoice.pdfUrl = publicUrl;
       await invoice.save();
@@ -306,10 +354,10 @@ export class InvoiceService {
         await Transaction.findByIdAndUpdate(invoice.transactionId, { receiptUrl: publicUrl });
       }
 
-      logger.info(`Invoice PDF generated real-world: ${publicUrl}`);
+      logger.info(`Invoice PDF generated: ${publicUrl}`);
     } catch (err: any) {
       logger.error(`[FINTECH] createPhysicalPDF Error: ${err.message}`);
-      throw err; // On relance pour que generateForTransaction le voit
+      throw err;
     }
   }
 

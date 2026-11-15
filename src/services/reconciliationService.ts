@@ -68,7 +68,7 @@ export class ReconciliationService {
           `Anomalies détectées : ${anomalies.length}\n` +
           `Détails : Rapport généré dans les logs admin.`;
 
-        await SlackService.sendNotification(message);
+        await SlackService.sendFinance(message);
         logger.error(message, { anomalies });
       } else {
         logger.info(`Réconciliation Interne OK : ${totalChecked} comptes vérifiés.`);

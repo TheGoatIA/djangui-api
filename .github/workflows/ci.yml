@@ -1,33 +1,168 @@
 name: Continuous Integration
 
+# Qualité + sécurité + non-régression : chaque PR vers dev/main (dont Dependabot) et,
+# via deploy.yml, chaque push sur dev/main AVANT build et déploiement.
 on:
-  push:
-    branches: [ main, dev ]
   pull_request:
-    branches: [ main, dev ]
+    branches: [main, dev]
+  # Les push sur main/dev sont couverts par deploy.yml, qui appelle ce workflow
+  # avant de construire et déployer (un seul run, mêmes contrôles).
+  workflow_call:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22.x'
 
 jobs:
-  build-and-test:
+  # ------------------------------------------------------------------ qualité du code
+  quality:
+    name: 🧹 Lint · Format · Types
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: ESLint (échoue sur erreur)
+        run: npm run lint
+      - name: Prettier
+        run: npx prettier --check "src/**/*.ts" "tests/**/*.ts"
+      - name: TypeScript (sans émission)
+        run: npx tsc --noEmit
 
+  # ------------------------------------------------- tests unitaires + intégration + non-régression
+  test:
+    name: 🧪 Tests (unitaires, intégration, sécurité, paiements) + couverture
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [18.x, 20.x, 22.x]
-
+        node-version: [22.x, 24.x]
     steps:
-    - uses: actions/checkout@v6
-    
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v6
-      with:
-        node-version: ${{ matrix.node-version }}
-        cache: 'npm'
-        
-    - name: Install dependencies
-      run: npm ci
-      
-    - name: Run Lint
-      run: npm run format
-      
-    - name: Build project
-      run: npm run build
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm ci
+
+      # Même infrastructure qu'en local (docker-compose.test.yml) : MongoDB en REPLICA SET
+      # (transactions ACID des paiements) + stockage S3 (factures, KYC, backups).
+      - name: Démarrer l'infrastructure de test
+        run: npm run test:infra:up
+
+      # Les clés SANDBOX (Stripe test-mode / NotchPay sandbox) activent les suites
+      # "fournisseur réel" ; absentes, ces suites sont ignorées proprement.
+      # tests/setup.ts refuse de démarrer si une clé LIVE est fournie.
+      - name: Tests avec seuils de couverture (jest.config.js)
+        env:
+          NODE_ENV: test
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+          NOTCHPAY_PUBLIC_KEY: ${{ secrets.NOTCHPAY_SANDBOX_PUBLIC_KEY }}
+          NOTCHPAY_PRIVATE_KEY: ${{ secrets.NOTCHPAY_SANDBOX_PRIVATE_KEY }}
+        run: npm run test:ci
+
+      - name: Arrêter l'infrastructure de test
+        if: always()
+        run: npm run test:infra:down
+
+      - name: Publier la couverture (utilisée par Sonar)
+        if: matrix.node-version == '22.x'
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-lcov
+          path: coverage/lcov.info
+          retention-days: 7
+
+  # ------------------------------------------------------------------------ sécurité
+  security:
+    name: 🔒 Sécurité (dépendances, secrets, SAST, conteneur)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Scan des secrets AVANT l'installation des dépendances (rapide, périmètre = dépôt).
+      - name: Secrets (gitleaks)
+        run: |
+          docker run --rm -v "$PWD:/repo:ro" zricethezav/gitleaks:v8.21.2 \
+            detect --source /repo --no-git --no-banner --redact --config /repo/.gitleaks.toml
+
+      - name: SAST (Semgrep — règles TypeScript/Node/Express/JWT, sévérité ERROR)
+        run: |
+          docker run --rm -v "$PWD:/src:ro" semgrep/semgrep:1.97.0 \
+            semgrep scan --config p/typescript --config p/nodejs --config p/expressjs --config p/jwt \
+            --severity ERROR --error --metrics=off --quiet /src/src
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Vulnérabilités des dépendances de production
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Image Docker (build, non publiée)
+        run: docker build -t kauri-api:ci .
+      # Trivy exécuté via son image Docker officielle (même version que la validation locale) :
+      # indépendant de l'installeur de binaire de l'action, qui échouait dans le runner.
+      - name: Scan de l'image (Trivy — HIGH/CRITICAL corrigeables)
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$HOME/.cache/trivy:/root/.cache/trivy" \
+            aquasec/trivy:0.58.1 image kauri-api:ci \
+            --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+            --vuln-type os,library --exit-code 1 --no-progress
+
+
+  # ------------------------------------------------------------------------- Sonar
+  sonar:
+    name: 📊 SonarQube (qualité + couverture + Quality Gate)
+    needs: test
+    # Pas de secrets sur les PRs venant de forks ; ignoré tant que SONAR_TOKEN n'est pas défini.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # blame complet : attribution du « nouveau code »
+      - name: Récupérer la couverture
+        uses: actions/download-artifact@v8
+        with:
+          name: coverage-lcov
+          path: coverage
+      - name: Vérifier la configuration Sonar
+        id: cfg
+        env:
+          T: ${{ secrets.SONAR_TOKEN }}
+          U: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          if [ -n "$T" ] && [ -n "$U" ]; then echo "ready=true" >> "$GITHUB_OUTPUT"; else
+            echo "::warning::SONAR_TOKEN / SONAR_HOST_URL non définis : analyse Sonar ignorée"; fi
+      - name: Analyse + Quality Gate
+        if: steps.cfg.outputs.ready == 'true'
+        uses: SonarSource/sonarqube-scan-action@v7
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=300
+            -Dsonar.projectVersion=${{ github.sha }}
+      - name: Détail du Quality Gate en échec (critères non respectés)
+        if: failure() && steps.cfg.outputs.ready == 'true'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          curl -s -u "$SONAR_TOKEN:" "$SONAR_HOST_URL/api/qualitygates/project_status?projectKey=kauri-api" \
+            | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const s=JSON.parse(d).projectStatus||{};for(const c of s.conditions||[]){if(c.status!=='OK')console.log('::error::Quality Gate — '+c.metricKey+' = '+c.actualValue+' (seuil '+c.comparator+' '+c.errorThreshold+')')}})"

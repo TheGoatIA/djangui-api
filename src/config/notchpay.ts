@@ -12,8 +12,15 @@ if (!notchpayConfig.privateKey) {
   logger.warn('NOTCHPAY_PRIVATE_KEY is missing. NotchPay payments will fail.');
 }
 
+// Axios has no timeout by default — a slow/hung NotchPay response would otherwise
+// block indefinitely. This matters most for notchpayAdminApi's transfer calls
+// (PayoutService.initiatePayout), which run AFTER the wallet has already been
+// debited, so a hang here delays how quickly a stuck payout can be investigated.
+const NOTCHPAY_TIMEOUT_MS = 15000;
+
 export const notchpayApi = axios.create({
   baseURL: notchpayConfig.endpoint,
+  timeout: NOTCHPAY_TIMEOUT_MS,
   headers: {
     Authorization: notchpayConfig.publicKey || '',
     Accept: 'application/json',
@@ -25,6 +32,7 @@ export const notchpayApi = axios.create({
  */
 export const notchpayAdminApi = axios.create({
   baseURL: notchpayConfig.endpoint,
+  timeout: NOTCHPAY_TIMEOUT_MS,
   headers: {
     Authorization: notchpayConfig.publicKey || '',
     'X-Grant': notchpayConfig.privateKey || '',

@@ -1,5 +1,25 @@
-const fr = require('../i18n/fr.json');
-const en = require('../i18n/en.json');
+import fs from 'fs';
+import path from 'path';
+
+const loadJson = (filename: string) => {
+  const possiblePaths = [
+    path.join(__dirname, `../i18n/${filename}`),
+    path.join(__dirname, `../../src/i18n/${filename}`),
+    path.join(process.cwd(), `src/i18n/${filename}`),
+    path.join(process.cwd(), `dist/i18n/${filename}`),
+  ];
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) {
+      try {
+        return JSON.parse(fs.readFileSync(p, 'utf8'));
+      } catch (_) {}
+    }
+  }
+  return {};
+};
+
+const fr = loadJson('fr.json');
+const en = loadJson('en.json');
 
 const translations: Record<string, any> = { fr, en };
 

@@ -1,13 +1,16 @@
-name: CI/CD Pipeline (Staging & Prod)
+name: CI/CD Pipeline (Staging & Production)
 
+# Push sur dev  -> test -> build & push image -> déploiement automatique en staging
+# Push sur main -> test -> build & push image -> déploiement automatique en production
+# Le déclenchement manuel (workflow_dispatch) reste disponible pour rejouer un
+# déploiement (ex: rollback vers un tag existant) sans nouveau push.
 on:
   push:
-    branches: [ "main", "dev" ]
-  # Le workflow_dispatch permet de lancer le job manuellement depuis l'interface GitHub
+    branches: ['main', 'dev']
   workflow_dispatch:
     inputs:
       deploy_to:
-        description: "🚨 Environnement à déployer :"
+        description: '🚨 Environnement à déployer :'
         required: true
         default: 'production'
         type: choice
@@ -15,83 +18,196 @@ on:
           - production
           - staging
 
+permissions:
+  contents: write
+  packages: write
+
 jobs:
+  # Mêmes contrôles que sur les PRs (qualité, tests + couverture, sécurité, Sonar) :
+  # rien n'est construit ni déployé si l'un d'eux échoue.
   test:
-    name: 🧪 Run Tests
+    name: ✅ CI (qualité · tests · sécurité · Sonar)
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  build-and-push:
+    name: 🐳 Build & Push Docker Image
+    needs: test
     runs-on: ubuntu-latest
-    
-    services:
-      mongodb:
-        image: mongo:7.0
-        ports:
-          - 27017:27017
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-
+    # Uniquement sur un vrai push (jamais sur un simple re-déploiement manuel,
+    # qui doit réutiliser une image déjà construite — voir déploiement manuel plus bas)
+    if: github.event_name == 'push'
+    outputs:
+      tag: ${{ steps.version.outputs.version }}
     steps:
-    - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
-    - name: Use Node.js 20.x
-      uses: actions/setup-node@v6
-      with:
-        node-version: '20.x'
-        cache: 'npm'
+      - name: Calculer la version de build (yyyyMMdd.N)
+        id: version
+        run: |
+          set -e
+          git fetch --tags --force
+          TODAY=$(date -u +%Y%m%d)
+          LAST_N=$(git tag --list "${TODAY}.*" | sed "s/^${TODAY}\.//" | sort -n | tail -1)
+          if [ -z "$LAST_N" ]; then NEXT_N=1; else NEXT_N=$((LAST_N + 1)); fi
+          echo "version=${TODAY}.${NEXT_N}" >> "$GITHUB_OUTPUT"
 
-    - name: Install dependencies
-      run: npm ci
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
 
-    - name: Build
-      run: npm run build
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Run Unit Tests
-      env:
-        MONGODB_URI: mongodb://localhost:27017/kauri_test
-        REDIS_URL: redis://localhost:6379
-        JWT_ACCESS_SECRET: test_secret
-        NODE_ENV: test
-      run: npm run test
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=sha,format=long
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=staging-latest,enable=${{ github.ref == 'refs/heads/dev' }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Tagger ce build dans Git (traçabilité image ↔ commit, sert aussi de compteur journalier)
+        run: |
+          git tag "${{ steps.version.outputs.version }}"
+          git push origin "${{ steps.version.outputs.version }}"
 
   deploy_staging:
     name: 🚀 Deploy to Staging
-    needs: test
-    # S'exécute automatiquement au push (main/dev) OU manuellement si choisi
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_to == 'staging')
+    needs: build-and-push
+    if: |
+      always() && needs.test.result == 'success' &&
+      ((github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
+       (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_to == 'staging'))
     runs-on: ubuntu-latest
-
     steps:
-    - name: Auto-deployment script (Staging)
-      uses: appleboy/ssh-action@master
-      with:
-        host: ${{ secrets.PROD_SERVER_IP }}
-        username: ${{ secrets.PROD_USERNAME }}
-        password: ${{ secrets.PROD_PASSWORD }}
-        script: |
-          # Modifie ce chemin vers le dossier où se trouve ton API de Staging sur le serveur
-          cd /var/www/kauri/staging-api
-          git pull origin main
-          docker compose -f docker-compose.staging.yml build
-          docker compose -f docker-compose.staging.yml up -d
-          docker image prune -a -f
+      - name: Determine image tag to deploy
+        id: tag
+        run: |
+          # Push normal : utilise le tag qui vient d'être construit.
+          # Déclenchement manuel (rejeu/rollback) : réutilise staging-latest.
+          if [ -n "${{ needs.build-and-push.outputs.tag }}" ]; then
+            echo "tag=${{ needs.build-and-push.outputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=staging-latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy (pull & restart — aucune action manuelle sur le serveur)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.PROD_SERVER_IP }}
+          username: ${{ secrets.PROD_USERNAME }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            set -e
+            cd /var/www/kauri/staging-api
+            git fetch origin
+            git checkout -B dev origin/dev
+            git reset --hard origin/dev
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            export IMAGE_TAG="${{ steps.tag.outputs.tag }}"
+            # L'image tourne sans root (uid 1000) : les dossiers montés depuis
+            # l'hôte doivent lui appartenir, sinon factures/sauvegardes en EACCES.
+            mkdir -p uploads/invoices backups
+            chown -R 1000:1000 uploads backups
+            docker compose -f docker-compose.staging.yml pull api
+            docker compose -f docker-compose.staging.yml up -d
+            docker image prune -f --filter "until=168h"
+
+      - name: Script de notification (lecture seule)
+        if: always()
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+
+      - name: Notification Slack (#deployment)
+        if: always()
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}
+          STATUS: ${{ job.status }}
+          COMPONENT: API
+          ACTION: Déploiement
+          ENVIRONMENT: STAGING
+          VERSION: ${{ steps.tag.outputs.tag }}
+          LINK: https://staging.kauri-app.com/api/health
+          COMMIT_MSG: ${{ github.event.head_commit.message || github.event.workflow_run.head_commit.message }}
+        run: bash .github/scripts/notify-slack.sh
 
   deploy_production:
     name: 💎 Deploy to Production
-    needs: test
-    # Ne s'exécute JAMAIS automatiquement, UNIQUEMENT via le bouton manuel GitHub
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_to == 'production'
+    needs: build-and-push
+    if: |
+      always() && needs.test.result == 'success' &&
+      ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+       (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_to == 'production'))
     runs-on: ubuntu-latest
-
     steps:
-    - name: Manual-deployment script (Production)
-      uses: appleboy/ssh-action@master
-      with:
-        host: ${{ secrets.PROD_SERVER_IP }}
-        username: ${{ secrets.PROD_USERNAME }}
-        password: ${{ secrets.PROD_PASSWORD }}
-        script: |
-          cd /var/www/kauri/api
-          git pull origin main
-          docker compose -f docker-compose.prod.yml build
-          docker compose -f docker-compose.prod.yml up -d
-          docker image prune -a -f
+      - name: Determine image tag to deploy
+        id: tag
+        run: |
+          if [ -n "${{ needs.build-and-push.outputs.tag }}" ]; then
+            echo "tag=${{ needs.build-and-push.outputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy (pull & restart — aucune action manuelle sur le serveur)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.PROD_SERVER_IP }}
+          username: ${{ secrets.PROD_USERNAME }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            set -e
+            cd /var/www/kauri/api
+            git fetch origin
+            git checkout -B main origin/main
+            git reset --hard origin/main
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            export IMAGE_TAG="${{ steps.tag.outputs.tag }}"
+            # L'image tourne sans root (uid 1000) : les dossiers montés depuis
+            # l'hôte doivent lui appartenir, sinon factures/sauvegardes en EACCES.
+            mkdir -p uploads/invoices backups
+            chown -R 1000:1000 uploads backups
+            docker compose -f docker-compose.prod.yml pull api
+            docker compose -f docker-compose.prod.yml up -d
+            docker image prune -f --filter "until=168h"
+
+      - name: Script de notification (lecture seule)
+        if: always()
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+
+      - name: Notification Slack (#deployment)
+        if: always()
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}
+          STATUS: ${{ job.status }}
+          COMPONENT: API
+          ACTION: Déploiement
+          ENVIRONMENT: PRODUCTION
+          VERSION: ${{ steps.tag.outputs.tag }}
+          LINK: https://api.kauri-app.com/api/health
+          COMMIT_MSG: ${{ github.event.head_commit.message || github.event.workflow_run.head_commit.message }}
+        run: bash .github/scripts/notify-slack.sh

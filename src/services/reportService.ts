@@ -1,6 +1,8 @@
 import Transaction from '../models/Transaction';
 import Budget from '../models/Budget';
+import { BudgetService } from './budgetService';
 import User from '../models/User';
+import HealthScoreHistory from '../models/HealthScoreHistory';
 import mongoose from 'mongoose';
 import logger from '../utils/logger';
 import { GeminiService } from './ai/geminiService';
@@ -12,8 +14,90 @@ import UserChallenge from '../models/UserChallenge';
 import TontineMember from '../models/TontineMember';
 import TontineContribution from '../models/TontineContribution';
 import { AppError } from '../middleware/errorHandler';
+import { currentLanguage } from '../utils/requestContext';
+
+export type ReportPeriod = 'weekly' | 'monthly' | 'yearly';
+
+// Transactions issued by shared money-movement flows (wallet, tontines, goals,
+// challenges, investments) are stored with an internal, English/snake_case
+// `category` — fine for AML aggregation, unreadable if shown as-is in the
+// spending breakdown or read aloud by the AI narrative. Manually-entered/OCR
+// categories (e.g. "Alimentation") are already human-readable and pass
+// through untouched (no entry below = returned as stored).
+const CATEGORY_LABELS: Record<string, string> = {
+  tontine_contribution: 'Cotisations tontines',
+  tontine_social_fund: 'Fonds social tontines',
+  tontine_absence_fee: 'Pénalités absence tontines',
+  tontine_payout: 'Cagnottes tontines reçues',
+  tontine_refund: 'Remboursements tontines',
+  withdrawal: 'Retraits',
+  deposit: 'Dépôts',
+  challenge_reward: 'Récompenses défis',
+  goal_contribution: "Objectifs d'épargne",
+  challenge_stake: 'Mises défis',
+  investment_purchase: 'Investissements',
+  investment_close: "Clôtures d'investissement",
+  saving_transfer: 'Épargne', // legacy fallback for transactions created before per-purpose categories existed
+};
+
+const CATEGORY_LABELS_EN: Record<string, string> = {
+  tontine_contribution: 'Tontine contributions',
+  tontine_social_fund: 'Tontine social fund',
+  tontine_absence_fee: 'Tontine absence fees',
+  tontine_payout: 'Tontine payouts received',
+  tontine_refund: 'Tontine refunds',
+  withdrawal: 'Withdrawals',
+  deposit: 'Deposits',
+  challenge_reward: 'Challenge rewards',
+  goal_contribution: 'Savings goals',
+  challenge_stake: 'Challenge stakes',
+  investment_purchase: 'Investments',
+  investment_close: 'Investment closures',
+  saving_transfer: 'Savings',
+};
+
+/** Libellé lisible d'une catégorie interne, dans la langue de la requête. */
+export function friendlyCategoryLabel(
+  rawCategory: string,
+  lang: 'fr' | 'en' = currentLanguage(),
+): string {
+  const labels = lang === 'en' ? CATEGORY_LABELS_EN : CATEGORY_LABELS;
+  return labels[rawCategory] || rawCategory;
+}
 
 export class ReportService {
+  /**
+   * Resolves a `{ start, end }` date range for a given period granularity,
+   * anchored on "now". Used by getSpendingAnalysis/getSavingsTrend so the
+   * mobile app's weekly/monthly/yearly selector actually changes the data
+   * returned, instead of always showing the current calendar month.
+   */
+  static getDateRangeForPeriod(period: ReportPeriod = 'monthly'): {
+    start: Date;
+    end: Date;
+  } {
+    const now = new Date();
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+
+    switch (period) {
+      case 'weekly': {
+        const start = new Date(now);
+        start.setDate(start.getDate() - 6);
+        start.setHours(0, 0, 0, 0);
+        return { start, end };
+      }
+      case 'yearly': {
+        const start = new Date(now.getFullYear(), 0, 1);
+        return { start, end };
+      }
+      case 'monthly':
+      default: {
+        const start = new Date(now.getFullYear(), now.getMonth(), 1);
+        return { start, end };
+      }
+    }
+  }
+
   /**
    * Get dashboard summary for the current month
    */
@@ -25,7 +109,7 @@ export class ReportService {
     const startOfMonth = new Date(year, month - 1, 1);
     const endOfMonth = new Date(year, month, 0, 23, 59, 59);
 
-    const [user, budget, spendingStats] = await Promise.all([
+    const [user, budget, spendingStats, remaining] = await Promise.all([
       User.findById(userId).select('walletBalance monthlyIncome currency subscription'),
       Budget.findOne({ userId, 'period.month': month, 'period.year': year }),
       Transaction.aggregate([
@@ -44,6 +128,9 @@ export class ReportService {
           },
         },
       ]),
+      // Reste à vivre : budget propre + tous les budgets partagés où l'utilisateur
+      // est participant actif (voir BudgetService.getAccessibleBudgetFilter).
+      BudgetService.getRemainingAcrossBudgets(userId, month, year),
     ]);
 
     const totalSpent = spendingStats.length > 0 ? spendingStats[0].totalSpent : 0;
@@ -65,22 +152,35 @@ export class ReportService {
             percentageUsed: (budget.totalSpent / budget.totalAllocated) * 100,
           }
         : null,
+      resteAVivre: remaining,
       currency: user?.currency || 'XAF',
     };
   }
 
   /**
-   * Get spending analysis by category
+   * Get spending analysis by category.
+   *
+   * If `month`/`year` are both provided, analyzes exactly that calendar
+   * month (used by getNarrativeReport, which is inherently month-focused).
+   * Otherwise, `period` picks the rolling/calendar window: 'weekly' (last 7
+   * days), 'monthly' (current month, default) or 'yearly' (current year) —
+   * this is what backs the mobile app's period selector.
    */
-  static async getSpendingAnalysis(userId: string, month: number, year: number) {
-    const startOfMonth = new Date(year, month - 1, 1);
-    const endOfMonth = new Date(year, month, 0, 23, 59, 59);
+  static async getSpendingAnalysis(
+    userId: string,
+    options: { month?: number; year?: number; period?: ReportPeriod } = {},
+  ) {
+    const { month, year, period } = options;
+    const { start, end } =
+      month != null && year != null
+        ? { start: new Date(year, month - 1, 1), end: new Date(year, month, 0, 23, 59, 59) }
+        : this.getDateRangeForPeriod(period);
 
     const categoryAnalysis = await Transaction.aggregate([
       {
         $match: {
           userId: new mongoose.Types.ObjectId(userId),
-          date: { $gte: startOfMonth, $lte: endOfMonth },
+          date: { $gte: start, $lte: end },
           type: 'expense',
         },
       },
@@ -95,29 +195,54 @@ export class ReportService {
     ]);
 
     return categoryAnalysis.map((cat) => ({
-      category: cat._id,
+      category: friendlyCategoryLabel(cat._id),
       amount: cat.amount,
       count: cat.count,
     }));
   }
 
   /**
-   * Get savings trend (last 6 months)
+   * Get savings trend, bucketed to match the requested granularity: one
+   * point per day for the last 7 days ('weekly'), one point per month for
+   * the last 6 months ('monthly', default — original behavior), or one
+   * point per year for the last 5 years ('yearly').
    */
-  static async getSavingsTrend(userId: string) {
-    const periods: { month: number; year: number }[] = [];
+  static async getSavingsTrend(userId: string, period: ReportPeriod = 'monthly') {
     const now = new Date();
+    const buckets: { start: Date; end: Date; label: string }[] = [];
 
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      periods.push({ month: d.getMonth() + 1, year: d.getFullYear() });
+    if (period === 'weekly') {
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - i);
+        const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0);
+        const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59);
+        buckets.push({ start, end, label: `${d.getDate()}/${d.getMonth() + 1}` });
+      }
+    } else if (period === 'yearly') {
+      for (let i = 4; i >= 0; i--) {
+        const y = now.getFullYear() - i;
+        buckets.push({
+          start: new Date(y, 0, 1),
+          end: new Date(y, 11, 31, 23, 59, 59),
+          label: `${y}`,
+        });
+      }
+    } else {
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const month = d.getMonth() + 1;
+        const year = d.getFullYear();
+        buckets.push({
+          start: new Date(year, month - 1, 1),
+          end: new Date(year, month, 0, 23, 59, 59),
+          label: `${month}/${year}`,
+        });
+      }
     }
 
     const trend = await Promise.all(
-      periods.map(async (p) => {
-        const start = new Date(p.year, p.month - 1, 1);
-        const end = new Date(p.year, p.month, 0, 23, 59, 59);
-
+      buckets.map(async ({ start, end, label }) => {
         const stats = await Transaction.aggregate([
           {
             $match: {
@@ -137,7 +262,7 @@ export class ReportService {
         const expense = stats.find((s) => s._id === 'expense')?.total || 0;
 
         return {
-          period: `${p.month}/${p.year}`,
+          period: label,
           income,
           expense,
           savings: Math.max(0, income - expense),
@@ -167,7 +292,7 @@ export class ReportService {
     const [summary, categoryAnalysis, investments, goals, challenges, tontineData] =
       await Promise.all([
         this.getDashboardSummary(userId),
-        this.getSpendingAnalysis(userId, month, year),
+        this.getSpendingAnalysis(userId, { month, year }),
         Investment.find({ userId, status: 'active' }),
         SavingGoal.find({ userId, status: 'active' }),
         UserChallenge.find({ userId, status: 'active' }).populate('challengeId'),
@@ -208,9 +333,39 @@ export class ReportService {
 
     if (aiReport) {
       await RedisService.set(cacheKey, aiReport, 3600 * 6); // 6 hours
+
+      // Persiste le score au-delà du cache Redis (6h) pour permettre une
+      // courbe d'évolution mois par mois — voir getHealthScoreHistory.
+      const rawScore = (aiReport as any).health_score;
+      if (typeof rawScore === 'number' && Number.isFinite(rawScore)) {
+        const score = Math.max(0, Math.min(100, Math.round(rawScore)));
+        await HealthScoreHistory.findOneAndUpdate(
+          { userId, month, year },
+          { score, computedAt: new Date() },
+          { upsert: true },
+        ).catch((err) => {
+          logger.error(`Failed to persist health score history: ${err.message}`);
+        });
+      }
     }
 
     return aiReport;
+  }
+
+  /**
+   * Historique du score de santé financière, du plus ancien au plus récent —
+   * ordre attendu par un graphique en courbe côté mobile.
+   */
+  static async getHealthScoreHistory(userId: string, months = 6) {
+    const history = await HealthScoreHistory.find({ userId })
+      .sort({ year: -1, month: -1 })
+      .limit(months)
+      .lean();
+
+    return history.reverse().map((h) => ({
+      period: `${h.month}/${h.year}`,
+      score: h.score,
+    }));
   }
 
   /**

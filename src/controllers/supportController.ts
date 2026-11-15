@@ -1,13 +1,28 @@
+import { escapeRegex } from '../utils/escapeRegex';
 import { Request, Response } from 'express';
 import SupportTicket from '../models/SupportTicket';
 import { SlackService } from '../services/slackService';
+import logger from '../utils/logger';
 
 // --- User Actions ---
 
 export const createTicket = async (req: Request, res: Response) => {
   try {
-    const { subject, message, category } = req.body;
+    const { subject, message, category } = req.body || {};
     const userId = (req as any).user._id;
+
+    // Validation errors used to surface as 500 "Server Error".
+    const ok = (v: unknown, max: number) =>
+      typeof v === 'string' && v.trim().length > 0 && v.length <= max;
+    if (!ok(subject, 200) || !ok(message, 5000)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Sujet (200 car. max) et message (5000 car. max) requis.',
+      });
+    }
+    if (category !== undefined && !['bug', 'payment', 'account', 'other'].includes(category)) {
+      return res.status(400).json({ success: false, message: 'Catégorie invalide.' });
+    }
 
     const ticket = await SupportTicket.create({
       userId,
@@ -16,14 +31,14 @@ export const createTicket = async (req: Request, res: Response) => {
       category,
     });
 
-    // Notify Slack
+    // User ID only (no email/PII in Slack — same rule as everywhere else).
     SlackService.sendNotification(
-      `🎫 *New Support Ticket*\n*Subject*: ${subject}\n*Category*: ${category}\n*User Email*: ${(req as any).user.email}`,
+      `🎫 *New Support Ticket*\n*Subject*: ${String(subject).slice(0, 200)}\n*Category*: ${category || 'other'}\n*User ID*: ${userId}`,
     );
 
     res.status(201).json({ success: true, data: ticket });
   } catch (error) {
-    console.error('Error creating ticket:', error);
+    logger.error('Error creating support ticket', { error });
     res.status(500).json({ success: false, message: 'Server Error' });
   }
 };
@@ -50,7 +65,7 @@ export const getUserTickets = async (req: Request, res: Response) => {
       total,
     });
   } catch (error) {
-    console.error('Error fetching user tickets:', error);
+    logger.error('Error fetching user tickets', { error });
     res.status(500).json({ success: false, message: 'Server Error' });
   }
 };
@@ -94,7 +109,11 @@ export const getAllTickets = async (req: Request, res: Response) => {
     if (status && status !== 'all') query.status = status;
     if (category && category !== 'all') query.category = category;
     if (search) {
-      query.subject = { $regex: search, $options: 'i' };
+      // Escaped: raw user input as a pattern allows ReDoS against MongoDB.
+      query.subject = {
+        $regex: escapeRegex(String(search).slice(0, 100)),
+        $options: 'i',
+      };
     }
 
     const tickets = await SupportTicket.find(query)
@@ -112,7 +131,7 @@ export const getAllTickets = async (req: Request, res: Response) => {
       total,
     });
   } catch (error) {
-    console.error('Error fetching all tickets:', error);
+    logger.error('Error fetching all support tickets', { error });
     res.status(500).json({ success: false, message: 'Server Error' });
   }
 };
@@ -122,7 +141,12 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { status } = req.body;
 
-    const ticket = await SupportTicket.findByIdAndUpdate(id, { status }, { new: true });
+    // runValidators: an arbitrary status string was persisted as-is.
+    const ticket = await SupportTicket.findByIdAndUpdate(
+      id,
+      { status },
+      { new: true, runValidators: true },
+    );
 
     if (!ticket) {
       return res.status(404).json({ success: false, message: 'Ticket not found' });

@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 export interface IUser {
   email: string;
-  role: 'user' | 'admin';
+  role: 'user' | 'admin' | 'support';
   password?: string;
   firstName: string;
   lastName: string;
@@ -25,7 +25,7 @@ export interface IUser {
     budgetAlertThreshold: number;
   };
   subscription: {
-    plan: 'free' | 'premium';
+    plan: 'free' | 'premium' | 'business';
     status: 'active' | 'cancelled' | 'expired';
     startDate?: Date;
     endDate?: Date;
@@ -40,9 +40,11 @@ export interface IUser {
   passwordResetExpires?: Date;
   isPremium: boolean;
   walletBalance: number;
-  kycLevel: 'none' | 'pending' | 'verified';
+  kycLevel: 'none' | 'pending' | 'verified' | 'rejected' | 'expired' | 'update_required';
   kycData?: {
-    documentType: 'cni' | 'passport' | 'driver_license';
+    documentType: string;
+    documentExpiryDate?: Date;
+    documentBackImageUrl?: string;
     documentNumber?: string;
     fullName?: string;
     documentImageUrl?: string;
@@ -84,8 +86,20 @@ export interface IUser {
   appVersion?: string;
   lastLogin?: Date;
   refreshToken?: string;
-  aiAttackCount: number;
+  authInvalidatedAt?: Date;
+  aiSecurity: {
+    attackCount: number;
+    coachBlockedUntil?: Date | null;
+    suspensionPending: boolean;
+    lastAttackAt?: Date | null;
+  };
   status: 'active' | 'suspended' | 'blocked';
+  security?: {
+    totpSecret?: string;
+    totpTempSecret?: string;
+    totpEnabled: boolean;
+    backupCodeHashes: string[];
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -93,6 +107,8 @@ export interface IUser {
 export interface IChallenge {
   title: string;
   description: string;
+  titleEn?: string;
+  descriptionEn?: string;
   type: 'saving' | 'spending_cut' | 'habit';
   difficulty: 'easy' | 'medium' | 'hard';
   targetAmount?: number;
@@ -151,6 +167,14 @@ export interface IPayment {
   externalReference?: string; // Stripe/NotchPay reference
   metadata?: any;
   completedAt?: Date;
+  retryApproval?: {
+    status: 'none' | 'pending_approval' | 'approved' | 'rejected';
+    requestedBy?: mongoose.Types.ObjectId;
+    requestedAt?: Date;
+    approvedBy?: mongoose.Types.ObjectId;
+    approvedAt?: Date;
+    reason?: string;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -240,7 +264,11 @@ export interface IBudget {
   }[];
   totalAllocated: number;
   totalSpent: number;
+  currency: string;
   status: 'active' | 'completed' | 'exceeded';
+  inviteCode?: string;
+  isShared: boolean;
+  linkedGoalId?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -253,6 +281,7 @@ export interface ISavingGoal {
   type: 'emergency' | 'project' | 'regular' | 'challenge' | 'debt';
   targetAmount: number;
   currentAmount: number;
+  currency: string;
   startDate: Date;
   deadline?: Date;
   priority: 'high' | 'medium' | 'low';
@@ -276,10 +305,14 @@ export interface ISavingGoal {
   };
   progress: number;
   status: 'active' | 'completed' | 'cancelled' | 'paused';
+  inviteCode?: string;
+  isShared: boolean;
   contributions: {
+    userId?: mongoose.Types.ObjectId;
     amount: number;
     date: Date;
     note?: string;
+    type: 'contribution' | 'redemption';
   }[];
   createdAt: Date;
   updatedAt: Date;
@@ -322,6 +355,7 @@ export interface ISubscription {
   createdAt: Date;
   updatedAt: Date;
 }
+
 export interface INotification {
   userId: mongoose.Types.ObjectId;
   title: string;
@@ -330,4 +364,96 @@ export interface INotification {
   data?: Record<string, any>;
   isRead: boolean;
   createdAt: Date;
+}
+
+// ─── Reseller Hub ─────────────────────────────────────────────────────────────
+
+export type ResellerServiceCategory =
+  'video' | 'music' | 'productivity' | 'ai' | 'gaming' | 'vpn' | 'design' | 'education' | 'other';
+
+export type SlotStatus = 'active' | 'due_soon' | 'overdue' | 'blocked' | 'vacant';
+
+export type ReminderChannel = 'whatsapp' | 'push' | 'email';
+
+export interface IVaultData {
+  encryptedEmail?: string;
+  encryptedPassword?: string;
+  encryptedPin?: string;
+  recoveryContact?: string;
+  encryptedNotes?: string;
+  iv: string;
+  authTag: string;
+}
+
+export interface ISharedMasterAccount {
+  resellerId: mongoose.Types.ObjectId;
+  // Service identity
+  serviceName: string;
+  servicePreset?: string; // Catalogue slug (e.g. 'netflix', 'spotify')
+  category: ResellerServiceCategory;
+  iconUrl?: string;
+  brandColor?: string; // Hex color for UI theming (e.g. '#E50914')
+  // Billing (revendeur → fournisseur)
+  billingCost: number;
+  billingCurrency: string;
+  billingFrequency: 'monthly' | 'quarterly' | 'yearly';
+  nextRenewalDate: Date;
+  // Slot capacity
+  maxSlots: number;
+  // Encrypted credential vault
+  vault?: IVaultData;
+  status: 'active' | 'expired' | 'suspended';
+  notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ISharedSlot {
+  masterAccountId: mongoose.Types.ObjectId;
+  resellerId: mongoose.Types.ObjectId;
+  profileName: string; // E.g. 'Profil 1 - Paul'
+  // Encrypted PIN (optional profile PIN)
+  encryptedPin?: string;
+  pinIv?: string;
+  pinAuthTag?: string;
+  // Client info
+  client: {
+    fullName: string;
+    phone: string; // E.164 format (+237699...)
+    email?: string;
+    whatsappNumber?: string; // If different from phone
+    preferredReminderChannel: ReminderChannel;
+    notes?: string;
+  };
+  // Pricing (revendeur → client)
+  price: number;
+  currency: string;
+  billingCycle: 'monthly' | 'quarterly' | 'yearly';
+  // Period management
+  startDate: Date;
+  currentPeriodStart: Date;
+  currentPeriodEnd: Date; // Client's expiry date
+  gracePeriodDays: number; // Default: 2
+  // Reminder automation
+  autoSendReminders: boolean; // Enabled for premium/business
+  lastReminderSentAt?: Date;
+  lastReminderType?: 'J-3' | 'J-0' | 'OVERDUE';
+  status: SlotStatus;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ISlotPaymentHistory {
+  slotId: mongoose.Types.ObjectId;
+  masterAccountId: mongoose.Types.ObjectId;
+  resellerId: mongoose.Types.ObjectId;
+  amount: number;
+  currency: string;
+  periodCoveredStart: Date;
+  periodCoveredEnd: Date;
+  paidAt: Date;
+  paymentMethod: 'cash' | 'momo' | 'om' | 'bank_transfer' | 'card' | 'other';
+  notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
 }

@@ -8,6 +8,9 @@ const challengeSchema = new Schema<IChallenge>(
   {
     title: { type: String, required: true, trim: true },
     description: { type: String, required: true },
+    // Version anglaise (facultative) : servie aux utilisateurs anglophones.
+    titleEn: { type: String, trim: true },
+    descriptionEn: { type: String },
     type: { type: String, enum: ['saving', 'spending_cut', 'habit'], default: 'saving' },
     difficulty: { type: String, enum: ['easy', 'medium', 'hard'], default: 'medium' },
     targetAmount: { type: Number },

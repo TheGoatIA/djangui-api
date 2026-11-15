@@ -3,6 +3,7 @@ import { TransactionService } from '../services/transactionService';
 import { AuthRequest } from '../middleware/auth';
 import { getPagination } from '../utils/pagination';
 import { CSVUtils } from '../utils/csvUtils';
+import { createTransactionSchema } from '../validators/transactionValidator';
 import fs from 'fs';
 import path from 'path';
 import { MonitoringService } from '../services/monitoringService';
@@ -111,10 +112,32 @@ export class TransactionController {
         category: t.category || t.Category || 'Autres',
       }));
 
+      // Route every imported row through the same Joi schema as the single-transaction
+      // create endpoint: it restricts `type` to income/expense and never declares
+      // `paymentMethod`, so a crafted CSV/JSON row (e.g. type:'deposit', paymentMethod:
+      // 'wallet') can no longer reach TransactionService.createTransaction with fields
+      // that would otherwise credit the user's real wallet balance for nothing.
+      const validatedTransactions: any[] = [];
+      const validationErrors: any[] = [];
+      for (const t of cleanedTransactions) {
+        const { error, value } = createTransactionSchema.validate(t, {
+          abortEarly: false,
+          allowUnknown: false,
+          stripUnknown: true,
+        });
+        if (error) {
+          validationErrors.push({ data: t, error: error.details.map((d) => d.message).join(', ') });
+        } else {
+          validatedTransactions.push(value);
+        }
+      }
+
       const results = await TransactionService.bulkCreateTransactions(
         req.user._id,
-        cleanedTransactions,
+        validatedTransactions,
       );
+      results.failed += validationErrors.length;
+      results.errors.push(...validationErrors);
 
       // Clean up uploaded file
       fs.unlinkSync(filePath);

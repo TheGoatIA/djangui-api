@@ -121,8 +121,8 @@ if (process.env.GRAYLOG_HOST && process.env.GRAYLOG_HOST !== 'disabled') {
   }
 }
 
-// Custom Transport for Email Alerts (Critical Errors)
-class EmailAlertTransport extends Transport {
+// Custom Transport for Critical Alerts (Slack/Email)
+class CriticalAlertTransport extends Transport {
   constructor(opts?: any) {
     super(opts);
   }
@@ -130,22 +130,64 @@ class EmailAlertTransport extends Transport {
   log(info: any, callback: any) {
     setImmediate(async () => {
       if (process.env.NODE_ENV === 'production' && info.level === 'error') {
-        // To avoid circular dependency with EmailService, we use a simple fetch/axios if Mailgun is direct,
-        // or we emit an event that a service listens to.
-        // For simplicity here, we'll try to use a direct Mailgun hit if possible or just log a reminder.
-        // Actually, let's keep it simple: inform that critical alerts should be sent.
-        // In a real scenario, we'd use a dedicated alerting service (like Sentry or a simple webhook).
+        const slackWebhook =
+          process.env.SLACK_WEBHOOK_ALERT ||
+          process.env.SLACK_ERROR_WEBHOOK_URL ||
+          process.env.SLACK_WEBHOOK_URL;
 
-        const adminEmail = process.env.ADMIN_EMAIL || 'me@borisgauty.com';
-        const slackWebhook = process.env.SLACK_ERROR_WEBHOOK_URL || process.env.SLACK_WEBHOOK_URL;
+        // Mask sensitive patterns in error messages & stacks
+        const sanitizeText = (text: string): string => {
+          if (!text) return '';
+          return text
+            .replace(
+              /(password|secret|key|token|authorization)\s*[:=]\s*['"]?[^\s,'"]+/gi,
+              '$1: ***MASKED***',
+            )
+            .replace(/Bearer\s+[A-Za-z0-9-_.]+/gi, 'Bearer ***MASKED***');
+        };
 
+        const safeMessage = sanitizeText(String(info.message || ''));
+        const safeStack = sanitizeText(String(info.stack || 'N/A'));
+
+        // F25: a critical error must reach a human through *some* channel — Slack
+        // being unconfigured or unreachable must not mean the alert is simply
+        // dropped. slackDelivered tracks whether Slack actually took it so the
+        // email fallback only fires when it's genuinely needed.
+        let slackDelivered = false;
         if (slackWebhook) {
           try {
             await axios.post(slackWebhook, {
-              text: `🚨 *CRITICAL ERROR* \n*Message*: ${info.message}\n*Stack*: ${info.stack || 'N/A'}\n*Context*: ${JSON.stringify(info.context || {})}`,
+              text: `🚨 *CRITICAL ERROR* \n*Message*: ${safeMessage}\n*Stack*: ${safeStack}\n*Context*: ${JSON.stringify(info.context || {})}`,
             });
-          } catch (e) {
-            // Silence
+            slackDelivered = true;
+          } catch (e: any) {
+            console.error(`[ALERT] Failed to send Slack alert: ${e.message}`);
+          }
+        }
+
+        if (!slackDelivered) {
+          const adminEmail = process.env.ADMIN_EMAIL;
+          if (!adminEmail) {
+            console.error(
+              '[ALERT] No delivery channel available for a critical error (Slack webhook missing/failed, ADMIN_EMAIL not set) — this alert was NOT delivered anywhere:',
+              safeMessage,
+            );
+          } else {
+            try {
+              // Dynamic import: EmailService imports this same logger module at
+              // its own top level, so a static import here would form a
+              // require-cycle. Deferring resolution to first use (well after
+              // both modules have finished loading) avoids it.
+              const { EmailService } = await import('../services/emailService');
+              await EmailService.sendEmail(
+                adminEmail,
+                '[Kauri] Erreur critique (fallback — Slack indisponible)',
+                `${safeMessage}\n\nStack:\n${safeStack}\n\nContext: ${JSON.stringify(info.context || {})}`,
+                `<p>${safeMessage}</p><pre>${safeStack}</pre><p>Context: ${JSON.stringify(info.context || {})}</p>`,
+              );
+            } catch (e: any) {
+              console.error(`[ALERT] Email fallback also failed to send: ${e.message}`);
+            }
           }
         }
       }
@@ -155,14 +197,18 @@ class EmailAlertTransport extends Transport {
 }
 
 if (process.env.NODE_ENV === 'production') {
-  transports.push(new EmailAlertTransport({ level: 'error' }) as any);
+  transports.push(new CriticalAlertTransport({ level: 'error' }) as any);
 }
+
+// Under Jest the logs drown the test report and pollute logs/*.log with test
+// noise: silence every transport unless TEST_LOGS=1 is set for debugging.
+const silentInTests = process.env.NODE_ENV === 'test' && !process.env.TEST_LOGS;
 
 const logger = winston.createLogger({
   level: level(),
   levels,
   format: winston.format.combine(contextFormat(), winston.format.errors({ stack: true })),
-  transports,
+  transports: silentInTests ? [new winston.transports.Console({ silent: true })] : transports,
 });
 
 export default logger;

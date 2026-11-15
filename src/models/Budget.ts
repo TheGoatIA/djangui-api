@@ -45,11 +45,30 @@ const budgetSchema = new Schema<IBudgetDocument>(
       required: true,
       default: 0,
     },
+    // Native currency of totalAllocated/totalSpent/categories[].allocated|spent —
+    // always set server-side from the creating user's own currency (see
+    // BudgetService.createBudget), never trust a client-supplied value here.
+    // Without this field, currencyMiddleware has no way to tell these amounts
+    // are already in e.g. EUR and wrongly re-converts them as if they were XAF.
+    currency: {
+      type: String,
+      default: 'XAF',
+    },
     status: {
       type: String,
       enum: ['active', 'completed', 'exceeded'],
       default: 'active',
     },
+    // Budgets partagés : le budget reste possédé par `userId` (le créateur/
+    // propriétaire) — inviteCode n'est généré qu'à la demande (BudgetService.shareBudget),
+    // pas systématiquement comme sur Tontine, car la plupart des budgets ne sont jamais
+    // partagés. `sparse` évite tout conflit d'unicité entre les nombreux budgets sans code.
+    inviteCode: { type: String, unique: true, sparse: true, index: true },
+    isShared: { type: Boolean, default: false },
+    // Objectif d'épargne suggéré en fin de mois si ce budget se termine avec un
+    // surplus (voir CronService.autoInitMonthlyBudgets) — jamais de débit automatique,
+    // seulement une notification suggérant à l'utilisateur de contribuer lui-même.
+    linkedGoalId: { type: Schema.Types.ObjectId, ref: 'SavingGoal' },
   },
   {
     timestamps: true,

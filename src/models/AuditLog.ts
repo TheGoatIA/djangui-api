@@ -52,9 +52,36 @@ const auditLogSchema = new Schema<IAuditLog>(
   },
 );
 
-// TTL index to keep audit logs for a specific period (e.g., 1 year)
-// 60 * 60 * 24 * 365 = 31536000 seconds
-auditLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: 31536000 });
+// TTL index controlling how long audit logs are kept before automatic deletion.
+// Default is 5 years (1825 days), a common baseline for AML/financial
+// recordkeeping — but the actual retention period is a regulatory decision
+// specific to the jurisdictions Djangui operates in and MUST be confirmed
+// (and set via AUDIT_LOG_RETENTION_DAYS) rather than relied on as-is.
+const AUDIT_LOG_RETENTION_DAYS = Number(process.env.AUDIT_LOG_RETENTION_DAYS) || 1825;
+auditLogSchema.index(
+  { createdAt: 1 },
+  { expireAfterSeconds: AUDIT_LOG_RETENTION_DAYS * 24 * 60 * 60 },
+);
+
+// Immutabilité stricte au niveau du schéma (F11) : interdiction absolue de mise à jour ou suppression.
+// La liste couvre explicitement findOneAndDelete/findOneAndRemove — des hooks Mongoose
+// distincts de deleteOne/deleteMany qui, omis, laisseraient un contournement trivial de
+// cette garde (AuditLog.findOneAndDelete() passerait sans erreur).
+auditLogSchema.pre(
+  [
+    'updateOne',
+    'findOneAndUpdate',
+    'updateMany',
+    'replaceOne',
+    'deleteOne',
+    'deleteMany',
+    'findOneAndDelete',
+    'findOneAndRemove',
+  ] as any,
+  function (this: any, next: any) {
+    next(new Error('AuditLog entries are immutable and cannot be updated or deleted.'));
+  },
+);
 
 const AuditLog = mongoose.model<IAuditLog>('AuditLog', auditLogSchema);
 

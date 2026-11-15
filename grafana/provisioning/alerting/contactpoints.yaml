@@ -8,7 +8,7 @@ contactPoints:
       - uid: email-critical-receiver
         type: email
         settings:
-          addresses: '{{ env "GRAFANA_ALERT_EMAIL_TO" | default "ops@kauri-app.com" }}'
+          addresses: '${GRAFANA_ALERT_EMAIL_TO}'
           subject: '[CRITICAL] {{ template "default.title" . }}'
           message: |
             {{ template "default.message" . }}
@@ -22,7 +22,7 @@ contactPoints:
       - uid: slack-critical-receiver
         type: slack
         settings:
-          url: '{{ env "GRAFANA_SLACK_WEBHOOK_CRITICAL" | default "https://hooks.slack.com/services/CHANGE/ME" }}'
+          url: '${GRAFANA_SLACK_WEBHOOK_CRITICAL}'
           recipient: '#alerts-critical'
           title: '🚨 [CRITICAL] {{ template "default.title" . }}'
           text: '{{ template "default.message" . }}'
@@ -39,7 +39,7 @@ contactPoints:
       - uid: slack-warnings-receiver
         type: slack
         settings:
-          url: '{{ env "GRAFANA_SLACK_WEBHOOK_WARNINGS" | default "https://hooks.slack.com/services/CHANGE/ME" }}'
+          url: '${GRAFANA_SLACK_WEBHOOK_WARNINGS}'
           recipient: '#alerts-warnings'
           title: '⚠️ [WARNING] {{ template "default.title" . }}'
           text: '{{ template "default.message" . }}'
@@ -55,7 +55,7 @@ contactPoints:
       - uid: slack-fintech-receiver
         type: slack
         settings:
-          url: '{{ env "GRAFANA_SLACK_WEBHOOK_FINTECH" | default "https://hooks.slack.com/services/CHANGE/ME" }}'
+          url: '${GRAFANA_SLACK_WEBHOOK_FINTECH}'
           recipient: '#alerts-fintech'
           title: '💳 [FINTECH] {{ template "default.title" . }}'
           text: '{{ template "default.message" . }}'
@@ -71,7 +71,7 @@ contactPoints:
       - uid: slack-security-receiver
         type: slack
         settings:
-          url: '{{ env "GRAFANA_SLACK_WEBHOOK_SECURITY" | default "https://hooks.slack.com/services/CHANGE/ME" }}'
+          url: '${GRAFANA_SLACK_WEBHOOK_SECURITY}'
           recipient: '#alerts-security'
           title: '🔒 [SECURITY] {{ template "default.title" . }}'
           text: '{{ template "default.message" . }}'

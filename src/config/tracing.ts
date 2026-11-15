@@ -1,26 +1,6 @@
-import { NodeSDK } from '@opentelemetry/sdk-node';
-import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
-import { resourceFromAttributes } from '@opentelemetry/resources';
-import { SEMRESATTRS_SERVICE_NAME } from '@opentelemetry/semantic-conventions';
 import logger from '../utils/logger';
 
-import { ParentBasedSampler, TraceIdRatioBasedSampler } from '@opentelemetry/sdk-trace-base';
-
-const traceExporter = new OTLPTraceExporter({
-  url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhost:4317',
-});
-
-const sdk = new NodeSDK({
-  resource: resourceFromAttributes({
-    [SEMRESATTRS_SERVICE_NAME]: 'kauri-api',
-  }),
-  sampler: new ParentBasedSampler({
-    root: new TraceIdRatioBasedSampler(0.1), // Sample 10% of requests locally
-  }),
-  traceExporter,
-  instrumentations: [getNodeAutoInstrumentations()],
-});
+let sdkInstance: any = null;
 
 export const initTracing = async () => {
   if (process.env.ENABLE_TRACING === 'false') {
@@ -28,18 +8,42 @@ export const initTracing = async () => {
     return;
   }
   try {
-    sdk.start();
-    logger.info('OpenTelemetry Tracing initialized');
+    const { NodeSDK } = await import('@opentelemetry/sdk-node');
+    const { getNodeAutoInstrumentations } =
+      await import('@opentelemetry/auto-instrumentations-node');
+    const { OTLPTraceExporter } = await import('@opentelemetry/exporter-trace-otlp-grpc');
+    const { resourceFromAttributes } = await import('@opentelemetry/resources');
+    const { ParentBasedSampler, TraceIdRatioBasedSampler } =
+      await import('@opentelemetry/sdk-trace-base');
 
-    // Graceful shutdown
-    process.on('SIGTERM', () => {
-      sdk
-        .shutdown()
-        .then(() => logger.info('Tracing terminated'))
-        .catch((error) => logger.error('Error terminating tracing', error))
-        .finally(() => process.exit(0));
+    const traceExporter = new OTLPTraceExporter({
+      url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhost:4317',
     });
-  } catch (error) {
-    logger.error('Error initializing tracing', error);
+
+    sdkInstance = new NodeSDK({
+      resource: resourceFromAttributes({
+        'service.name': 'kauri-api',
+      }),
+      sampler: new ParentBasedSampler({
+        root: new TraceIdRatioBasedSampler(0.1),
+      }),
+      traceExporter,
+      instrumentations: [getNodeAutoInstrumentations()],
+    });
+
+    sdkInstance.start();
+    logger.info('OpenTelemetry Tracing initialized');
+  } catch (error: any) {
+    logger.warn(`OpenTelemetry Tracing initialization skipped (non-blocking): ${error.message}`);
+  }
+};
+
+export const shutdownTracing = async (): Promise<void> => {
+  if (process.env.ENABLE_TRACING === 'false' || !sdkInstance) return;
+  try {
+    await sdkInstance.shutdown();
+    logger.info('Tracing terminated');
+  } catch (error: any) {
+    logger.error('Error terminating tracing', error);
   }
 };

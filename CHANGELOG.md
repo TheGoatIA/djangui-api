@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## [5.0.0] — Durcissement production, CI/CD & qualité — 2026-10
+
+### Sécurité
+- Authentification admin par cookies httpOnly uniquement (`X-Client-Type: web`), garde CSRF d'origine, `jti` unique par token, révocation de sessions.
+- Limiteurs de débit (auth, flux e-mail), verrouillage de compte, comparaisons en temps constant (Swagger, métriques, clé client).
+- Suppression de compte avec mot de passe, correspondance téléphone uniquement si vérifié, validation de `updateMe`.
+- Chiffrement AES-256-GCM avec `authTagLength` 16 ; parsing JSON IA sans regex ; erreurs body-parser → 4xx.
+- Validation d'environnement de production (clé client mobile, Firebase, secrets webhooks).
+
+### Paiements
+-  : finalisation des paiements sans webhook (cron chaque minute, idempotent).
+- Webhooks : 5xx retryables, correction d'encodage.
+
+### Infra & CI/CD
+- Image Docker Node 22 non-root, pm2 isolé, HEALTHCHECK, ports liés à 127.0.0.1, versions Jaeger/OTel épinglées.
+- `ci.yml` (quality, test, security, sonar) réutilisé par `deploy.yml` ; Dependabot hebdomadaire sur `dev` ; SonarQube auto-hébergé.
+- 92 tests Jest avec seuils de couverture ; scripts .
+- Documentation mise à jour (README, ARCHITECTURE, DEPLOYMENT, CONTRIBUTING).
+
+---
+
 ## [Unreleased] — Backend Audit & Metrics — 2026-03-09
 
 ### Audit performed by: Claude Code (Sonnet 4.6)

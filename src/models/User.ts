@@ -1,6 +1,8 @@
 import mongoose, { Schema, Document } from 'mongoose';
 import bcrypt from 'bcrypt';
 import { IUser } from '../types/models';
+import { VaultCrypto } from '../utils/vaultCrypto';
+import { isSubscriptionEntitled } from '../utils/subscription';
 
 export interface IUserDocument extends IUser, Document {
   firebaseUid?: string;
@@ -18,7 +20,7 @@ const userSchema = new Schema<IUserDocument>(
     },
     role: {
       type: String,
-      enum: ['user', 'admin'],
+      enum: ['user', 'admin', 'support'],
       default: 'user',
     },
     password: {
@@ -84,7 +86,8 @@ const userSchema = new Schema<IUserDocument>(
     subscription: {
       plan: {
         type: String,
-        enum: ['free', 'premium'],
+        // 'business' = Super Premium (Reseller Hub tier)
+        enum: ['free', 'premium', 'business'],
         default: 'free',
       },
       status: {
@@ -122,18 +125,21 @@ const userSchema = new Schema<IUserDocument>(
     },
     kycLevel: {
       type: String,
-      enum: ['none', 'pending', 'verified'],
+      enum: ['none', 'pending', 'verified', 'rejected', 'expired', 'update_required'],
       default: 'none',
       index: true,
     },
     kycData: {
-      documentType: {
+      documentType: { type: String },
+      documentNumber: {
         type: String,
-        enum: ['cni', 'passport', 'driver_license'],
+        set: (val: string) => (val ? VaultCrypto.encryptSimple(val, 'kyc_doc') : val),
+        get: (val: string) => (val ? VaultCrypto.decryptSimple(val, 'kyc_doc') : val),
       },
-      documentNumber: String,
       fullName: String,
       documentImageUrl: String,
+      documentBackImageUrl: String,
+      documentExpiryDate: Date,
       selfieImageUrl: String,
       verifiedAt: Date,
       rejectionReason: String,
@@ -193,25 +199,73 @@ const userSchema = new Schema<IUserDocument>(
     appVersion: String,
     lastLogin: Date,
     refreshToken: String,
-    // AI Security
-    aiAttackCount: {
-      type: Number,
-      default: 0,
+    // Every access token issued BEFORE this instant is rejected by `protect`
+    // (password change/reset, "sign out all devices"). Access tokens are
+    // stateless JWTs valid 15 min: without this, a stolen token kept working
+    // after the victim reset their password.
+    authInvalidatedAt: Date,
+    // AI Security — système de paliers (plus de suspension automatique de compte)
+    aiSecurity: {
+      attackCount: { type: Number, default: 0 },
+      coachBlockedUntil: { type: Date, default: null },
+      suspensionPending: { type: Boolean, default: false },
+      lastAttackAt: { type: Date, default: null },
     },
     status: {
       type: String,
       enum: ['active', 'suspended', 'blocked'],
       default: 'active',
     },
+    // TOTP 2FA — opt-in, currently only surfaced to admin/support accounts in
+    // the admin dashboard (see AuthService.login). `totpTempSecret` holds a
+    // freshly generated secret during setup, before the user has proven they
+    // scanned it; it's promoted to `totpSecret` only once a valid code is
+    // confirmed via /auth/2fa/enable.
+    security: {
+      totpSecret: { type: String, select: false },
+      totpTempSecret: { type: String, select: false },
+      totpEnabled: { type: Boolean, default: false },
+      backupCodeHashes: { type: [String], select: false, default: [] },
+    },
   },
   {
     timestamps: true,
     toJSON: {
       virtuals: true,
+      getters: true,
       transform: function (doc, ret) {
         const userRet = ret as any;
         delete userRet.password;
         delete userRet.__v;
+        // `security.totpSecret`/`totpTempSecret`/`backupCodeHashes` are
+        // `select: false` at the schema level, but any query that explicitly
+        // `.select('+security.totpSecret')` (as the 2FA verification flow
+        // must, to check the submitted code) would otherwise serialize the
+        // permanent TOTP seed straight back into the API response — which
+        // hands out everything needed to forge valid codes forever. Strip
+        // these unconditionally here so no call site can leak them by
+        // omission, the same way `password` is handled above.
+        if (userRet.security) {
+          delete userRet.security.totpSecret;
+          delete userRet.security.totpTempSecret;
+          delete userRet.security.backupCodeHashes;
+        }
+        // Refresh tokens are hashed (not directly usable as a credential), but
+        // there's no reason GET /me or any other serialized User should ever
+        // return them to the client — strip unconditionally, same as password.
+        delete userRet.refreshToken;
+        delete userRet.authInvalidatedAt;
+        // Single-use email tokens are stored hashed, but have no business in a response.
+        delete userRet.emailVerificationToken;
+        delete userRet.emailVerificationExpires;
+        delete userRet.passwordResetToken;
+        delete userRet.passwordResetExpires;
+        if (Array.isArray(userRet.sessions)) {
+          userRet.sessions = userRet.sessions.map((s: any) => {
+            const { refreshToken, ...rest } = s;
+            return rest;
+          });
+        }
         return userRet;
       },
     },
@@ -219,19 +273,25 @@ const userSchema = new Schema<IUserDocument>(
   },
 );
 
-// Virtual for isPremium
+// Virtual for isPremium — true for both 'premium' and 'business' plans
+// A cancelled plan stays entitled until its endDate (see utils/subscription.ts).
 userSchema.virtual('isPremium').get(function (this: IUserDocument) {
-  const isPlanPremium = this.subscription?.plan === 'premium';
-  const isActive = this.subscription?.status === 'active';
-  const isNotExpired =
-    !this.subscription?.endDate || new Date(this.subscription.endDate) >= new Date();
+  return isSubscriptionEntitled(this.subscription as any);
+});
 
-  return isPlanPremium && isActive && isNotExpired;
+// Virtual for isBusiness — true only for the 'business' (Super Premium) plan
+userSchema.virtual('isBusiness').get(function (this: IUserDocument) {
+  return isSubscriptionEntitled(this.subscription as any, ['business']);
 });
 
 // Pre-save hook for password hashing
 userSchema.pre('save', async function (this: IUserDocument) {
   if (!this.isModified('password') || !this.password) return;
+
+  // A changed password revokes every access token issued so far. Backdated by
+  // 1 s because JWT `iat` has second precision: the tokens issued right after
+  // this save (same second) must stay valid.
+  if (!this.isNew) (this as any).authInvalidatedAt = new Date(Date.now() - 1000);
 
   try {
     const salt = await bcrypt.genSalt(12);

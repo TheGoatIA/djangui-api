@@ -11,47 +11,188 @@ const validateEnvironment = () => {
   const required: { key: string; minLength?: number }[] = [
     { key: 'JWT_ACCESS_SECRET', minLength: 32 },
     { key: 'JWT_REFRESH_SECRET', minLength: 32 },
+    { key: 'VAULT_ENCRYPTION_KEY', minLength: 32 },
     { key: 'MONGODB_URI' },
   ];
 
-  const weakDefaults = ['super-secret', 'super-secret-refresh', 'changeme', 'password', 'secret'];
+  const weakDefaults = [
+    'super-secret',
+    'super-secret-refresh',
+    'changeme',
+    'password',
+    'secret',
+    'kaurisecret',
+    'kauriadmin',
+    'kauri2026',
+    'admin',
+  ];
   const errors: string[] = [];
+  const warnings: string[] = [];
 
+  // ── Variables requises (bloquantes) ──
   for (const { key, minLength } of required) {
     const value = process.env[key];
     if (!value) {
-      errors.push(`Missing required environment variable: ${key}`);
+      errors.push(`Variable d'environnement manquante : ${key}`);
       continue;
     }
     if (minLength && value.length < minLength) {
-      errors.push(`${key} is too short (min ${minLength} chars, got ${value.length})`);
+      errors.push(`${key} est trop courte (min ${minLength} chars, reçu ${value.length})`);
     }
-    if (weakDefaults.some((d) => value.toLowerCase().includes(d))) {
-      errors.push(`${key} contains a weak/default value — use a strong random secret`);
+    // MONGODB_URI contient légitimement le mot "admin" en clair (authSource=admin
+    // et/ou nom d'utilisateur admin, standard MongoDB) — vérifier la chaîne
+    // entière produit un faux positif systématique. On isole le mot de passe
+    // (entre ":" et "@") et on ne teste que lui contre les valeurs faibles.
+    const checkedValue =
+      key === 'MONGODB_URI' ? (value.match(/:\/\/[^:]+:([^@]+)@/)?.[1] ?? value) : value;
+    if (weakDefaults.some((d) => checkedValue.toLowerCase().includes(d))) {
+      errors.push(
+        `${key} contient une valeur par défaut faible — utiliser un secret aléatoire fort`,
+      );
     }
   }
 
-  // Warn (non-fatal) for optional but sensitive vars
-  const recommended = ['METRICS_TOKEN', 'STRIPE_WEBHOOK_SECRET'];
-  for (const key of recommended) {
-    if (!process.env[key]) {
-      console.warn(`[WARN] Environment variable ${key} is not set`);
-    }
-  }
-
-  // Swagger password: fatal in production if unset or using the known default
+  // ── Vérifications production uniquement (bloquantes) ──
   if (process.env.NODE_ENV === 'production') {
+    // Backups: the only off-server copy is Firebase Storage (MinIO runs on the
+    // same VPS as the database).
+    if (!process.env.FIREBASE_STORAGE_BUCKET) {
+      console.error('🚨 FIREBASE_STORAGE_BUCKET manquant : AUCUNE sauvegarde hors du serveur.');
+    }
+    if (!process.env.BACKUP_ENCRYPTION_KEY || process.env.BACKUP_ENCRYPTION_KEY.length < 32) {
+      console.error('🚨 BACKUP_ENCRYPTION_KEY absente/trop courte : sauvegardes non chiffrées.');
+    }
+    // Webhook secrets: not blocking (the rest of the app must keep running),
+    // but payment initialisation is refused without them (PaymentService).
+    for (const k of ['NOTCHPAY_WEBHOOK_SECRET', 'STRIPE_WEBHOOK_SECRET']) {
+      if (!process.env[k]) {
+        console.error(`🚨 ${k} manquant : les paiements correspondants sont DÉSACTIVÉS.`);
+      }
+    }
+    // Swagger
     const swaggerPassword = process.env.SWAGGER_PASSWORD;
     if (!swaggerPassword || swaggerPassword === 'kauri2026' || swaggerPassword.length < 12) {
-      errors.push('SWAGGER_PASSWORD must be set to a strong password (min 12 chars) in production');
+      errors.push('SWAGGER_PASSWORD doit être un mot de passe fort (min 12 chars) en production');
+    }
+
+    // MinIO — noms alignés sur storageService.ts / docker-compose (MINIO_ACCESS_KEY / MINIO_SECRET_KEY)
+    const minioSecretKey = process.env.MINIO_SECRET_KEY;
+    if (!minioSecretKey || minioSecretKey === 'kaurisecret' || minioSecretKey.length < 12) {
+      errors.push('MINIO_SECRET_KEY doit être défini et fort (min 12 chars) en production');
+    }
+    const minioAccessKey = process.env.MINIO_ACCESS_KEY;
+    if (!minioAccessKey || minioAccessKey === 'kauriadmin') {
+      errors.push(
+        'MINIO_ACCESS_KEY ne doit pas utiliser la valeur par défaut "kauriadmin" en production',
+      );
+    }
+
+    // IA
+    if (!process.env.GEMINI_API_KEY) {
+      errors.push('GEMINI_API_KEY est requis en production (coach IA, OCR, KYC)');
+    }
+
+    // Passerelles de paiement — au moins une doit être configurée
+    const hasStripe = !!process.env.STRIPE_SECRET_KEY;
+    const hasNotchPay = !!process.env.NOTCHPAY_PRIVATE_KEY;
+    if (!hasStripe && !hasNotchPay) {
+      errors.push(
+        'Au moins une passerelle de paiement doit être configurée en production (STRIPE_SECRET_KEY ou NOTCHPAY_PRIVATE_KEY)',
+      );
+    }
+
+    // Variables lues par les services au runtime : leur absence ne casse pas le
+    // démarrage mais désactive silencieusement une fonctionnalité de sécurité
+    // ou une intégration — en production on refuse de démarrer.
+    for (const key of [
+      'REDIS_URL',
+      'ADMIN_URL',
+      'SWAGGER_USER',
+      'MAILGUN_API_KEY',
+      'MAILGUN_DOMAIN',
+      // Clé client : sans elle, /system/telemetry/* serait ouvert à tout Internet.
+      'MOBILE_CLIENT_API_KEY',
+    ]) {
+      if (!process.env[key]) {
+        errors.push(`${key} est requis en production`);
+      }
+    }
+    // Webhooks de paiement : sans secret, ils sont tous rejetés (400/401) — aucun risque de
+    // fausse validation — et les paiements sont alors confirmés par le sondage actif du
+    // fournisseur (PaymentPollingService, chaque minute). On avertit sans bloquer le démarrage.
+    if (process.env.STRIPE_SECRET_KEY && !process.env.STRIPE_WEBHOOK_SECRET) {
+      warnings.push(
+        'STRIPE_WEBHOOK_SECRET non défini — webhooks Stripe désactivés ; paiements confirmés par polling (≈1 min)',
+      );
+    }
+    if (process.env.NOTCHPAY_PRIVATE_KEY && !process.env.NOTCHPAY_WEBHOOK_SECRET) {
+      warnings.push(
+        'NOTCHPAY_WEBHOOK_SECRET non défini — webhooks NotchPay désactivés ; paiements confirmés par polling (≈1 min)',
+      );
+    }
+
+    // Firebase (auth sociale/téléphone + notifications push) — mêmes variables
+    // que src/config/firebase.ts.
+    if (
+      !process.env.FIREBASE_PROJECT_ID ||
+      !process.env.FIREBASE_CLIENT_EMAIL ||
+      !process.env.FIREBASE_PRIVATE_KEY
+    ) {
+      errors.push(
+        'FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL et FIREBASE_PRIVATE_KEY sont requis en production (connexion Google/Apple/téléphone et notifications push)',
+      );
+    }
+
+    // TLS en transit vers MongoDB/Redis (F23) — fail-closed par défaut : ces deux
+    // clients transportent des données financières/PII (soldes, JWT, mots de passe
+    // hashés). ALLOW_INSECURE_DB_TLS=true permet un opt-out explicite et documenté
+    // pour un déploiement où le TLS est terminé hors bande (VPC privé, stunnel).
+    if (process.env.ALLOW_INSECURE_DB_TLS !== 'true') {
+      const mongoURI = process.env.MONGODB_URI || '';
+      const mongoTlsOk =
+        mongoURI.includes('tls=true') ||
+        mongoURI.includes('ssl=true') ||
+        mongoURI.startsWith('mongodb+srv://');
+      if (!mongoTlsOk) {
+        errors.push(
+          'MONGODB_URI doit utiliser TLS en production (tls=true, ssl=true, ou mongodb+srv://). ' +
+            'Définir ALLOW_INSECURE_DB_TLS=true pour un déploiement sur réseau privé de confiance.',
+        );
+      }
+
+      const redisURL = process.env.REDIS_URL || '';
+      if (!redisURL.startsWith('rediss://')) {
+        errors.push(
+          'REDIS_URL doit utiliser TLS en production (rediss://). ' +
+            'Définir ALLOW_INSECURE_DB_TLS=true pour un déploiement sur réseau privé de confiance.',
+        );
+      }
     }
   }
 
+  // ── Variables recommandées (non-bloquantes) ──
+  const recommended = ['METRICS_TOKEN'];
+  for (const key of recommended) {
+    if (!process.env[key]) {
+      warnings.push(`Variable recommandée non définie : ${key}`);
+    }
+  }
+
+  // Afficher les avertissements
+  warnings.forEach((w) => {
+    console.warn(`[WARN] ${w}`);
+    logger.warn(`[ENV] ${w}`);
+  });
+
+  // Bloquer le démarrage si erreurs critiques
   if (errors.length > 0) {
-    console.error('FATAL: Environment validation failed:');
-    errors.forEach((e) => console.error(` - ${e}`));
+    console.error("FATAL: Validation de l'environnement échouée :");
+    errors.forEach((e) => console.error(` ✖ ${e}`));
+    logger.error("FATAL: Validation de l'environnement échouée", { errors });
     process.exit(1);
   }
+
+  console.log("[ENV] Validation de l'environnement réussie ✓");
 };
 
 validateEnvironment();
@@ -69,7 +210,7 @@ process.on('unhandledRejection', (reason, promise) => {
   process.exit(1);
 });
 
-import { initTracing } from './config/tracing';
+import { initTracing, shutdownTracing } from './config/tracing';
 // Initialize OpenTelemetry Tracing
 initTracing();
 
@@ -104,7 +245,16 @@ const startServer = async () => {
     // Run migrations
     logger.info('Step 2.5: Running migrations...');
     await MigrationService.runInitialFintechMigration();
-    await MigrationService.runRealMoneyMigration();
+    // runRealMoneyMigration is NOT a startup migration: it wipes simulation data
+    // and must only run when an admin actually switches the platform to real
+    // money (FeatureFlagService.setRealMoneyMode). Run at startup, it reset
+    // every user's goals/challenges/tontines on the next deploy while real
+    // money was still off.
+    await MigrationService.runTontineRotationMigration();
+    await MigrationService.runDisableInvestmentsMigration();
+    await MigrationService.runDedupeActiveChallengesMigration();
+    await MigrationService.runChallengeTranslationsMigration();
+    await MigrationService.runLocalUploadsMigration();
     logger.info('Step 2.5: Migrations completed');
 
     // Initialize Monitoring (Prometheus)
@@ -143,8 +293,10 @@ const startServer = async () => {
       logger.info(`${signal} received. Starting graceful shutdown...`);
       server.close(() => {
         logger.info('HTTP server closed. Cleaning up resources...');
-        // Close DB, Redis, etc.
-        Promise.all([mongoose.connection.close(), redis.quit()])
+        // Close DB, Redis, tracing, etc. — all part of this single shutdown
+        // sequence (tracing no longer runs its own competing SIGTERM handler,
+        // see config/tracing.ts).
+        Promise.all([mongoose.connection.close(), redis.quit(), shutdownTracing()])
           .then(() => {
             logger.info('Clean shutdown complete. Exiting.');
             process.exit(0);

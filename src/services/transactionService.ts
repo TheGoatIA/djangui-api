@@ -1,11 +1,13 @@
 import Transaction, { ITransactionDocument } from '../models/Transaction';
 import Budget from '../models/Budget';
+import BudgetParticipant from '../models/BudgetParticipant';
 import SavingGoal from '../models/SavingGoal';
 import UserChallenge from '../models/UserChallenge';
 import { CategorizationService } from './ai/categorizationService';
 import { ChallengeService } from './challengeService';
 import { GoalService } from './goalService';
 import { NotificationService } from './notificationService';
+import { WalletService } from './walletService';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import mongoose from 'mongoose';
@@ -13,8 +15,55 @@ import User from '../models/User';
 import { SlackService } from './slackService';
 import { MonitoringService } from './monitoringService';
 
+const roundAmount = (n: number): number => Math.round(n * 100) / 100;
+
 export class TransactionService {
-  static async createTransaction(userId: string, data: any) {
+  /**
+   * Fields a USER-ENTERED transaction may carry (manual form, CSV/JSON import,
+   * SMS parsing — regex or Gemini). Everything else is dropped, and
+   * paymentMethod is forced to 'cash': a user entry is bookkeeping only and can
+   * never move real money. Previously the SMS/AI path spread the raw Gemini JSON
+   * (`...result`) into createTransaction, so a crafted SMS (prompt injection)
+   * yielding {type:'income', paymentMethod:'notchpay'} credited walletBalance —
+   * money created out of nothing. Real money only moves through WalletService.
+   */
+  private static readonly USER_ENTRY_FIELDS = [
+    'amount',
+    'type',
+    'category',
+    'subcategory',
+    'description',
+    'merchant',
+    'location',
+    'date',
+    'tags',
+    'isRecurring',
+    'recurringFrequency',
+    'receipt',
+    'linkedGoalId',
+    'isAutoCategorized',
+    'categorizationConfidence',
+  ];
+
+  private static sanitizeUserEntry(raw: any) {
+    const data: any = {};
+    for (const key of this.USER_ENTRY_FIELDS) {
+      if (raw && raw[key] !== undefined) data[key] = raw[key];
+    }
+    if (data.type !== 'income' && data.type !== 'expense') {
+      throw new AppError('Type de transaction invalide', 400);
+    }
+    const amount = Number(data.amount);
+    if (!Number.isFinite(amount) || amount < 0 || amount > 1_000_000_000_000) {
+      throw new AppError('Montant invalide', 400);
+    }
+    data.amount = amount;
+    data.paymentMethod = 'cash';
+    return data;
+  }
+
+  static async createTransaction(userId: string, rawData: any) {
+    const data = this.sanitizeUserEntry(rawData);
     const session = await mongoose.startSession();
     session.startTransaction();
 
@@ -32,86 +81,117 @@ export class TransactionService {
         data.categorizationConfidence = aiResult.confidence;
       }
 
+      // This method only ever creates transactions the user themselves entered
+      // (manual form, SMS parsing, CSV/JSON import) — always their own currency,
+      // never a client-supplied value, so currencyMiddleware can tell `amount`
+      // is already native to that currency instead of assuming XAF (which
+      // otherwise silently corrupts every manual transaction for a non-XAF user).
+      const user = await User.findById(userId)
+        .select('currency preferences.budgetAlertThreshold')
+        .session(session);
+
       const transaction = new Transaction({
         ...data,
         userId,
+        currency: user?.currency || 'XAF',
       });
 
       await transaction.save({ session });
 
       // Alert Slack for large transactions (> 500,000)
       if (transaction.amount > 500000) {
-        SlackService.sendNotification(
+        SlackService.sendTransaction(
           `💰 *Large Transaction Alert*\n*User ID*: ${userId}\n*Amount*: ${transaction.amount}\n*Type*: ${transaction.type}\n*Description*: ${transaction.description}`,
         );
       }
 
       // Update User Wallet Balance
       // Seuls les revenus numériques (dépôts) et les dépenses via Wallet impactent le solde réel.
-      const incomeTypes = ['income', 'deposit', 'tontine_payout', 'challenge_reward'];
+      // IMPORTANT: cette méthode ne crée que des transactions saisies par l'utilisateur
+      // (formulaire manuel ou import CSV/JSON) — `type` ne doit donc jamais déclencher
+      // ce crédit/débit en dehors de 'income'/'expense', les seules valeurs que le
+      // validateur Joi autorise sur ce chemin. Des valeurs comme 'deposit'/'tontine_payout'/
+      // 'withdrawal' sont réservées aux écritures système créées par WalletService
+      // (paiements, tontines, retraits) — les accepter ici permettrait de fabriquer du
+      // solde réel sans jamais passer par Stripe/NotchPay ou un vrai débit du wallet.
+      // Always false since sanitizeUserEntry forces paymentMethod 'cash' — kept as a
+      // second line of defence should a future caller bypass the sanitizer.
       const isDigitalIncome =
-        incomeTypes.includes(data.type) &&
-        ['stripe', 'notchpay', 'wallet'].includes(data.paymentMethod);
+        data.type === 'income' && ['stripe', 'notchpay', 'wallet'].includes(data.paymentMethod);
       const isWalletExpense = data.type === 'expense' && data.paymentMethod === 'wallet';
 
       if (isDigitalIncome) {
         await User.findByIdAndUpdate(userId, { $inc: { walletBalance: data.amount } }, { session });
-      } else if (isWalletExpense || data.type === 'withdrawal') {
-        const incValue = -data.amount;
-        await User.findByIdAndUpdate(userId, { $inc: { walletBalance: incValue } }, { session });
+      } else if (isWalletExpense) {
+        // Atomic conditional decrement: the schema's `min: 0` on walletBalance is not
+        // enforced by $inc (no validators run), so without this floor check two
+        // concurrent debits could each pass a separate stale-read balance check and
+        // together drive the balance negative. A null result means insufficient funds.
+        const debited = await User.findOneAndUpdate(
+          { _id: userId, walletBalance: { $gte: data.amount } },
+          { $inc: { walletBalance: -data.amount } },
+          { session },
+        );
+        if (!debited) {
+          throw new AppError('Solde insuffisant dans le portefeuille', 400);
+        }
       }
 
-      // Apply automated saving strategies (e.g., Roundup)
-      if (transaction.type === 'expense') {
-        await TransactionService.applyAutomatedStrategies(userId, transaction, session);
-      }
-
-      // If expense, update budget
+      // If expense, update budget(s) — le budget propre, et tout budget
+      // partagé où l'utilisateur est participant actif (voir BudgetParticipant).
       if (transaction.type === 'expense') {
         const date = new Date(transaction.date);
         const month = date.getMonth() + 1;
         const year = date.getFullYear();
+        // Seuil d'alerte personnalisable (User.preferences.budgetAlertThreshold,
+        // 80 par défaut) — utilisé pour le budget propre ET chaque budget partagé.
+        const alertThreshold = user?.preferences?.budgetAlertThreshold ?? 80;
 
-        const budget = await Budget.findOne({
+        const ownBudget = await Budget.findOne({
           userId,
           'period.month': month,
           'period.year': year,
         }).session(session);
 
-        if (budget) {
-          const categoryIndex = budget.categories.findIndex(
-            (c) => c.name.toLowerCase() === transaction.category.toLowerCase(),
+        if (ownBudget) {
+          await TransactionService.applyExpenseToBudget(
+            ownBudget,
+            transaction.category,
+            transaction.amount,
+            alertThreshold,
+            [userId],
+            session,
           );
+        }
 
-          if (categoryIndex !== -1) {
-            budget.categories[categoryIndex].spent += transaction.amount;
-            budget.totalSpent += transaction.amount;
+        const participations = await BudgetParticipant.find({
+          userId,
+          invitationStatus: 'accepted',
+        })
+          .select('budgetId')
+          .session(session);
 
-            const usagePercentage =
-              (budget.categories[categoryIndex].spent /
-                budget.categories[categoryIndex].allocated) *
-              100;
+        if (participations.length > 0) {
+          const sharedBudgets = await Budget.find({
+            _id: { $in: participations.map((p) => p.budgetId) },
+            'period.month': month,
+            'period.year': year,
+          }).session(session);
 
-            if (usagePercentage >= 100 && budget.status !== 'exceeded') {
-              budget.status = 'exceeded';
-              NotificationService.sendToUser(userId, {
-                title: '',
-                body: '',
-                translationKey: 'BUDGET_EXCEEDED',
-                translationData: { category: budget.categories[categoryIndex].name },
-                data: { type: 'budget_exceeded', category: budget.categories[categoryIndex].name },
-              }).catch((err) => logger.error(`Notification error: ${err.message}`));
-            } else if (usagePercentage >= 80 && usagePercentage < 100) {
-              // Alert at 80%
-              NotificationService.sendToUser(userId, {
-                title: '',
-                body: '',
-                translationKey: 'BUDGET_WARNING',
-                translationData: { category: budget.categories[categoryIndex].name },
-                data: { type: 'budget_warning', category: budget.categories[categoryIndex].name },
-              }).catch((err) => logger.error(`Notification error: ${err.message}`));
-            }
-            await (budget as any).save({ session });
+          for (const sharedBudget of sharedBudgets) {
+            // Le propriétaire du budget partagé ET la personne qui vient de
+            // dépenser sont notifiés (dédupliqués si c'est la même personne).
+            const notifyIds = Array.from(
+              new Set([sharedBudget.userId.toString(), userId.toString()]),
+            );
+            await TransactionService.applyExpenseToBudget(
+              sharedBudget,
+              transaction.category,
+              transaction.amount,
+              alertThreshold,
+              notifyIds,
+              session,
+            );
           }
         }
       }
@@ -120,22 +200,41 @@ export class TransactionService {
       if (transaction.linkedGoalId) {
         const goal = await SavingGoal.findById(transaction.linkedGoalId).session(session);
         if (goal) {
+          const before = GoalService.milestoneFlags(goal.currentAmount, goal.targetAmount);
           if (transaction.type === 'income') {
-            goal.currentAmount += transaction.amount;
+            goal.currentAmount = roundAmount(goal.currentAmount + transaction.amount);
           } else {
-            goal.currentAmount -= transaction.amount;
+            goal.currentAmount = roundAmount(goal.currentAmount - transaction.amount);
           }
-          const wasAlreadyHalfway =
-            ((goal.currentAmount - transaction.amount) / goal.targetAmount) * 100 >= 50;
-          const wasAlreadyCompleted =
-            ((goal.currentAmount - transaction.amount) / goal.targetAmount) * 100 >= 100;
+
+          // Trace ce mouvement dans le même historique que les contributions
+          // manuelles/automatiques — sans ça, une transaction liée à un
+          // objectif changeait son solde sans jamais apparaître dans
+          // l'historique affiché à l'utilisateur.
+          goal.contributions.push({
+            userId: userId as any,
+            amount: transaction.amount,
+            date: new Date(),
+            note: transaction.description,
+            type: transaction.type === 'income' ? 'contribution' : 'redemption',
+          });
 
           await (goal as any).save({ session });
 
           // Check for milestones
-          await GoalService.checkMilestones(userId, goal, wasAlreadyHalfway, wasAlreadyCompleted);
+          await GoalService.checkMilestones(
+            userId,
+            goal,
+            before.was25,
+            before.was50,
+            before.was75,
+            before.was100,
+          );
         }
       }
+
+      // Apply automated saving strategies (roundup on expenses, % on income)
+      await TransactionService.applyAutomatedStrategies(userId, transaction, session);
 
       await session.commitTransaction();
 
@@ -177,15 +276,18 @@ export class TransactionService {
     const skip = (page - 1) * limit;
 
     const query: any = { userId };
-    if (filters.type) query.type = filters.type;
-    if (filters.category) query.category = filters.category;
+    if (typeof filters.type === 'string') query.type = filters.type;
+    if (typeof filters.category === 'string') query.category = filters.category;
     if (filters.startDate || filters.endDate) {
       query.date = {};
       if (filters.startDate) query.date.$gte = new Date(filters.startDate);
       if (filters.endDate) query.date.$lte = new Date(filters.endDate);
     }
     if (filters.search) {
-      query.description = { $regex: filters.search, $options: 'i' };
+      // Escape regex metacharacters: an unescaped pathological pattern submitted as
+      // a search term can cause catastrophic backtracking on the MongoDB server.
+      const escaped = String(filters.search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      query.description = { $regex: escaped, $options: 'i' };
     }
 
     const [transactions, total] = await Promise.all([
@@ -213,74 +315,47 @@ export class TransactionService {
   }
 
   static async updateTransaction(id: string, userId: string, data: any) {
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
-    try {
-      const oldTransaction = await Transaction.findOne({ _id: id, userId }).session(session);
-      if (!oldTransaction) {
-        throw new AppError('Transaction not found', 404);
-      }
-
-      // Revert old balance impact
-      const wasDigitalIncome =
-        oldTransaction.type === 'income' &&
-        ['stripe', 'notchpay', 'wallet'].includes(oldTransaction.paymentMethod as any);
-      const wasWalletExpense =
-        oldTransaction.type === 'expense' && oldTransaction.paymentMethod === 'wallet';
-
-      if (wasDigitalIncome) {
-        await User.findByIdAndUpdate(
-          userId,
-          { $inc: { walletBalance: -oldTransaction.amount } },
-          { session },
-        );
-      } else if (wasWalletExpense) {
-        await User.findByIdAndUpdate(
-          userId,
-          { $inc: { walletBalance: oldTransaction.amount } },
-          { session },
-        );
-      }
-
-      // Apply changes
-      const updatedTransaction = await Transaction.findByIdAndUpdate(
-        id,
-        { $set: data },
-        { new: true, runValidators: true, session },
-      );
-
-      // Apply new balance impact
-      if (updatedTransaction) {
-        const isDigitalIncome =
-          updatedTransaction.type === 'income' &&
-          ['stripe', 'notchpay', 'wallet'].includes(updatedTransaction.paymentMethod as any);
-        const isWalletExpense =
-          updatedTransaction.type === 'expense' && updatedTransaction.paymentMethod === 'wallet';
-
-        if (isDigitalIncome) {
-          await User.findByIdAndUpdate(
-            userId,
-            { $inc: { walletBalance: updatedTransaction.amount } },
-            { session },
-          );
-        } else if (isWalletExpense) {
-          await User.findByIdAndUpdate(
-            userId,
-            { $inc: { walletBalance: -updatedTransaction.amount } },
-            { session },
-          );
-        }
-      }
-
-      await session.commitTransaction();
-      return updatedTransaction;
-    } catch (error) {
-      await session.abortTransaction();
-      throw error;
-    } finally {
-      session.endSession();
+    const oldTransaction = await Transaction.findOne({ _id: id, userId });
+    if (!oldTransaction) {
+      throw new AppError('Transaction not found', 404);
     }
+
+    // Sécurité Fintech (F01) : une transaction adossée à un mouvement réel de fonds
+    // (Stripe, NotchPay, Wallet, Payout) est immuable.
+    // Seules les transactions 'cash' saisies manuellement (qui n'impactent jamais walletBalance)
+    // sont éditables.
+    if (oldTransaction.paymentMethod && oldTransaction.paymentMethod !== 'cash') {
+      throw new AppError(
+        "Les transactions financières réelles ne peuvent pas être modifiées pour des raisons d'audit et d'intégrité.",
+        403,
+      );
+    }
+
+    // Whitelist des champs modifiables pour les transactions manuelles
+    const ALLOWED_FIELDS = [
+      'amount',
+      'type',
+      'category',
+      'description',
+      'date',
+      'tags',
+      'isRecurring',
+      'metadata',
+    ];
+    const updateData: any = {};
+    for (const key of ALLOWED_FIELDS) {
+      if (key in data) {
+        updateData[key] = data[key];
+      }
+    }
+    // Forcer le maintien du paymentMethod à 'cash'
+    updateData.paymentMethod = 'cash';
+
+    return Transaction.findOneAndUpdate(
+      { _id: id, userId },
+      { $set: updateData },
+      { new: true, runValidators: true },
+    );
   }
 
   static async deleteTransaction(id: string, userId: string) {
@@ -289,8 +364,12 @@ export class TransactionService {
       throw new AppError('Transaction not found', 404);
     }
 
-    // Sécurité Fintech : Interdiction de supprimer des transactions réelles (Wallet, NotchPay, Stripe)
-    if (transaction.paymentMethod !== 'cash') {
+    // Sécurité Fintech : Interdiction de supprimer des transactions réelles (Wallet, NotchPay, Stripe).
+    // Same rule as update: an entry WITHOUT paymentMethod is a user entry (every
+    // WalletService movement always sets one). The previous `!== 'cash'` refused
+    // every manual expense created by the app (which sends no paymentMethod):
+    // users could edit but never delete their own entries.
+    if (transaction.paymentMethod && transaction.paymentMethod !== 'cash') {
       throw new AppError(
         "Les transactions financières réelles ne peuvent pas être supprimées pour des raisons d'audit et d'intégrité.",
         403,
@@ -325,45 +404,198 @@ export class TransactionService {
   }
 
   /**
-   * Apply automated saving strategies like Roundup
+   * Incrémente la catégorie correspondante d'un budget (propre ou partagé) et
+   * notifie au(x) seuil(s) — factorisé pour être appliqué identiquement au
+   * budget de l'utilisateur et à chacun des budgets partagés dont il est
+   * participant (voir la boucle dans createTransaction ci-dessus).
    */
-  private static async applyAutomatedStrategies(userId: string, transaction: any, session?: any) {
-    if (transaction.type !== 'expense') return;
+  private static async applyExpenseToBudget(
+    budget: any,
+    category: string,
+    amount: number,
+    alertThreshold: number,
+    notifyUserIds: string[],
+    session: mongoose.ClientSession,
+  ) {
+    const categoryIndex = budget.categories.findIndex(
+      (c: any) => c.name.toLowerCase() === category.toLowerCase(),
+    );
+    if (categoryIndex === -1) return;
 
-    // Find goals with Roundup enabled
+    budget.categories[categoryIndex].spent = roundAmount(
+      budget.categories[categoryIndex].spent + amount,
+    );
+    budget.totalSpent = roundAmount(budget.totalSpent + amount);
+
+    const usagePercentage =
+      (budget.categories[categoryIndex].spent / budget.categories[categoryIndex].allocated) * 100;
+    const categoryName = budget.categories[categoryIndex].name;
+
+    const notify = (translationKey: string, type: string) => {
+      for (const uid of notifyUserIds) {
+        NotificationService.sendToUser(uid, {
+          title: '',
+          body: '',
+          translationKey,
+          translationData: { category: categoryName },
+          data: { type, category: categoryName },
+        }).catch((err: any) => logger.error(`Notification error: ${err.message}`));
+      }
+    };
+
+    if (usagePercentage >= 100 && budget.status !== 'exceeded') {
+      budget.status = 'exceeded';
+      notify('BUDGET_EXCEEDED', 'budget_exceeded');
+    } else if (usagePercentage >= alertThreshold && usagePercentage < 100) {
+      notify('BUDGET_WARNING', 'budget_warning');
+    }
+
+    await budget.save({ session });
+  }
+
+  /**
+   * Apply automated saving strategies: roundup on expenses, % of income on
+   * income transactions (autoSaveRules on SavingGoal).
+   */
+  private static async applyAutomatedStrategies(
+    userId: string,
+    transaction: any,
+    session: mongoose.ClientSession,
+  ) {
+    if (transaction.type === 'expense') {
+      await TransactionService.applyRoundupStrategy(userId, transaction, session);
+    } else if (transaction.type === 'income') {
+      await TransactionService.applyIncomePercentageStrategy(userId, transaction, session);
+    }
+  }
+
+  /**
+   * Arrondi automatique : sur chaque dépense, arrondit au 100 (ou 1000 si la
+   * dépense dépasse 1000) supérieur et transfère la différence vers
+   * l'objectif — un vrai débit du wallet comme une contribution manuelle,
+   * jamais une simple augmentation gratuite de `currentAmount`.
+   */
+  private static async applyRoundupStrategy(
+    userId: string,
+    transaction: any,
+    session: mongoose.ClientSession,
+  ) {
     const roundupGoal = await SavingGoal.findOne({
       userId,
       status: 'active',
       'autoSaveRules.enableRoundup': true,
     }).session(session);
+    if (!roundupGoal) return;
 
-    if (roundupGoal) {
-      // Logic: Round up to the next 100 or 1000?
-      // XAF context: next 100 is most common for small/medium expenses.
-      const amount = transaction.amount;
-      const threshold = amount > 1000 ? 1000 : 100;
-      const remainder = threshold - (amount % threshold);
-      const roundupAmount = remainder === threshold ? 0 : remainder;
+    // XAF context: next 100 is most common for small/medium expenses.
+    const amount = transaction.amount;
+    const threshold = amount > 1000 ? 1000 : 100;
+    const remainder = threshold - (amount % threshold);
+    const roundupAmount = remainder === threshold ? 0 : roundAmount(remainder);
+    if (roundupAmount <= 0) return;
 
-      const wasAlreadyHalfway =
-        ((roundupGoal.currentAmount - roundupAmount) / roundupGoal.targetAmount) * 100 >= 50;
-      const wasAlreadyCompleted =
-        ((roundupGoal.currentAmount - roundupAmount) / roundupGoal.targetAmount) * 100 >= 100;
+    await TransactionService.contributeAutomatically(
+      userId,
+      roundupGoal,
+      roundupAmount,
+      'Arrondi automatique',
+      'roundup',
+      session,
+    );
+  }
 
-      await (roundupGoal as any).save({ session });
+  /**
+   * Épargne automatique en % du revenu : sur chaque transaction de type
+   * 'income', verse `autoSaveRules.percentageIncome`% de son montant dans
+   * chaque objectif actif de l'utilisateur ayant activé cette règle.
+   */
+  private static async applyIncomePercentageStrategy(
+    userId: string,
+    transaction: any,
+    session: mongoose.ClientSession,
+  ) {
+    const goals = await SavingGoal.find({
+      userId,
+      status: 'active',
+      'autoSaveRules.percentageIncome': { $gt: 0 },
+    }).session(session);
 
-      // Check for milestones
+    for (const goal of goals) {
+      const pct = (goal as any).autoSaveRules?.percentageIncome || 0;
+      const saveAmount = roundAmount((transaction.amount * pct) / 100);
+      if (saveAmount <= 0) continue;
+
+      await TransactionService.contributeAutomatically(
+        userId,
+        goal,
+        saveAmount,
+        `Épargne automatique (${pct}% du revenu)`,
+        'income_percentage',
+        session,
+      );
+    }
+  }
+
+  /**
+   * Débite le wallet et crédite un objectif pour une contribution
+   * déclenchée automatiquement (arrondi, % de revenu) — même mécanique que
+   * GoalService.addContribution, mais silencieuse en cas d'échec (solde
+   * insuffisant, limite AML) : ces stratégies sont un bonus best-effort et
+   * ne doivent jamais faire échouer l'enregistrement de la transaction qui
+   * les déclenche.
+   */
+  private static async contributeAutomatically(
+    userId: string,
+    goal: any,
+    amount: number,
+    description: string,
+    strategyLabel: string,
+    session: mongoose.ClientSession,
+  ) {
+    try {
+      const before = GoalService.milestoneFlags(goal.currentAmount, goal.targetAmount);
+
+      await WalletService.executeTransaction(
+        {
+          userId,
+          amount,
+          type: 'saving_transfer',
+          category: 'goal_auto_save',
+          description: `${description} : ${goal.name}`,
+          paymentMethod: 'wallet',
+          metadata: { goalId: goal._id.toString(), strategy: strategyLabel },
+          silent: true,
+        },
+        { session },
+      );
+
+      goal.contributions.push({
+        userId: userId as any,
+        amount,
+        date: new Date(),
+        note: description,
+        type: 'contribution',
+      });
+      goal.currentAmount = roundAmount(goal.currentAmount + amount);
+      await goal.save({ session });
+
       await GoalService.checkMilestones(
         userId,
-        roundupGoal,
-        wasAlreadyHalfway,
-        wasAlreadyCompleted,
+        goal,
+        before.was25,
+        before.was50,
+        before.was75,
+        before.was100,
       );
 
       logger.info(
-        `Roundup strategy applied for user ${userId}: ${roundupAmount} added to goal ${roundupGoal.name}`,
+        `${strategyLabel} strategy applied for user ${userId}: ${amount} added to goal ${goal.name}`,
       );
-      MonitoringService.recordSavingsImpact(roundupAmount, 'roundup', 'XAF');
+      MonitoringService.recordSavingsImpact(amount, strategyLabel, goal.currency || 'XAF');
+    } catch (err: any) {
+      logger.warn(
+        `Automated ${strategyLabel} contribution skipped for goal ${goal._id}: ${err.message}`,
+      );
     }
   }
 

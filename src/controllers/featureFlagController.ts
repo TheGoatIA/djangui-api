@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import FeatureFlag from '../models/FeatureFlag';
 import { RedisService } from '../services/redisService';
+import { FeatureFlagService } from '../services/featureFlagService';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 
@@ -33,6 +34,23 @@ export class FeatureFlagController {
         };
         return acc;
       }, {});
+
+      // Exposed alongside the flags so the mobile client can locally decide
+      // whether ITS user's country is currently allowed for real money
+      // (e.g. to skip navigating to the wallet at all), without duplicating
+      // a hardcoded country literal that would drift from the real,
+      // admin-editable allowlist this same value is read from server-side.
+      (featuresMap as any).real_money_countries = await FeatureFlagService.getRealMoneyCountries();
+
+      // L'app doit voir le MÊME état « argent réel » que celui que le serveur
+      // applique (isRealMoneyEnabled : réglage système real_money_mode, puis le
+      // drapeau). Exposer le seul drapeau laissait l'app en « mode simulation »
+      // pendant que le serveur acceptait les dépôts, ou l'inverse, dès que le
+      // mode était basculé via le réglage système (constaté en E2E).
+      featuresMap.feat_real_money = {
+        ...(featuresMap.feat_real_money || { minAppVersion: '1.0.0' }),
+        isEnabled: await FeatureFlagService.isRealMoneyEnabled(),
+      };
 
       // Save to cache
       await RedisService.set(FEATURES_CACHE_KEY, featuresMap, CACHE_TTL);
@@ -99,7 +117,42 @@ export class FeatureFlagController {
       const { id } = req.params;
       const updates = req.body;
 
-      const flag = await FeatureFlag.findByIdAndUpdate(id, updates, {
+      const existing = await FeatureFlag.findById(id);
+      if (!existing) {
+        return next(new AppError('Feature flag not found', 404));
+      }
+
+      // The real-money flag is special-cased: route through
+      // FeatureFlagService.setRealMoneyMode so the SystemSetting override
+      // (authoritative for FeatureFlagService.isRealMoneyEnabled) stays in
+      // sync with this flag document, with a single consolidated notification
+      // broadcast — see the equivalent guard in adminController.updateSystemSetting.
+      if (existing.slug === 'feat_real_money' && updates.isEnabled !== undefined) {
+        await FeatureFlagService.setRealMoneyMode(
+          Boolean(updates.isEnabled),
+          (req as any).user._id,
+        );
+        const flag = await FeatureFlag.findById(id);
+        return res.status(200).json({ status: 'success', data: flag });
+      }
+
+      const ALLOWED_FLAG_FIELDS = [
+        'name',
+        'description',
+        'isEnabled',
+        'targetRoles',
+        'targetCountries',
+        'minAppVersion',
+        'metadata',
+      ];
+      const safeUpdates: any = {};
+      for (const key of ALLOWED_FLAG_FIELDS) {
+        if (key in updates) {
+          safeUpdates[key] = updates[key];
+        }
+      }
+
+      const flag = await FeatureFlag.findByIdAndUpdate(id, safeUpdates, {
         new: true,
         runValidators: true,
       });

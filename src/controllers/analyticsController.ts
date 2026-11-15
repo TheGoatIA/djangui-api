@@ -67,7 +67,8 @@ export class AnalyticsController {
         return next(new AppError('Session ID is required', 400));
       }
 
-      const session = await SessionLog.findById(sessionId);
+      const userId = (req as any).user.id;
+      const session = await SessionLog.findOne({ _id: sessionId, userId });
       if (!session) {
         return next(new AppError('Session not found', 404));
       }

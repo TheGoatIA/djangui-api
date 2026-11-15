@@ -6,7 +6,8 @@ import { NotificationService } from './notificationService';
 import { SlackService } from './slackService';
 import { GeminiService } from './ai/geminiService';
 import { PromptBuilder } from './ai/promptBuilder';
-import axios from 'axios';
+import { StorageService } from './storageService';
+import { MonitoringService } from './monitoringService';
 
 export class KYCService {
   /**
@@ -15,19 +16,79 @@ export class KYCService {
   static async submitDocuments(
     userId: string,
     data: {
-      documentType: 'cni' | 'passport' | 'driver_license';
+      documentType: string;
       documentNumber: string;
       fullName: string;
+      documentExpiryDate?: Date | string;
       documentImageUrl: string;
+      documentBackImageUrl?: string;
       selfieImageUrl: string;
     },
   ) {
     const user = await User.findById(userId);
     if (!user) throw new AppError('Utilisateur non trouvé', 404);
 
+    // Bloquer la re-soumission si le KYC est déjà validé
+    if (user.kycLevel === 'verified') {
+      throw new AppError(
+        "Votre identité est déjà vérifiée. Aucune nouvelle soumission n'est nécessaire.",
+        400,
+      );
+    }
+
+    // Required fields (a missing documentType crashed with a 500 further down).
+    const str = (v: unknown, min: number, max: number) =>
+      typeof v === 'string' && v.trim().length >= min && v.trim().length <= max;
+    if (!str(data.documentType, 2, 40)) throw new AppError('Type de document invalide', 400);
+    if (!str(data.documentNumber, 3, 40)) throw new AppError('Numéro de document invalide', 400);
+    if (!str(data.fullName, 2, 100)) throw new AppError('Nom complet invalide', 400);
+    if (data.documentExpiryDate !== undefined && data.documentExpiryDate !== null) {
+      const expiry = new Date(data.documentExpiryDate as any);
+      if (Number.isNaN(expiry.getTime())) throw new AppError("Date d'expiration invalide", 400);
+      if (expiry < new Date()) throw new AppError('Ce document est expiré', 400);
+    }
+
+    // Every image must be one of the submitter's OWN uploads (POST /upload/document
+    // stores them under documents/<userId>/). Any stored URL used to be accepted:
+    // pointing at another user's identity document — or at any object of any
+    // bucket (backups…) — was enough for it to be reviewed as this user's KYC.
+    const ownPrefix = `documents/${userId}/`;
+    const assertOwnDocument = (url: unknown, label: string, required: boolean) => {
+      if (url === undefined || url === null || url === '') {
+        if (required) throw new AppError(`${label} manquant`, 400);
+        return;
+      }
+      const parsed = typeof url === 'string' ? StorageService.parseStoredUrl(url) : null;
+      if (!parsed || parsed.bucket !== 'kauri-uploads' || !parsed.key.startsWith(ownPrefix)) {
+        throw new AppError(`${label} invalide : utilisez un document que vous avez téléversé`, 400);
+      }
+    };
+    assertOwnDocument(data.documentImageUrl, "Image du document d'identité", true);
+    assertOwnDocument(data.documentBackImageUrl, 'Verso du document', false);
+    assertOwnDocument(data.selfieImageUrl, 'Selfie', true);
+
+    // Whitelist des champs autorisés pour éviter l'injection de champs sensibles
+    const allowedFields: (keyof typeof data)[] = [
+      'documentType',
+      'documentNumber',
+      'fullName',
+      'documentExpiryDate',
+      'documentImageUrl',
+      'documentBackImageUrl',
+      'selfieImageUrl',
+    ];
+    const filteredData = allowedFields.reduce(
+      (acc, key) => {
+        if (data[key] !== undefined) acc[key] = data[key] as any;
+        return acc;
+      },
+      {} as typeof data,
+    );
+
     user.kycLevel = 'pending';
     user.kycData = {
-      ...data,
+      ...filteredData,
+      documentExpiryDate: data.documentExpiryDate ? new Date(data.documentExpiryDate) : undefined,
       verifiedAt: undefined,
       rejectionReason: undefined,
       aiAnalysisStatus: 'pending',
@@ -35,7 +96,7 @@ export class KYCService {
 
     await user.save();
 
-    await AuditService.record({
+    await AuditService.recordSync({
       userId: userId as any,
       action: 'KYC_SUBMITTED',
       resource: 'USER',
@@ -54,9 +115,11 @@ export class KYCService {
 
     // 2. Notification Slack Admin : "Nouvelle soumission"
     await SlackService.sendNotification(
-      `📑 *Nouvelle soumission KYC*\n*Utilisateur*: ${user.firstName} ${user.lastName} (${user.email})\n*Document*: ${data.documentType.toUpperCase()}\n*Action*: Analyse IA lancée...`,
+      `📑 *Nouvelle soumission KYC*\n*Utilisateur*: ${user._id}\n*Document*: ${data.documentType.toUpperCase()}\n*Action*: Analyse IA lancée...`,
       false,
     );
+
+    MonitoringService.recordUserVerification('submission', 'success');
 
     // Déclencher l'analyse IA en arrière-plan
     this.processAIValidation(userId).catch((err) =>
@@ -71,28 +134,22 @@ export class KYCService {
    */
   private static async processAIValidation(userId: string) {
     logger.info(`Starting Real AI KYC Validation for user ${userId}`);
+    const startedAt = Date.now();
 
     const user = await User.findById(userId);
     if (!user || user.kycLevel !== 'pending' || !user.kycData) return;
 
     try {
-      // Télécharger les images pour les envoyer à Gemini
-      // On convertit les URLs publiques en URLs internes si nécessaire
-      const docUrl = this.getInternalUrl(user.kycData.documentImageUrl!);
-      const selfieUrl = this.getInternalUrl(user.kycData.selfieImageUrl!);
-
-      logger.debug(`Fetching images internally: DOC=${docUrl}, SELFIE=${selfieUrl}`);
-
+      // Les documents KYC sont stockés en privé (voir StorageService/uploadController) :
+      // on les récupère via le SDK S3 authentifié, pas par un simple GET HTTP anonyme
       const [docBuffer, selfieBuffer] = await Promise.all([
-        axios
-          .get(docUrl, { responseType: 'arraybuffer', timeout: 10000 })
-          .then((res: any) => Buffer.from(res.data)),
-        axios
-          .get(selfieUrl, { responseType: 'arraybuffer', timeout: 10000 })
-          .then((res: any) => Buffer.from(res.data)),
+        this.downloadKycImage(user.kycData.documentImageUrl!),
+        this.downloadKycImage(user.kycData.selfieImageUrl!),
       ]);
 
       const prompt = PromptBuilder.buildKycAnalysisPrompt(user.kycData);
+      const docMime = this.detectMimeType(docBuffer, user.kycData.documentImageUrl);
+      const selfieMime = this.detectMimeType(selfieBuffer, user.kycData.selfieImageUrl);
 
       // Format multi-modal pour Gemini
       const aiResult = await GeminiService.generateJSON(
@@ -101,13 +158,13 @@ export class KYCService {
           {
             inlineData: {
               data: docBuffer.toString('base64'),
-              mimeType: 'image/jpeg',
+              mimeType: docMime,
             },
           },
           {
             inlineData: {
               data: selfieBuffer.toString('base64'),
-              mimeType: 'image/jpeg',
+              mimeType: selfieMime,
             },
           },
         ],
@@ -127,6 +184,13 @@ export class KYCService {
         `🤖 *Analyse IA KYC Terminée* ${statusEmoji}\n*Utilisateur*: ${user.firstName} ${user.lastName}\n*Score*: ${aiResult.confidenceScore}%\n*Rapport*: ${aiResult.analysisReport.substring(0, 500)}...\n*Lien Admin*: ${process.env.ADMIN_URL}/users/${user._id}`,
         false,
       );
+
+      MonitoringService.observeKycDuration(
+        'ai_analysis',
+        'gemini',
+        (Date.now() - startedAt) / 1000,
+      );
+      MonitoringService.recordUserVerification('ai_analysis', 'success');
     } catch (error: any) {
       const errorMsg = error.response
         ? `Axios Error: ${error.response.status} ${error.response.statusText}`
@@ -141,26 +205,56 @@ export class KYCService {
         `🚨 *Erreur Analyse IA KYC*\n*Utilisateur*: ${user.firstName}\n*Erreur*: ${errorMsg}`,
         true,
       );
+
+      MonitoringService.observeKycDuration(
+        'ai_analysis',
+        'gemini',
+        (Date.now() - startedAt) / 1000,
+      );
+      MonitoringService.recordUserVerification('ai_analysis', 'failure');
     }
   }
 
   /**
-   * Convertit une URL publique MinIO en URL interne accessible par le conteneur API
+   * Télécharge le contenu d'une image KYC stockée (privée) via le SDK S3 authentifié
    */
-  private static getInternalUrl(publicUrl: string): string {
-    const publicBase = process.env.MINIO_PUBLIC_URL || 'http://localhost:15010';
-    const internalBase = process.env.MINIO_ENDPOINT || 'http://minio:9000';
+  private static async downloadKycImage(storedUrl: string): Promise<Buffer> {
+    const parsed = StorageService.parseStoredUrl(storedUrl);
+    if (!parsed) throw new AppError('Référence de document KYC invalide.', 500);
+    return StorageService.downloadBuffer(parsed.bucket, parsed.key);
+  }
 
-    if (publicUrl.startsWith(publicBase)) {
-      return publicUrl.replace(publicBase, internalBase);
-    }
-    return publicUrl;
+  /**
+   * Génère des URLs signées à courte durée de vie pour afficher les documents KYC
+   */
+  static async getSignedDocumentUrls(userId: string, expiresInSeconds = 300) {
+    const user = await User.findById(userId).select('kycData');
+    if (!user?.kycData) return { documentUrl: null, documentBackUrl: null, selfieUrl: null };
+
+    const sign = async (storedUrl?: string) => {
+      if (!storedUrl) return null;
+      const parsed = StorageService.parseStoredUrl(storedUrl);
+      if (!parsed) return null;
+      return StorageService.getSignedUrl(parsed.bucket, parsed.key, expiresInSeconds);
+    };
+
+    const [documentUrl, documentBackUrl, selfieUrl] = await Promise.all([
+      sign(user.kycData.documentImageUrl),
+      sign(user.kycData.documentBackImageUrl),
+      sign(user.kycData.selfieImageUrl),
+    ]);
+
+    return { documentUrl, documentBackUrl, selfieUrl };
   }
 
   /**
    * Validation manuelle par un admin (Point de décision final)
    */
-  static async adminVerify(userId: string, status: 'verified' | 'none', reason?: string) {
+  static async adminVerify(
+    userId: string,
+    status: 'verified' | 'rejected' | 'expired' | 'update_required',
+    reason?: string,
+  ) {
     const user = await User.findById(userId);
     if (!user) throw new AppError('Utilisateur non trouvé', 404);
 
@@ -178,7 +272,6 @@ export class KYCService {
       if (user.kycData)
         user.kycData.rejectionReason = reason || 'Documents non valides après examen.';
 
-      // On pourrait ajouter une clé KYC_REJECTED
       await NotificationService.sendToUser(userId, {
         title: 'Vérification Rejetée',
         body: `Votre vérification KYC a été refusée. Raison : ${reason || 'Documents non conformes.'}`,
@@ -188,7 +281,7 @@ export class KYCService {
 
     await user.save();
 
-    await AuditService.record({
+    await AuditService.recordSync({
       userId: userId as any,
       action: status === 'verified' ? 'KYC_VERIFIED' : 'KYC_REJECTED',
       resource: 'USER',
@@ -197,6 +290,48 @@ export class KYCService {
       metadata: { reason },
     });
 
+    MonitoringService.recordUserVerification(
+      'admin_review',
+      status === 'verified' ? 'success' : 'failure',
+    );
+
     return user;
+  }
+
+  /**
+   * Détecte le type MIME réel d'un buffer à partir de ses magic bytes
+   */
+  private static detectMimeType(buffer: Buffer, url?: string): string {
+    if (buffer && buffer.length >= 4) {
+      if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
+        return 'image/png';
+      }
+      if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+        return 'image/jpeg';
+      }
+      if (
+        buffer[0] === 0x52 &&
+        buffer[1] === 0x49 &&
+        buffer[2] === 0x46 &&
+        buffer[3] === 0x46 &&
+        buffer.length >= 12 &&
+        buffer[8] === 0x57 &&
+        buffer[9] === 0x45 &&
+        buffer[10] === 0x42 &&
+        buffer[11] === 0x50
+      ) {
+        return 'image/webp';
+      }
+      if (buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46) {
+        return 'application/pdf';
+      }
+    }
+    if (url) {
+      const lower = url.toLowerCase();
+      if (lower.endsWith('.png')) return 'image/png';
+      if (lower.endsWith('.webp')) return 'image/webp';
+      if (lower.endsWith('.pdf')) return 'application/pdf';
+    }
+    return 'image/jpeg';
   }
 }

@@ -8,13 +8,8 @@ export interface ITontineMember extends Document {
   trustScore: number;
   hasPaidSocialFund: boolean;
   invitationStatus: 'pending' | 'accepted' | 'declined' | 'removed';
-  rotationOrder: number; // Order in 'fixed' mode
-  payoutDetails?: {
-    type: 'mobile_money' | 'bank';
-    provider: string;
-    accountNumber: string;
-    accountName: string;
-  };
+  rotationOrder: number; // First turn of this member (kept for existing clients)
+  rotationOrders: number[]; // Every turn this member receives the pot (one per part)
   isActive: boolean;
   isAutoDebitEnabled: boolean;
   joinedAt: Date;
@@ -34,17 +29,18 @@ const tontineMemberSchema = new Schema<ITontineMember>(
       default: 'pending',
     },
     rotationOrder: { type: Number },
-    payoutDetails: {
-      type: { type: String, enum: ['mobile_money', 'bank'] },
-      provider: { type: String },
-      accountNumber: { type: String },
-      accountName: { type: String },
-    },
+    // A member holding N parts receives the pot on N turns. A single number could
+    // only ever give them one, leaving the other turns with no winner.
+    rotationOrders: { type: [Number], default: undefined },
     isActive: { type: Boolean, default: true },
     isAutoDebitEnabled: { type: Boolean, default: true },
     joinedAt: { type: Date, default: Date.now },
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+    toJSON: { getters: true },
+    toObject: { getters: true },
+  },
 );
 
 // Unique member per tontine
