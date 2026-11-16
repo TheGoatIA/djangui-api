@@ -115,7 +115,7 @@ jobs:
           fi
 
       - name: Deploy (pull & restart — aucune action manuelle sur le serveur)
-        uses: appleboy/ssh-action@v1.2.0
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.PROD_SERVER_IP }}
           username: ${{ secrets.PROD_USERNAME }}
@@ -181,7 +181,7 @@ jobs:
           fi
 
       - name: Deploy (pull & restart — aucune action manuelle sur le serveur)
-        uses: appleboy/ssh-action@v1.2.0
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.PROD_SERVER_IP }}
           username: ${{ secrets.PROD_USERNAME }}
