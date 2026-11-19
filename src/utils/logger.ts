@@ -5,6 +5,7 @@ import Transport from 'winston-transport';
 import axios from 'axios';
 import Graylog2 from 'winston-graylog2';
 import RequestContext from './context';
+import { deploymentEnv, envLabel } from './deploymentEnv';
 
 const levels = {
   error: 0,
@@ -64,7 +65,8 @@ const contextFormat = winston.format((info) => {
   }
   // Service-level metadata for production-ready structured logging
   if (!info.service) info.service = 'kauri-api';
-  if (!info.environment) info.environment = process.env.NODE_ENV || 'development';
+  // deploymentEnv, pas NODE_ENV : le staging tourne en NODE_ENV=production.
+  if (!info.environment) info.environment = deploymentEnv();
   return info;
 });
 
@@ -109,11 +111,11 @@ if (process.env.GRAYLOG_HOST && process.env.GRAYLOG_HOST !== 'disabled') {
           servers: [
             { host: process.env.GRAYLOG_HOST, port: parseInt(process.env.GRAYLOG_PORT || '12201') },
           ],
-          hostname: 'kauri-api',
+          hostname: deploymentEnv() === 'staging' ? 'kauri-api-staging' : 'kauri-api',
           facility: 'Node.js',
           bufferSize: 1400,
         },
-        staticMeta: { env: process.env.NODE_ENV || 'development' },
+        staticMeta: { env: deploymentEnv() },
       }) as any,
     );
   } catch (err) {
@@ -138,12 +140,16 @@ class CriticalAlertTransport extends Transport {
         // Mask sensitive patterns in error messages & stacks
         const sanitizeText = (text: string): string => {
           if (!text) return '';
-          return text
-            .replace(
-              /(password|secret|key|token|authorization)\s*[:=]\s*['"]?[^\s,'"]+/gi,
-              '$1: ***MASKED***',
-            )
-            .replace(/Bearer\s+[A-Za-z0-9-_.]+/gi, 'Bearer ***MASKED***');
+          return (
+            text
+              .replaceAll(
+                /(password|secret|key|token|authorization)\s*[:=]\s*['"]?[^\s,'"]+/gi,
+                '$1: ***MASKED***',
+              )
+              .replaceAll(/Bearer\s+[\w.-]+/gi, 'Bearer ***MASKED***')
+              // URI de base avec identifiants (ex. erreur mongodump citant sa commande)
+              .replaceAll(/((?:mongodb(?:\+srv)?|rediss?):\/\/)[^@/\s]+@/gi, '$1***@')
+          );
         };
 
         const safeMessage = sanitizeText(String(info.message || ''));
@@ -157,7 +163,7 @@ class CriticalAlertTransport extends Transport {
         if (slackWebhook) {
           try {
             await axios.post(slackWebhook, {
-              text: `🚨 *CRITICAL ERROR* \n*Message*: ${safeMessage}\n*Stack*: ${safeStack}\n*Context*: ${JSON.stringify(info.context || {})}`,
+              text: `*[${envLabel()}]* 🚨 *CRITICAL ERROR* \n*Message*: ${safeMessage}\n*Stack*: ${safeStack}\n*Context*: ${JSON.stringify(info.context || {})}`,
             });
             slackDelivered = true;
           } catch (e: any) {
@@ -181,7 +187,7 @@ class CriticalAlertTransport extends Transport {
               const { EmailService } = await import('../services/emailService');
               await EmailService.sendEmail(
                 adminEmail,
-                '[Kauri] Erreur critique (fallback — Slack indisponible)',
+                `[Kauri ${envLabel()}] Erreur critique (fallback — Slack indisponible)`,
                 `${safeMessage}\n\nStack:\n${safeStack}\n\nContext: ${JSON.stringify(info.context || {})}`,
                 `<p>${safeMessage}</p><pre>${safeStack}</pre><p>Context: ${JSON.stringify(info.context || {})}</p>`,
               );

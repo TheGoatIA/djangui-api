@@ -839,6 +839,13 @@ export class CronService {
    */
   private static async sendDailyAIAdvice() {
     try {
+      // Fonctions IA coupées depuis l'admin (ex. plus de crédits Gemini) : la tâche
+      // appelait quand même Gemini pour chaque utilisateur actif, en erreur à chaque fois.
+      const { FeatureFlagService } = await import('./featureFlagService');
+      if (!(await FeatureFlagService.isEnabled('ai_insights'))) {
+        logger.info('Daily AI advice skipped: ai_insights disabled');
+        return;
+      }
       const fiveDaysAgo = new Date();
       fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
 
