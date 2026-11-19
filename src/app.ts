@@ -524,16 +524,16 @@ const swaggerOptions = {
   },
 };
 
-app.use('/api-docs', swaggerAuth, swaggerUi.serve);
-app.get('/api-docs', swaggerAuth, (req, res, next) => {
-  try {
-    const swaggerFile = path.resolve(__dirname, '../docs/swagger.json');
-    const swaggerDoc = JSON.parse(fs.readFileSync(swaggerFile, 'utf8'));
-    swaggerUi.setup(swaggerDoc, swaggerOptions)(req, res, next);
-  } catch (err) {
-    next(err);
-  }
-});
+// Préparé au DÉMARRAGE, dans chaque copie PM2 : l'ancien setup() appelé à la
+// requête ne préparait que la copie qui servait la page ; swagger-ui-init.js,
+// servi par une autre copie, arrivait vide → page blanche. La spec est lue par
+// l'interface elle-même via /api-docs/json.
+app.use(
+  '/api-docs',
+  swaggerAuth,
+  swaggerUi.serveFiles(undefined, swaggerOptions),
+  swaggerUi.setup(undefined, swaggerOptions),
+);
 
 app.get('/api/health', async (req, res) => {
   // Public health check — exposes only operational status, no internal details
