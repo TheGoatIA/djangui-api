@@ -19,6 +19,23 @@ import { encryptFile, decryptFile } from '../utils/backupCrypto';
 const execFilePromise = promisify(execFile);
 
 /**
+ * Arguments mongodump / mongorestore. `--archive` a une valeur FACULTATIVE : elle
+ * doit être collée (`--archive=<fichier>`), sinon le fichier est lu comme une 2e
+ * chaîne de connexion (« provide only one MongoDB connection string ») — toutes
+ * les sauvegardes échouaient depuis le 15/11/2026.
+ */
+export const mongoToolArgs = (uri: string, archivePath: string, ...extra: string[]) => [
+  `--uri=${uri}`,
+  `--archive=${archivePath}`,
+  '--gzip',
+  ...extra,
+];
+
+/** Masque les identifiants d'une URI MongoDB (les erreurs d'execFile citent la commande). */
+export const maskMongoCredentials = (text: string) =>
+  text.replace(/(mongodb(?:\+srv)?:\/\/)[^@/\s]+@/gi, '$1***@');
+
+/**
  * Dossier des sauvegardes dans le bucket Firebase. Staging et production
  * partagent le même projet Firebase : sans préfixe distinct, leurs sauvegardes
  * se mélangeaient (écrasement possible, nettoyage de l'une par l'autre, risque
@@ -54,7 +71,7 @@ export class DbBackupService {
         : 'mongodump';
 
       logger.info(`Starting DB backup to ${dbArchivePath}`);
-      await execFilePromise(toolsPath, ['--uri', uri, '--archive', dbArchivePath, '--gzip']);
+      await execFilePromise(toolsPath, mongoToolArgs(uri, dbArchivePath));
 
       // 3. File Backup (tar)
       logger.info(`Starting File backup to ${filesArchivePath}`);
@@ -152,14 +169,15 @@ export class DbBackupService {
 
       return { success: true, stats };
     } catch (error: any) {
-      logger.error(`Multi-cloud backup failed: ${error.message}`);
+      const reason = maskMongoCredentials(String(error?.message || error));
+      logger.error(`Multi-cloud backup failed: ${reason}`);
       await EmailService.sendEmail(
         this.ADMIN_EMAIL,
         '🚨 ÉCHEC de la sauvegarde Multi-Cloud',
-        `L'erreur suivante est survenue lors de la sauvegarde : ${error.message}`,
-      );
-      await SlackService.sendAlert(`🚨 *Backup FAILED*\n*Error*: ${error.message}`);
-      throw error;
+        `L'erreur suivante est survenue lors de la sauvegarde : ${reason}`,
+      ).catch(() => undefined);
+      await SlackService.sendAlert(`🚨 *Backup FAILED*\n*Error*: ${reason}`);
+      throw new Error(reason);
     }
   }
 
@@ -217,14 +235,7 @@ export class DbBackupService {
       // --drop is used to clear existing collections before restore. execFile
       // (not exec) passes these as discrete arguments — no shell involved, so
       // there's nothing for a crafted filename to break out into.
-      await execFilePromise(toolsPath, [
-        '--uri',
-        uri,
-        '--archive',
-        archivePath,
-        '--gzip',
-        '--drop',
-      ]);
+      await execFilePromise(toolsPath, mongoToolArgs(uri, archivePath, '--drop'));
 
       logger.info(`Database restored successfully from ${filename}`);
 
@@ -237,11 +248,12 @@ export class DbBackupService {
       return { success: true, file: filename };
     } catch (error: any) {
       if (archivePath !== backupPath) fs.rmSync(archivePath, { force: true });
-      logger.error(`Database restore failed: ${error.message}`);
+      const reason = maskMongoCredentials(String(error?.message || error));
+      logger.error(`Database restore failed: ${reason}`);
       await SlackService.sendAlert(
-        `🚨 *DB RESTORE FAILED*\n*File*: ${filename}\n*Error*: ${error.message}`,
+        `🚨 *DB RESTORE FAILED*\n*File*: ${filename}\n*Error*: ${reason}`,
       );
-      throw error;
+      throw new Error(reason);
     }
   }
 

@@ -140,12 +140,16 @@ class CriticalAlertTransport extends Transport {
         // Mask sensitive patterns in error messages & stacks
         const sanitizeText = (text: string): string => {
           if (!text) return '';
-          return text
-            .replace(
-              /(password|secret|key|token|authorization)\s*[:=]\s*['"]?[^\s,'"]+/gi,
-              '$1: ***MASKED***',
-            )
-            .replace(/Bearer\s+[A-Za-z0-9-_.]+/gi, 'Bearer ***MASKED***');
+          return (
+            text
+              .replace(
+                /(password|secret|key|token|authorization)\s*[:=]\s*['"]?[^\s,'"]+/gi,
+                '$1: ***MASKED***',
+              )
+              .replace(/Bearer\s+[A-Za-z0-9-_.]+/gi, 'Bearer ***MASKED***')
+              // URI de base avec identifiants (ex. erreur mongodump citant sa commande)
+              .replace(/((?:mongodb(?:\+srv)?|rediss?):\/\/)[^@/\s]+@/gi, '$1***@')
+          );
         };
 
         const safeMessage = sanitizeText(String(info.message || ''));
