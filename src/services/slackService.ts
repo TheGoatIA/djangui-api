@@ -1,5 +1,6 @@
 import axios from 'axios';
 import logger from '../utils/logger';
+import { envLabel } from '../utils/deploymentEnv';
 import { MonitoringService } from './monitoringService';
 
 /**
@@ -77,7 +78,8 @@ export class SlackService {
 
     const start = Date.now();
     try {
-      await axios.post(webhookUrl, payload);
+      // Prod et staging partagent des canaux : chaque message dit d'où il vient.
+      await axios.post(webhookUrl, { ...payload, text: `*[${envLabel()}]* ${payload.text}` });
       logger.info(`Slack notification sent successfully (${category})`);
       MonitoringService.recordExternalApiRequest('slack', category, 'success');
     } catch (error: any) {
@@ -114,7 +116,10 @@ export class SlackService {
 
     try {
       await axios.post(webhookUrl, {
-        blocks,
+        blocks: [
+          { type: 'context', elements: [{ type: 'mrkdwn', text: `*${envLabel()}* · Kauri API` }] },
+          ...blocks,
+        ],
       });
       logger.info(`Slack rich ${isError ? 'error ' : ''}notification sent successfully`);
     } catch (error: any) {
