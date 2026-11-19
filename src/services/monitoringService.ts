@@ -1,6 +1,7 @@
 import client from 'prom-client';
 import { Request, Response, NextFunction } from 'express';
 import logger from '../utils/logger';
+import { collectClusterMetrics, listenForMetricRequests } from './clusterMetrics';
 
 export class MonitoringService {
   private static registry = new client.Registry();
@@ -640,6 +641,7 @@ export class MonitoringService {
    */
   static init() {
     client.collectDefaultMetrics({ register: this.registry });
+    listenForMetricRequests(this.registry);
     this.registry.registerMetric(this.httpRequestDuration);
     this.registry.registerMetric(this.dbQueryDuration);
     this.registry.registerMetric(this.activeUsers);
@@ -907,7 +909,9 @@ export class MonitoringService {
    */
   static async getMetrics(req: Request, res: Response) {
     res.set('Content-Type', this.registry.contentType);
-    res.end(await this.registry.metrics());
+    // Mode cluster PM2 : métriques de TOUTES les copies (sinon une seule sur N).
+    const aggregated = await collectClusterMetrics();
+    res.end(aggregated ?? (await this.registry.metrics()));
   }
 
   /**
