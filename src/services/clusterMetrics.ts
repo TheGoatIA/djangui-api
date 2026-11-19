@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import client from 'prom-client';
 import logger from '../utils/logger';
 
@@ -114,7 +115,7 @@ export const collectClusterMetrics = async (): Promise<string | null> => {
       .map((p) => p.pm_id);
     if (ids.length <= 1) return null;
 
-    const reqId = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const reqId = randomUUID();
     let resolve!: () => void;
     const done = new Promise<void>((r) => (resolve = r));
     pending.set(reqId, { results: [], expected: ids.length, resolve });
