@@ -149,7 +149,7 @@ jobs:
             echo "::warning::SONAR_TOKEN / SONAR_HOST_URL non définis : analyse Sonar ignorée"; fi
       - name: Analyse + Quality Gate
         if: steps.cfg.outputs.ready == 'true'
-        uses: SonarSource/sonarqube-scan-action@v7
+        uses: SonarSource/sonarqube-scan-action@v8
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
