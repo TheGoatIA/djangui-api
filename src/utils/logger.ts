@@ -142,13 +142,13 @@ class CriticalAlertTransport extends Transport {
           if (!text) return '';
           return (
             text
-              .replace(
+              .replaceAll(
                 /(password|secret|key|token|authorization)\s*[:=]\s*['"]?[^\s,'"]+/gi,
                 '$1: ***MASKED***',
               )
-              .replace(/Bearer\s+[A-Za-z0-9-_.]+/gi, 'Bearer ***MASKED***')
+              .replaceAll(/Bearer\s+[\w.-]+/gi, 'Bearer ***MASKED***')
               // URI de base avec identifiants (ex. erreur mongodump citant sa commande)
-              .replace(/((?:mongodb(?:\+srv)?|rediss?):\/\/)[^@/\s]+@/gi, '$1***@')
+              .replaceAll(/((?:mongodb(?:\+srv)?|rediss?):\/\/)[^@/\s]+@/gi, '$1***@')
           );
         };
 

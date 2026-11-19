@@ -33,7 +33,7 @@ export const mongoToolArgs = (uri: string, archivePath: string, ...extra: string
 
 /** Masque les identifiants d'une URI MongoDB (les erreurs d'execFile citent la commande). */
 export const maskMongoCredentials = (text: string) =>
-  text.replace(/(mongodb(?:\+srv)?:\/\/)[^@/\s]+@/gi, '$1***@');
+  text.replaceAll(/(mongodb(?:\+srv)?:\/\/)[^@/\s]+@/gi, '$1***@');
 
 /**
  * Dossier des sauvegardes dans le bucket Firebase. Staging et production
