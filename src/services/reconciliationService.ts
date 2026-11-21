@@ -1,66 +1,28 @@
-import User from '../models/User';
-import Transaction from '../models/Transaction';
 import { SlackService } from './slackService';
+import { WalletLedgerService } from './walletLedgerService';
 import logger from '../utils/logger';
 
 export class ReconciliationService {
   /**
    * Effectue un audit d'intégrité interne :
-   * Vérifie si le solde affiché (walletBalance) correspond mathématiquement à l'historique des transactions.
+   * Vérifie si le solde affiché (walletBalance) correspond aux écritures du portefeuille.
+   * Même règle que le contrôle quotidien (WalletLedgerService) : les saisies manuelles
+   * du budget (espèces) et les achats payés directement chez l'opérateur sont ignorés.
    */
   static async checkInternalIntegrity() {
     try {
       logger.info(`[Reconciliation] Lancement de l'audit d'intégrité interne...`);
 
-      const activeUsers = await User.find({ isActive: true });
-      const anomalies: any[] = [];
-      let totalChecked = 0;
+      const { totalChecked, anomalies: found } = await WalletLedgerService.findAnomalies();
+      const anomalies = found.map((a) => ({
+        userId: a.userId,
+        email: a.email,
+        currentBalance: a.walletBalance,
+        theoreticalBalance: a.calculatedBalance,
+        diff: a.diff,
+      }));
 
-      for (const user of activeUsers) {
-        totalChecked++;
-
-        // Calculer la balance théorique basée sur les transactions complétées
-        const stats = await Transaction.aggregate([
-          { $match: { userId: user._id, status: 'completed' } },
-          {
-            $group: {
-              _id: '$type',
-              total: { $sum: '$amount' },
-              totalFees: { $sum: '$fees' },
-            },
-          },
-        ]);
-
-        let income = 0;
-        let expense = 0;
-
-        stats.forEach((s) => {
-          // Entrées d'argent
-          if (['deposit', 'tontine_payout', 'income', 'saving_transfer'].includes(s._id)) {
-            income += s.total;
-          }
-          // Sorties d'argent (incluant les frais)
-          else {
-            expense += s.total + (s.totalFees || 0);
-          }
-        });
-
-        const theoreticalBalance = income - expense;
-        const diff = Math.abs(theoreticalBalance - user.walletBalance);
-
-        // Seuil de tolérance (ex: 1 XAF pour arrondis)
-        if (diff > 1) {
-          anomalies.push({
-            userId: user._id,
-            email: user.email,
-            currentBalance: user.walletBalance,
-            theoreticalBalance,
-            diff,
-          });
-        }
-      }
-
-      // 3. Alerter Slack si des anomalies sont détectées
+      // Alerter Slack si des anomalies sont détectées
       if (anomalies.length > 0) {
         const message =
           `🚨 *ANOMALIES DE RECONCILIATION INTERNE*\n` +

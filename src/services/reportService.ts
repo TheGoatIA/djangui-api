@@ -5,6 +5,7 @@ import User from '../models/User';
 import HealthScoreHistory from '../models/HealthScoreHistory';
 import mongoose from 'mongoose';
 import logger from '../utils/logger';
+import { WalletLedgerService } from './walletLedgerService';
 import { GeminiService } from './ai/geminiService';
 import { PromptBuilder } from './ai/promptBuilder';
 import { RedisService } from './redisService';
@@ -440,48 +441,9 @@ export class ReportService {
    * Check for users with financial balance discrepancies (Audit/Health check)
    */
   static async checkFinancialIntegrity() {
-    const activeUsers = await User.find({ isActive: true });
-    const anomalies: any[] = [];
-
-    for (const user of activeUsers) {
-      const stats = await Transaction.aggregate([
-        { $match: { userId: user._id, status: 'completed' } },
-        {
-          $group: {
-            _id: '$type',
-            total: { $sum: '$amount' },
-            totalFees: { $sum: '$fees' },
-          },
-        },
-      ]);
-
-      // Calcul simple : Revenus (deposit, payout, reward) - Dépenses (withdrawal, contribution, transfer)
-      let income = 0;
-      let expense = 0;
-
-      stats.forEach((s) => {
-        if (['income', 'deposit', 'tontine_payout', 'challenge_reward'].includes(s._id)) {
-          income += s.total;
-        } else {
-          expense += s.total + s.totalFees; // On déduit le net + les frais
-        }
-      });
-
-      const calculatedBalance = income - expense;
-      const diff = Math.abs(calculatedBalance - user.walletBalance);
-
-      if (diff > 1) {
-        // Tolérance de 1 XAF pour les arrondis
-        anomalies.push({
-          userId: user._id,
-          email: user.email,
-          walletBalance: user.walletBalance,
-          calculatedBalance,
-          diff,
-        });
-      }
-    }
-
+    // Seules les écritures qui touchent réellement le portefeuille comptent
+    // (voir WalletLedgerService) — les saisies manuelles du budget en sont exclues.
+    const { anomalies } = await WalletLedgerService.findAnomalies();
     return anomalies;
   }
 
