@@ -44,8 +44,16 @@ export class WalletLedgerService {
   ): Promise<Map<string, number>> {
     const match: Record<string, unknown> = {
       $or: [
-        { type: { $in: WALLET_CREDIT_TYPES }, paymentMethod: { $in: WALLET_CREDIT_METHODS }, status: 'completed' },
-        { type: { $nin: WALLET_CREDIT_TYPES }, paymentMethod: 'wallet', status: { $in: WALLET_DEBIT_STATUSES } },
+        {
+          type: { $in: WALLET_CREDIT_TYPES },
+          paymentMethod: { $in: WALLET_CREDIT_METHODS },
+          status: 'completed',
+        },
+        {
+          type: { $nin: WALLET_CREDIT_TYPES },
+          paymentMethod: 'wallet',
+          status: { $in: WALLET_DEBIT_STATUSES },
+        },
       ],
     };
     if (userIds) match.userId = { $in: userIds };
@@ -67,7 +75,9 @@ export class WalletLedgerService {
         },
       },
     ]);
-    return new Map(rows.map((r: { _id: unknown; balance: number }) => [String(r._id), round2(r.balance)]));
+    return new Map(
+      rows.map((r: { _id: unknown; balance: number }) => [String(r._id), round2(r.balance)]),
+    );
   }
 
   /** Comptes actifs dont walletBalance ne correspond pas aux écritures du portefeuille. */
